@@ -1,0 +1,173 @@
+---
+title: '@holeauth/core'
+description: Framework-agnostic primitives — JWT, sessions, password, TOTP/OTP, passkey, SSO, cookies, events.
+---
+
+# @holeauth/core
+
+The foundation package. Every other holeauth package depends on it.
+
+```bash
+pnpm add @holeauth/core
+```
+
+## Barrel exports
+
+```ts
+import {
+  defineHoleauth,
+  // types
+  type HoleauthConfig,
+  type HoleauthInstance,
+  type IssuedTokens,
+  type SessionData,
+  type AdapterUser,
+  // errors
+  HoleauthError,
+  InvalidTokenError,
+  SessionExpiredError,
+} from '@holeauth/core';
+
+// namespaced modules
+import * as jwt from '@holeauth/core/jwt';
+import * as session from '@holeauth/core/session';
+import * as password from '@holeauth/core/password';
+import * as totp from '@holeauth/core/totp';
+import * as otp from '@holeauth/core/otp';
+import * as cookies from '@holeauth/core/cookies';
+import * as events from '@holeauth/core/events';
+import * as flows from '@holeauth/core/flows';
+import * as passkey from '@holeauth/core/passkey';
+import * as sso from '@holeauth/core/sso';
+import * as adapters from '@holeauth/core/adapters';
+```
+
+## `defineHoleauth(config)`
+
+Creates a framework-agnostic `HoleauthInstance`:
+
+```ts
+interface HoleauthInstance {
+  config: HoleauthConfig;
+
+  register(input: { email: string; password: string; name?: string }): Promise<AdapterUser>;
+  signIn(input: { email: string; password: string; ip?: string; userAgent?: string }): Promise<SignInResult>;
+  signOut(input: { accessToken?: string; refreshToken?: string }): Promise<void>;
+
+  refresh(input: { refreshToken: string; ip?: string; userAgent?: string }): Promise<IssuedTokens>;
+  getSession(accessToken?: string): Promise<SessionData | null>;
+
+  twofa: {
+    setup(userId: string): Promise<{ secret: string; otpauthUrl: string; recoveryCodes: string[] }>;
+    verify(input: { pendingToken: string; code: string; ip?: string; userAgent?: string }): Promise<{ user: AdapterUser; tokens: IssuedTokens }>;
+    disable(userId: string, code: string): Promise<void>;
+  };
+
+  sso: {
+    authorize(providerId: string): Promise<{ url: string; state: string; codeVerifier: string; nonce?: string }>;
+    callback(providerId: string, input: { code: string; state: string; codeVerifier: string; ip?: string; userAgent?: string }): Promise<{ user: AdapterUser; tokens: IssuedTokens }>;
+  };
+
+  passkey: {
+    registerOptions(userId: string): Promise<{ options: unknown; challenge: string }>;
+    registerVerify(userId: string, input: { response: unknown; expectedChallenge: string; deviceName?: string }): Promise<void>;
+    loginOptions(userId?: string): Promise<{ options: unknown; challenge: string }>;
+    loginVerify(input: { response: unknown; expectedChallenge: string; ip?: string; userAgent?: string }): Promise<{ user: AdapterUser; tokens: IssuedTokens }>;
+  };
+}
+```
+
+Full config reference: [Configuration](/docs/configuration).
+
+## `jwt`
+
+HS256 signing and verification backed by [`jose`](https://github.com/panva/jose).
+
+```ts
+await jwt.sign(payload, secret, { expiresIn: '15m', issuer, audience, subject, jti });
+await jwt.verify<Payload>(token, secret);
+jwt.decode<Payload>(token); // throws InvalidTokenError on malformed input
+```
+
+## `password`
+
+Runtime-agnostic password hashing.
+
+```ts
+const hashed = await password.hash('correct-horse-battery-staple');
+// 'argon2id$...' on Node with argon2 installed
+// 'pbkdf2-sha256$100000$<salt>$<hash>' elsewhere
+
+await password.verify('correct-horse-battery-staple', hashed); // true
+```
+
+## `session`
+
+Low-level session primitives. Usually you call `HoleauthInstance.refresh` / `getSession` rather than these directly.
+
+```ts
+await session.issueSession(cfg, { userId, ip, userAgent });
+await session.validateSession(cfg, accessToken);
+await session.rotateRefresh(cfg, refreshToken, { ip, userAgent });
+await session.revokeSession(cfg, sessionId);
+await session.revokeByRefresh(cfg, refreshToken);
+await session.revokeAllForUser(cfg, userId);
+```
+
+## `totp`
+
+```ts
+const secret = totp.generateSecret();
+const url = totp.otpauthUrl(secret, { issuer: 'My App', label: 'ada@example.com' });
+totp.verifyToken('123456', secret, /* window */ 1);
+const recovery = totp.generateRecoveryCodes(10);
+```
+
+## `otp`
+
+Numeric OTP helpers for email / SMS flows (delivery is your responsibility).
+
+```ts
+const code = otp.generateNumericOtp(6); // '472911'
+const challenge = otp.createChallenge(600, 6);
+otp.isExpired(challenge);
+```
+
+## `cookies`
+
+Cookie spec, CSRF helpers:
+
+```ts
+cookies.generateCsrfToken();
+cookies.verifyCsrf(cookieValue, headerValue);
+cookies.buildCookie(cfg, { kind: 'access', value });
+cookies.serializeCookie(spec);
+cookies.deleteCookie(cfg, 'refresh');
+cookies.cookieName(cfg, 'access'); // 'holeauth.access'
+```
+
+## `events`
+
+Type definitions and an in-memory emitter:
+
+```ts
+import type { HoleauthEvent, HoleauthEventType } from '@holeauth/core/events';
+```
+
+## `sso`
+
+Provider helpers and low-level SSO flows:
+
+```ts
+import { GoogleProvider, GithubProvider, authorize, callback } from '@holeauth/core/sso';
+```
+
+See the [SSO guide](/docs/guides/sso).
+
+## `passkey`
+
+Low-level WebAuthn functions that power the Next.js handlers. See the [Passkeys guide](/docs/guides/passkeys).
+
+## `adapters`
+
+Type definitions only — for implementing your own adapter. See the [Adapters reference](/docs/api/adapters).

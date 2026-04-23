@@ -1,0 +1,30 @@
+import { defineConfig } from 'tsup';
+
+export default defineConfig({
+  entry: ['src/index.ts', 'src/middleware.ts'],
+  format: ['esm'],
+  dts: true,
+  sourcemap: true,
+  clean: true,
+  external: [
+    'next',
+    'next/server',
+    'next/headers',
+    'react',
+    'react-dom',
+    '@holeauth/core',
+    '@holeauth/core/session',
+    '@holeauth/core/jwt',
+    '@holeauth/core/adapters',
+    '@holeauth/core/password',
+    '@holeauth/core/totp',
+    '@holeauth/core/otp',
+    '@holeauth/core/sso',
+    '@holeauth/core/errors',
+    '@holeauth/core/cookies',
+    '@holeauth/core/events',
+    '@holeauth/core/flows',
+    '@holeauth/core/passkey',
+  ],
+  target: 'es2022',
+});

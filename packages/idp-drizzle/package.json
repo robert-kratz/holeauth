@@ -1,0 +1,39 @@
+{
+  "name": "@holeauth/idp-drizzle",
+  "version": "0.0.0",
+  "description": "Drizzle adapter for @holeauth/plugin-idp (OpenID Connect IdP).",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs" },
+    "./pg": { "types": "./dist/pg/index.d.ts", "import": "./dist/pg/index.js", "require": "./dist/pg/index.cjs" },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": { "access": "public", "provenance": true },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "@holeauth/plugin-idp": "workspace:*",
+    "drizzle-orm": ">=0.33.0"
+  },
+  "devDependencies": {
+    "@holeauth/eslint-config": "workspace:*",
+    "@holeauth/plugin-idp": "workspace:*",
+    "@holeauth/tsconfig": "workspace:*",
+    "@types/node": "^20.16.10",
+    "drizzle-orm": "^0.36.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

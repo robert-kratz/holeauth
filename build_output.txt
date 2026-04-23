@@ -1,0 +1,126 @@
+ WARNING  --no-cache is deprecated and will be removed in a future major version. Use --cache=local:r,remote:r
+• turbo 2.9.6
+
+   • Packages in scope: @holeauth/2fa-drizzle, @holeauth/adapter-drizzle, @holeauth/core, @holeauth/eslint-config, @holeauth/idp-drizzle, @holeauth/nextjs, @holeauth/passkey-drizzle, @holeauth/plugin-2fa, @holeauth/plugin-idp, @holeauth/plugin-passkey, @holeauth/plugin-rbac, @holeauth/rbac-drizzle, @holeauth/rbac-yaml, @holeauth/react, @holeauth/tsconfig, client-playground, docs, playground
+   • Running build in 18 packages
+   • Remote caching disabled
+
+client-playground:build: cache miss, executing 404d2b813fc79352
+docs:build: cache miss, executing 98439f95c9c98d60
+@holeauth/core:build: cache miss, executing d04985b6e797b677
+@holeauth/react:build: cache hit, replaying logs e5ace02707e672b7
+@holeauth/react:build: 
+@holeauth/react:build: 
+@holeauth/react:build: > @holeauth/react@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/react
+@holeauth/react:build: > tsup
+@holeauth/react:build: 
+@holeauth/react:build: [34mCLI[39m Building entry: src/index.ts
+@holeauth/react:build: [34mCLI[39m Using tsconfig: tsconfig.json
+@holeauth/react:build: [34mCLI[39m tsup v8.5.1
+@holeauth/react:build: [34mCLI[39m Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/react/tsup.config.ts
+@holeauth/react:build: [34mCLI[39m Target: es2022
+@holeauth/react:build: [34mCLI[39m Cleaning output folder
+@holeauth/react:build: [34mESM[39m Build start
+@holeauth/react:build: [32mESM[39m [1mdist/index.js     [22m[32m22.56 KB[39m
+@holeauth/react:build: [32mESM[39m [1mdist/index.js.map [22m[32m48.69 KB[39m
+@holeauth/react:build: [32mESM[39m ⚡️ Build success in 11ms
+@holeauth/react:build: DTS Build start
+@holeauth/react:build: DTS ⚡️ Build success in 582ms
+@holeauth/react:build: DTS dist/index.d.ts 9.30 KB
+client-playground:build: 
+client-playground:build: > client-playground@0.0.0 build /Users/robertjuliankratz/development/holeauth/apps/client-playground
+client-playground:build: > next build
+client-playground:build: 
+docs:build: 
+docs:build: > docs@0.0.0 build /Users/robertjuliankratz/development/holeauth/apps/docs
+docs:build: > next build
+docs:build: 
+@holeauth/core:build: 
+@holeauth/core:build: > @holeauth/core@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/core
+@holeauth/core:build: > tsup
+@holeauth/core:build: 
+@holeauth/core:build: CLI Building entry: src/index.ts, src/adapters/index.ts, src/cookies/index.ts, src/errors/index.ts, src/events/index.ts, src/flows/index.ts, src/otp/index.ts, src/password/index.ts, src/session/index.ts, src/sso/index.ts, src/jwt/index.ts, src/plugins/index.ts
+@holeauth/core:build: CLI Using tsconfig: tsconfig.json
+@holeauth/core:build: CLI tsup v8.5.1
+@holeauth/core:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/core/tsup.config.ts
+@holeauth/core:build: CLI Target: es2022
+@holeauth/core:build: CLI Cleaning output folder
+@holeauth/core:build: ESM Build start
+@holeauth/core:build: Generated an empty chunk: "index".
+client-playground:build: ▲ Next.js 16.2.4 (Turbopack)
+client-playground:build: 
+client-playground:build:   Creating an optimized production build ...
+@holeauth/core:build: "decodeJwt" is imported from external module "jose" but never used in "dist/flows/index.js".
+@holeauth/core:build: "decodeJwt" is imported from external module "jose" but never used in "dist/session/index.js".
+@holeauth/core:build: "jwtVerify" is imported from external module "jose" but never used in "dist/sso/index.js".
+@holeauth/core:build: "jwtVerify" and "decodeJwt" are imported from external module "jose" but never used in "dist/plugins/index.js".
+docs:build:    ▲ Next.js 15.5.15
+docs:build: 
+@holeauth/core:build: DTS Build start
+@holeauth/core:build: ESM dist/cookies/index.js      2.35 KB
+@holeauth/core:build: ESM dist/adapters/index.js     68.00 B
+@holeauth/core:build: ESM dist/events/index.js       1.43 KB
+@holeauth/core:build: ESM dist/errors/index.js       2.20 KB
+@holeauth/core:build: ESM dist/otp/index.js          554.00 B
+@holeauth/core:build: ESM dist/flows/index.js        26.10 KB
+@holeauth/core:build: ESM dist/session/index.js      10.04 KB
+@holeauth/core:build: ESM dist/sso/index.js          14.90 KB
+@holeauth/core:build: ESM dist/plugins/index.js      14.18 KB
+@holeauth/core:build: ESM dist/index.js              54.55 KB
+@holeauth/core:build: ESM dist/password/index.js     2.32 KB
+@holeauth/core:build: ESM dist/jwt/index.js          1.41 KB
+@holeauth/core:build: ESM dist/adapters/index.js.map 69.00 B
+@holeauth/core:build: ESM dist/errors/index.js.map   3.77 KB
+@holeauth/core:build: ESM dist/cookies/index.js.map  6.41 KB
+@holeauth/core:build: ESM dist/otp/index.js.map      1.24 KB
+@holeauth/core:build: ESM dist/events/index.js.map   4.21 KB
+@holeauth/core:build: ESM dist/flows/index.js.map    71.69 KB
+@holeauth/core:build: ESM dist/sso/index.js.map      41.23 KB
+@holeauth/core:build: ESM dist/session/index.js.map  31.27 KB
+@holeauth/core:build: ESM dist/password/index.js.map 6.10 KB
+@holeauth/core:build: ESM dist/plugins/index.js.map  42.59 KB
+@holeauth/core:build: ESM dist/index.js.map          149.40 KB
+@holeauth/core:build: ESM dist/jwt/index.js.map      5.04 KB
+@holeauth/core:build: ESM ⚡️ Build success in 172ms
+docs:build: [MDX] updated map file in 12.317125000000033ms
+docs:build:    Creating an optimized production build ...
+client-playground:build: 
+client-playground:build: > Build error occurred
+client-playground:build: Error: Turbopack build failed with 1 errors:
+client-playground:build: ./apps/client-playground/db/client.ts:3:1
+client-playground:build: Module not found: Can't resolve './schema.js'
+client-playground:build:   [90m1 |[0m [36mimport[0m { drizzle } [36mfrom[0m [32m'drizzle-orm/node-postgres'[0m;
+client-playground:build:   [90m2 |[0m [36mimport[0m pg [36mfrom[0m [32m'pg'[0m;
+client-playground:build: [31m[1m>[0m [90m3 |[0m [36mimport[0m * [36mas[0m schema [36mfrom[0m [32m'./schema.js'[0m;
+client-playground:build:   [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+client-playground:build:   [90m4 |[0m
+client-playground:build:   [90m5 |[0m [36mconst[0m url =
+client-playground:build:   [90m6 |[0m   process.env.[33mDATABASE_URL[0m ??
+client-playground:build: 
+client-playground:build: 
+client-playground:build: 
+client-playground:build: Import traces:
+client-playground:build:   App Route:
+client-playground:build:     ./apps/client-playground/db/client.ts
+client-playground:build:     ./apps/client-playground/app/oidc/callback/route.ts
+client-playground:build: 
+client-playground:build:   Server Component:
+client-playground:build:     ./apps/client-playground/db/client.ts
+client-playground:build:     ./apps/client-playground/lib/session.ts
+client-playground:build:     ./apps/client-playground/app/page.tsx
+client-playground:build: 
+client-playground:build: https://nextjs.org/docs/messages/module-not-found
+client-playground:build: 
+client-playground:build: 
+client-playground:build:     at <unknown> (./apps/client-playground/db/client.ts:3:1)
+client-playground:build:     at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+client-playground:build:  ELIFECYCLE  Command failed with exit code 1.
+@holeauth/core:build: DTS ⚡️ Build success in 1901ms
+ ERROR  client-playground#build: command (/Users/robertjuliankratz/development/holeauth/apps/client-playground) /Users/robertjuliankratz/Library/pnpm/.tools/pnpm/9.12.0/bin/pnpm run build exited (1)
+
+ Tasks:    1 successful, 4 total
+Cached:    1 cached, 4 total
+  Time:    3.045s 
+Failed:    client-playground#build
+
+ ERROR  run failed: command  exited (1)

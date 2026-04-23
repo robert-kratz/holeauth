@@ -1,0 +1,118 @@
+---
+title: Core Concepts
+description: The mental model behind holeauth — adapters, tokens, flows, events, and security guarantees.
+---
+
+# Core Concepts
+
+This page explains how holeauth fits together so that the per-feature guides feel obvious.
+
+## The adapter pattern
+
+holeauth never talks to your database. Instead, `defineHoleauth` receives an `adapters` object that satisfies small, focused interfaces:
+
+| Adapter | Purpose | Required |
+| --- | --- | --- |
+| `user` | CRUD for users. | yes |
+| `session` | Create / rotate / revoke refresh sessions. | yes |
+| `auditLog` | Append-only security events. | yes |
+| `account` | Linked OAuth/OIDC accounts. | only for SSO |
+| `verificationToken` | Email verification / magic links. | optional |
+| `passkey` | WebAuthn credentials. | only for passkeys |
+
+This design means holeauth works with any ORM or database. The reference [`@holeauth/adapter-prisma`](/docs/packages/adapter-prisma) and [`@holeauth/adapter-drizzle`](/docs/packages/adapter-drizzle) packages are thin wrappers; you can implement your own in ~100 lines.
+
+Full interface reference: [Adapters](/docs/api/adapters).
+
+## The token model
+
+Every successful login produces an **`IssuedTokens`** bundle:
+
+```ts
+interface IssuedTokens {
+  accessToken: string;        // short-lived JWT (default 15 minutes)
+  refreshToken: string;       // opaque token (default 30 days)
+  csrfToken: string;          // readable cookie, echoed in x-csrf-token header
+  sessionId: string;
+  familyId: string;           // groups every refresh rotation for one login
+  accessExpiresAt: number;
+  refreshExpiresAt: number;
+}
+```
+
+- The **access token** is a signed JWT (HS256) stored in an `httpOnly`, `SameSite=Lax` cookie. It is verified without hitting the database.
+- The **refresh token** is opaque. Only its SHA-256 hash is stored on the session row. It is scoped to `/api/auth` so it only travels on auth requests.
+- The **CSRF token** is a non-`httpOnly` cookie. Your client must echo it in the `x-csrf-token` header for every mutating request.
+
+### Rotating refresh with reuse detection
+
+When `/api/auth/refresh` is called:
+
+1. The refresh token is SHA-256 hashed and looked up in the `session` adapter.
+2. A brand-new refresh token is issued, and the old hash is replaced (rotation).
+3. All rotations share the same `familyId`.
+4. If a previously-rotated refresh token shows up again, holeauth treats it as a replay attack and **revokes the entire family** via `session.revokeFamily(familyId)`.
+
+This is a standard and strong defense against stolen refresh tokens — documented in [Sessions & Refresh Rotation](/docs/guides/sessions-refresh).
+
+## The sign-in state machine
+
+```
+POST /signin
+  ├── credentials invalid ──────────► 401 INVALID_CREDENTIALS
+  ├── 2FA enabled ──────────► { pending2fa: true, pendingToken }
+  │      └── POST /2fa/verify  ──► IssuedTokens
+  └── ok  ──────────────────► IssuedTokens
+```
+
+The `pending2fa` step uses a separate short-lived cookie (`pending2faTtl`, default 5 minutes) so the user's real access/refresh tokens are never issued until the second factor succeeds.
+
+## Runtime strategy
+
+| Concern | Strategy |
+| --- | --- |
+| JWT signing | [`jose`](https://github.com/panva/jose) — HS256, works everywhere. |
+| Password hashing | `argon2id` on Node.js when installed; otherwise PBKDF2-SHA256 (100k rounds) via WebCrypto. |
+| Random tokens | WebCrypto `getRandomValues`. |
+| TOTP | `otpauth` — works in any runtime. |
+| WebAuthn | `@simplewebauthn/server` — **Node.js only**. |
+
+Because passkeys and argon2 are Node-only, set `export const runtime = 'nodejs'` on your `route.ts` that mounts `auth.handlers`. You can still run your app on the Edge runtime for pages and other route handlers.
+
+## CSRF model
+
+holeauth uses the **double-submit cookie** pattern:
+
+- On sign-in the server sets a readable `holeauth.csrf` cookie.
+- Your client reads the cookie and sends it back as `x-csrf-token` on mutating requests.
+- The server compares cookie + header with a constant-time comparison.
+
+Endpoints that require CSRF: `/signout`, `/2fa/disable`, `/passkey/register/*`. See [CSRF Protection](/docs/guides/csrf).
+
+## Events & audit logging
+
+Every meaningful action emits a typed event:
+
+```
+user.registered          session.created        twofa.enabled
+user.signed_in           session.rotated        twofa.disabled
+user.signed_out          session.revoked        twofa.verified
+sso.authorize            session.reuse_detected twofa.failed
+sso.callback_ok          account.linked         passkey.registered
+sso.callback_failed      account.unlinked       passkey.login
+                                                passkey.failed
+```
+
+They are:
+
+- **Persisted** through `adapters.auditLog.record()` (mandatory).
+- **Broadcast** through `config.onEvent()` (fire-and-forget) for analytics, webhooks, SIEM, etc.
+
+See [Events & Audit](/docs/guides/events-audit).
+
+## What holeauth does NOT do
+
+- **Rate limiting** — add it at the edge or with middleware.
+- **Email delivery** — verification tokens are stored; sending is yours.
+- **UI** — the React package ships hooks only, no styled components.
+- **Authorization / RBAC** — holeauth authenticates; authorization is your application's concern.

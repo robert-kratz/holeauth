@@ -1,0 +1,64 @@
+##
+## holeauth RBAC — group & permission definitions
+##
+## Exactly ONE group must be marked `default: true`. New users are
+## auto-assigned to it on registration. Permissions follow Minecraft-style
+## rules:
+##   - '*'                 wildcard root
+##   - 'users.edit'        exact
+##   - 'users.edit.*'      trailing wildcard (matches 'users.edit' and any descendant)
+##   - '!users.edit.delete' negation — removes a previously granted node
+##
+## Higher `priority` groups override lower ones. `inherits` pulls in the
+## parent group's effective permission list.
+##
+groups:
+  user:
+    default: true
+    displayName: User
+    description: Default group for newly registered accounts.
+    priority: 0
+    permissions:
+      - profile.read
+      - profile.edit.self
+      - posts.read
+
+  moderator:
+    displayName: Moderator
+    description: Can moderate user-generated content.
+    priority: 10
+    inherits: [user]
+    permissions:
+      - posts.moderate
+      - users.read
+      - users.warn
+
+  developer:
+    displayName: Developer
+    description: Can create and manage their own OAuth apps + teams.
+    priority: 20
+    inherits: [user]
+    permissions:
+      - idp.apps.create
+      - idp.apps.manage.self
+      - idp.teams.create
+      - idp.teams.manage.self
+
+  admin:
+    displayName: Administrator
+    description: Full access, minus the ability to delete other admins.
+    priority: 100
+    inherits: [moderator]
+    permissions:
+      - '*'
+      - '!admin.delete'
+      # Session management (explicit for clarity; covered by '*' above).
+      - admin.sessions.read
+      - admin.sessions.write
+      # User management (explicit for clarity; covered by '*' above).
+      - admin.users.read
+      - admin.users.invite
+      # IdP admin (explicit for clarity; covered by '*' above).
+      - idp.apps.admin
+      - idp.teams.admin
+      - idp.keys.rotate

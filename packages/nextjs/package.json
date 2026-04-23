@@ -1,0 +1,73 @@
+{
+  "name": "@holeauth/nextjs",
+  "version": "0.0.0",
+  "description": "Next.js App Router bindings for holeauth.",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/nextjs"
+  },
+  "homepage": "https://robert-kratz.github.io/holeauth",
+  "bugs": "https://github.com/robert-kratz/holeauth/issues",
+  "keywords": [
+    "auth",
+    "nextjs",
+    "app-router",
+    "edge",
+    "holeauth"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./middleware": {
+      "types": "./dist/middleware.d.ts",
+      "import": "./dist/middleware.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "cjs-error.cjs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@holeauth/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "next": ">=14",
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@holeauth/eslint-config": "workspace:*",
+    "@holeauth/tsconfig": "workspace:*",
+    "@types/node": "^20.16.10",
+    "@types/react": "^18.3.11",
+    "next": "^15.0.0",
+    "react": "^18.3.1",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

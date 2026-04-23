@@ -1,0 +1,122 @@
+---
+title: '@holeauth/nextjs'
+description: Route handler, middleware, and cookie helpers for the Next.js App Router.
+---
+
+# @holeauth/nextjs
+
+```bash
+pnpm add @holeauth/nextjs
+```
+
+Provides a drop-in catch-all route handler, a middleware helper, and cookie utilities.
+
+## `createAuthHandler(config, opts?)`
+
+Wraps `defineHoleauth` and adds Next.js-aware behavior:
+
+```ts
+import { createAuthHandler } from '@holeauth/nextjs';
+
+export const auth = createAuthHandler(
+  config,
+  {
+    basePath: '/api/auth',       // default
+    defaultRedirect: '/dashboard', // post-SSO-callback redirect
+  },
+);
+```
+
+The returned object extends `HoleauthInstance` with:
+
+```ts
+interface NextHoleauth extends HoleauthInstance {
+  handlers: {
+    GET: (req: Request) => Promise<Response>;
+    POST: (req: Request) => Promise<Response>;
+  };
+  // Reads next/headers when no token is passed
+  getSession(accessToken?: string): Promise<SessionData | null>;
+}
+```
+
+Mount it once:
+
+```ts
+// app/api/auth/[...holeauth]/route.ts
+import { auth } from '@/lib/auth';
+
+export const runtime = 'nodejs'; // argon2 & @simplewebauthn/server are Node-only
+
+export const { GET, POST } = auth.handlers;
+```
+
+All endpoints are listed in the [API reference](/docs/api/endpoints).
+
+## `holeauthMiddleware(opts)`
+
+A middleware helper that redirects unauthenticated / pending-2FA users:
+
+```ts
+// middleware.ts
+import { holeauthMiddleware } from '@holeauth/nextjs';
+import { auth } from '@/lib/auth';
+
+export const middleware = holeauthMiddleware({
+  config: auth.config,
+  protect: ['/dashboard', /^\/account\/.*/],
+  signInPath: '/login',        // default '/login'
+  twoFactorPath: '/2fa/verify', // default '/2fa/verify'
+});
+
+export const config = {
+  matcher: ['/((?!_next|public|api/auth).*)'],
+};
+```
+
+Behavior per request:
+
+- Has a valid access cookie → continue.
+- Has a `pending2fa` cookie → redirect to `twoFactorPath`.
+- Path matches `protect` but no auth cookie → redirect to `signInPath`.
+- Otherwise → continue.
+
+> Middleware runs on the **Edge** runtime. Only validates JWTs — never hashes passwords or calls adapters.
+
+## Cookie helpers
+
+Useful when you build custom routes:
+
+```ts
+import {
+  writeAuthCookies,
+  clearAuthCookies,
+  writePending2fa,
+  readCookie,
+  checkCsrf,
+} from '@holeauth/nextjs';
+
+// In a Route Handler
+export async function POST(req: Request) {
+  if (!checkCsrf(req, auth.config)) {
+    return new Response('Forbidden', { status: 403 });
+  }
+  const res = new Response(null);
+  writeAuthCookies(auth.config, res.headers, tokens);
+  return res;
+}
+```
+
+## Server-component session reads
+
+`auth.getSession()` with no argument reads the `holeauth.access` cookie from `next/headers()`. Use it anywhere you'd normally call `cookies()`:
+
+```tsx
+const session = await auth.getSession();
+```
+
+Pass an explicit token if you're reading it from somewhere else (for example a server-to-server request):
+
+```ts
+const session = await auth.getSession(req.headers.get('authorization')?.slice(7));
+```

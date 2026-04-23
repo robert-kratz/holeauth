@@ -1,0 +1,528 @@
+ WARNING  --no-cache is deprecated and will be removed in a future major version. Use --cache=local:r,remote:r
+• turbo 2.9.6
+
+   • Packages in scope: @holeauth/2fa-drizzle, @holeauth/adapter-drizzle, @holeauth/core, @holeauth/eslint-config, @holeauth/idp-drizzle, @holeauth/nextjs, @holeauth/passkey-drizzle, @holeauth/plugin-2fa, @holeauth/plugin-idp, @holeauth/plugin-passkey, @holeauth/plugin-rbac, @holeauth/rbac-drizzle, @holeauth/rbac-yaml, @holeauth/react, @holeauth/tsconfig, client-playground, docs, playground
+   • Running build in 18 packages
+   • Remote caching disabled
+
+docs:build: cache miss, executing 98439f95c9c98d60
+client-playground:build: cache miss, executing 404d2b813fc79352
+@holeauth/core:build: cache miss, executing d04985b6e797b677
+@holeauth/react:build: cache hit, replaying logs e5ace02707e672b7
+@holeauth/react:build: 
+@holeauth/react:build: 
+@holeauth/react:build: > @holeauth/react@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/react
+@holeauth/react:build: > tsup
+@holeauth/react:build: 
+@holeauth/react:build: [34mCLI[39m Building entry: src/index.ts
+@holeauth/react:build: [34mCLI[39m Using tsconfig: tsconfig.json
+@holeauth/react:build: [34mCLI[39m tsup v8.5.1
+@holeauth/react:build: [34mCLI[39m Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/react/tsup.config.ts
+@holeauth/react:build: [34mCLI[39m Target: es2022
+@holeauth/react:build: [34mCLI[39m Cleaning output folder
+@holeauth/react:build: [34mESM[39m Build start
+@holeauth/react:build: [32mESM[39m [1mdist/index.js     [22m[32m22.56 KB[39m
+@holeauth/react:build: [32mESM[39m [1mdist/index.js.map [22m[32m48.69 KB[39m
+@holeauth/react:build: [32mESM[39m ⚡️ Build success in 11ms
+@holeauth/react:build: DTS Build start
+@holeauth/react:build: DTS ⚡️ Build success in 582ms
+@holeauth/react:build: DTS dist/index.d.ts 9.30 KB
+@holeauth/core:build: 
+@holeauth/core:build: > @holeauth/core@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/core
+@holeauth/core:build: > tsup
+@holeauth/core:build: 
+client-playground:build: 
+client-playground:build: > client-playground@0.0.0 build /Users/robertjuliankratz/development/holeauth/apps/client-playground
+client-playground:build: > next build
+client-playground:build: 
+docs:build: 
+docs:build: > docs@0.0.0 build /Users/robertjuliankratz/development/holeauth/apps/docs
+docs:build: > next build
+docs:build: 
+@holeauth/core:build: CLI Building entry: src/index.ts, src/adapters/index.ts, src/cookies/index.ts, src/errors/index.ts, src/events/index.ts, src/flows/index.ts, src/jwt/index.ts, src/password/index.ts, src/otp/index.ts, src/plugins/index.ts, src/session/index.ts, src/sso/index.ts
+@holeauth/core:build: CLI Using tsconfig: tsconfig.json
+@holeauth/core:build: CLI tsup v8.5.1
+@holeauth/core:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/core/tsup.config.ts
+@holeauth/core:build: CLI Target: es2022
+@holeauth/core:build: CLI Cleaning output folder
+@holeauth/core:build: ESM Build start
+client-playground:build: ▲ Next.js 16.2.4 (Turbopack)
+client-playground:build: 
+@holeauth/core:build: Generated an empty chunk: "index".
+client-playground:build:   Creating an optimized production build ...
+@holeauth/core:build: "decodeJwt" is imported from external module "jose" but never used in "dist/flows/index.js".
+@holeauth/core:build: "jwtVerify" and "decodeJwt" are imported from external module "jose" but never used in "dist/plugins/index.js".
+@holeauth/core:build: "decodeJwt" is imported from external module "jose" but never used in "dist/session/index.js".
+@holeauth/core:build: "jwtVerify" is imported from external module "jose" but never used in "dist/sso/index.js".
+docs:build:    ▲ Next.js 15.5.15
+docs:build: 
+@holeauth/core:build: ESM dist/events/index.js       1.43 KB
+@holeauth/core:build: ESM dist/adapters/index.js     68.00 B
+@holeauth/core:build: ESM dist/errors/index.js       2.20 KB
+@holeauth/core:build: ESM dist/jwt/index.js          1.41 KB
+@holeauth/core:build: ESM dist/password/index.js     2.32 KB
+@holeauth/core:build: ESM dist/cookies/index.js      2.35 KB
+@holeauth/core:build: ESM dist/otp/index.js          554.00 B
+@holeauth/core:build: ESM dist/session/index.js      10.04 KB
+@holeauth/core:build: ESM dist/flows/index.js        26.10 KB
+@holeauth/core:build: ESM dist/plugins/index.js      14.18 KB
+@holeauth/core:build: ESM dist/sso/index.js          14.90 KB
+@holeauth/core:build: ESM dist/index.js              54.55 KB
+@holeauth/core:build: ESM dist/errors/index.js.map   3.77 KB
+@holeauth/core:build: ESM dist/otp/index.js.map      1.24 KB
+@holeauth/core:build: ESM dist/adapters/index.js.map 69.00 B
+@holeauth/core:build: ESM dist/cookies/index.js.map  6.41 KB
+@holeauth/core:build: ESM dist/password/index.js.map 6.10 KB
+@holeauth/core:build: ESM dist/events/index.js.map   4.21 KB
+@holeauth/core:build: ESM dist/flows/index.js.map    71.69 KB
+@holeauth/core:build: ESM dist/session/index.js.map  31.27 KB
+@holeauth/core:build: ESM dist/jwt/index.js.map      5.04 KB
+@holeauth/core:build: ESM dist/plugins/index.js.map  42.59 KB
+@holeauth/core:build: ESM dist/sso/index.js.map      41.23 KB
+@holeauth/core:build: ESM dist/index.js.map          149.40 KB
+@holeauth/core:build: ESM ⚡️ Build success in 162ms
+@holeauth/core:build: DTS Build start
+docs:build: [MDX] updated map file in 12.87504100000001ms
+docs:build:    Creating an optimized production build ...
+@holeauth/core:build: DTS ⚡️ Build success in 1897ms
+@holeauth/core:build: DTS dist/index.d.ts             2.44 KB
+@holeauth/core:build: DTS dist/errors/index.d.ts      1.39 KB
+@holeauth/core:build: DTS dist/cookies/index.d.ts     312.00 B
+@holeauth/core:build: DTS dist/events/index.d.ts      198.00 B
+@holeauth/core:build: DTS dist/flows/index.d.ts       445.00 B
+@holeauth/core:build: DTS dist/jwt/index.d.ts         109.00 B
+@holeauth/core:build: DTS dist/password/index.d.ts    63.00 B
+@holeauth/core:build: DTS dist/otp/index.d.ts         121.00 B
+@holeauth/core:build: DTS dist/plugins/index.d.ts     635.00 B
+@holeauth/core:build: DTS dist/session/index.d.ts     352.00 B
+@holeauth/core:build: DTS dist/sso/index.d.ts         382.00 B
+@holeauth/core:build: DTS dist/adapters/index.d.ts    292.00 B
+@holeauth/core:build: DTS dist/index-BIXESLma.d.ts    2.81 KB
+@holeauth/core:build: DTS dist/index-DRN-5E_H.d.ts    1.36 KB
+@holeauth/core:build: DTS dist/index-BbEXbI_k.d.ts    5.43 KB
+@holeauth/core:build: DTS dist/index-CjEXpqaW.d.ts    879.00 B
+@holeauth/core:build: DTS dist/index-BYtkmk9_.d.ts    635.00 B
+@holeauth/core:build: DTS dist/index-BwEvEa8-.d.ts    888.00 B
+@holeauth/core:build: DTS dist/index-CotvcK_b.d.ts    3.20 KB
+@holeauth/core:build: DTS dist/registry-CZhM1tEB.d.ts 3.27 KB
+@holeauth/core:build: DTS dist/index-D57PvFMN.d.ts    4.95 KB
+@holeauth/core:build: DTS dist/index-CHS-socJ.d.ts    3.98 KB
+@holeauth/core:build: DTS dist/index-BmYQquGs.d.ts    19.83 KB
+@holeauth/core:build: DTS dist/index-CNtnPdzk.d.ts    5.85 KB
+client-playground:build: 
+client-playground:build: > Build error occurred
+client-playground:build: Error: Turbopack build failed with 1 errors:
+client-playground:build: ./apps/client-playground/db/client.ts:3:1
+client-playground:build: Module not found: Can't resolve './schema.js'
+client-playground:build:   [90m1 |[0m [36mimport[0m { drizzle } [36mfrom[0m [32m'drizzle-orm/node-postgres'[0m;
+client-playground:build:   [90m2 |[0m [36mimport[0m pg [36mfrom[0m [32m'pg'[0m;
+client-playground:build: [31m[1m>[0m [90m3 |[0m [36mimport[0m * [36mas[0m schema [36mfrom[0m [32m'./schema.js'[0m;
+client-playground:build:   [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+client-playground:build:   [90m4 |[0m
+client-playground:build:   [90m5 |[0m [36mconst[0m url =
+client-playground:build:   [90m6 |[0m   process.env.[33mDATABASE_URL[0m ??
+client-playground:build: 
+client-playground:build: 
+client-playground:build: 
+client-playground:build: Import traces:
+client-playground:build:   App Route:
+client-playground:build:     ./apps/client-playground/db/client.ts
+client-playground:build:     ./apps/client-playground/app/oidc/callback/route.ts
+client-playground:build: 
+client-playground:build:   Server Component:
+client-playground:build:     ./apps/client-playground/db/client.ts
+client-playground:build:     ./apps/client-playground/lib/session.ts
+client-playground:build:     ./apps/client-playground/app/page.tsx
+client-playground:build: 
+client-playground:build: https://nextjs.org/docs/messages/module-not-found
+client-playground:build: 
+client-playground:build: 
+client-playground:build:     at <unknown> (./apps/client-playground/db/client.ts:3:1)
+client-playground:build:     at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+client-playground:build:  ELIFECYCLE  Command failed with exit code 1.
+@holeauth/nextjs:build: cache miss, executing ff55b00cca23c2d9
+@holeauth/adapter-drizzle:build: cache miss, executing d2b4a5d62e9360bc
+@holeauth/plugin-rbac:build: cache miss, executing 181717a9aaf5d0eb
+@holeauth/plugin-2fa:build: cache miss, executing dc56772039a028d2
+@holeauth/plugin-passkey:build: cache miss, executing 0e51ee9b2a570970
+@holeauth/plugin-idp:build: cache miss, executing e8d7e32c2e1b8499
+client-playground#build:  WARNING  command finished with error, but continuing...
+@holeauth/adapter-drizzle:build: 
+@holeauth/adapter-drizzle:build: > @holeauth/adapter-drizzle@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/adapter-drizzle
+@holeauth/adapter-drizzle:build: > tsup
+@holeauth/adapter-drizzle:build: 
+@holeauth/plugin-idp:build: 
+@holeauth/plugin-idp:build: > @holeauth/plugin-idp@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/plugin-idp
+@holeauth/plugin-idp:build: > tsup
+@holeauth/plugin-idp:build: 
+@holeauth/plugin-2fa:build: 
+@holeauth/plugin-2fa:build: > @holeauth/plugin-2fa@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/plugin-2fa
+@holeauth/plugin-2fa:build: > tsup
+@holeauth/plugin-2fa:build: 
+@holeauth/plugin-rbac:build: 
+@holeauth/plugin-rbac:build: > @holeauth/plugin-rbac@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/plugin-rbac
+@holeauth/plugin-rbac:build: > tsup
+@holeauth/plugin-rbac:build: 
+@holeauth/plugin-passkey:build: 
+@holeauth/plugin-passkey:build: > @holeauth/plugin-passkey@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/plugin-passkey
+@holeauth/plugin-passkey:build: > tsup
+@holeauth/plugin-passkey:build: 
+@holeauth/nextjs:build: 
+@holeauth/nextjs:build: > @holeauth/nextjs@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/nextjs
+@holeauth/nextjs:build: > tsup
+@holeauth/nextjs:build: 
+@holeauth/plugin-passkey:build: CLI Building entry: src/index.ts
+@holeauth/plugin-passkey:build: CLI Using tsconfig: tsconfig.json
+@holeauth/plugin-passkey:build: CLI tsup v8.5.1
+@holeauth/plugin-passkey:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/plugin-passkey/tsup.config.ts
+@holeauth/plugin-passkey:build: CLI Target: es2022
+@holeauth/plugin-passkey:build: CLI Cleaning output folder
+@holeauth/plugin-passkey:build: ESM Build start
+@holeauth/plugin-passkey:build: ESM dist/index.js     9.91 KB
+@holeauth/plugin-passkey:build: ESM dist/index.js.map 22.78 KB
+@holeauth/plugin-passkey:build: ESM ⚡️ Build success in 43ms
+@holeauth/plugin-idp:build: CLI Building entry: src/index.ts
+@holeauth/plugin-idp:build: CLI Using tsconfig: tsconfig.json
+@holeauth/plugin-idp:build: CLI tsup v8.5.1
+@holeauth/plugin-idp:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/plugin-idp/tsup.config.ts
+@holeauth/plugin-idp:build: CLI Target: es2022
+@holeauth/plugin-idp:build: CLI Cleaning output folder
+@holeauth/plugin-idp:build: ESM Build start
+@holeauth/plugin-passkey:build: DTS Build start
+@holeauth/plugin-idp:build: ESM dist/index.js     36.57 KB
+@holeauth/plugin-idp:build: ESM dist/index.js.map 88.13 KB
+@holeauth/plugin-idp:build: ESM ⚡️ Build success in 85ms
+@holeauth/adapter-drizzle:build: CLI Building entry: src/index.ts, src/mysql/index.ts, src/pg/index.ts, src/sqlite/index.ts
+@holeauth/adapter-drizzle:build: CLI Using tsconfig: tsconfig.json
+@holeauth/adapter-drizzle:build: CLI tsup v8.5.1
+@holeauth/adapter-drizzle:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/adapter-drizzle/tsup.config.ts
+@holeauth/adapter-drizzle:build: CLI Target: es2022
+@holeauth/adapter-drizzle:build: CLI Cleaning output folder
+@holeauth/adapter-drizzle:build: ESM Build start
+@holeauth/adapter-drizzle:build: CJS Build start
+@holeauth/adapter-drizzle:build: Generated an empty chunk: "index".
+@holeauth/plugin-idp:build: DTS Build start
+@holeauth/adapter-drizzle:build: Generated an empty chunk: "index".
+@holeauth/plugin-2fa:build: CLI Building entry: src/index.ts
+@holeauth/plugin-2fa:build: CLI Using tsconfig: tsconfig.json
+@holeauth/plugin-2fa:build: CLI tsup v8.5.1
+@holeauth/plugin-2fa:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/plugin-2fa/tsup.config.ts
+@holeauth/plugin-2fa:build: CLI Target: es2022
+@holeauth/plugin-2fa:build: CLI Cleaning output folder
+@holeauth/plugin-2fa:build: ESM Build start
+@holeauth/adapter-drizzle:build: CJS dist/index.cjs            84.00 B
+@holeauth/adapter-drizzle:build: CJS dist/pg/index.cjs         11.57 KB
+@holeauth/adapter-drizzle:build: CJS dist/mysql/index.cjs      12.22 KB
+@holeauth/adapter-drizzle:build: CJS dist/sqlite/index.cjs     11.29 KB
+@holeauth/adapter-drizzle:build: CJS dist/pg/index.cjs.map     28.52 KB
+@holeauth/adapter-drizzle:build: CJS dist/mysql/index.cjs.map  29.39 KB
+@holeauth/adapter-drizzle:build: CJS dist/sqlite/index.cjs.map 26.73 KB
+@holeauth/adapter-drizzle:build: CJS dist/index.cjs.map        70.00 B
+@holeauth/adapter-drizzle:build: CJS ⚡️ Build success in 116ms
+@holeauth/adapter-drizzle:build: ESM dist/mysql/index.js      11.36 KB
+@holeauth/adapter-drizzle:build: ESM dist/sqlite/index.js     10.46 KB
+@holeauth/adapter-drizzle:build: ESM dist/index.js            68.00 B
+@holeauth/adapter-drizzle:build: ESM dist/pg/index.js         10.91 KB
+@holeauth/adapter-drizzle:build: ESM dist/sqlite/index.js.map 26.53 KB
+@holeauth/adapter-drizzle:build: ESM dist/mysql/index.js.map  29.16 KB
+@holeauth/adapter-drizzle:build: ESM dist/index.js.map        69.00 B
+@holeauth/adapter-drizzle:build: ESM dist/pg/index.js.map     28.33 KB
+@holeauth/adapter-drizzle:build: ESM ⚡️ Build success in 116ms
+@holeauth/plugin-2fa:build: ESM dist/index.js     11.92 KB
+@holeauth/plugin-2fa:build: ESM dist/index.js.map 31.38 KB
+@holeauth/plugin-2fa:build: ESM ⚡️ Build success in 77ms
+@holeauth/adapter-drizzle:build: DTS Build start
+@holeauth/plugin-rbac:build: CLI Building entry: src/index.ts
+@holeauth/plugin-rbac:build: CLI Using tsconfig: tsconfig.json
+@holeauth/plugin-rbac:build: CLI tsup v8.5.1
+@holeauth/plugin-rbac:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/plugin-rbac/tsup.config.ts
+@holeauth/plugin-rbac:build: CLI Target: es2022
+@holeauth/plugin-rbac:build: CLI Cleaning output folder
+@holeauth/plugin-rbac:build: ESM Build start
+@holeauth/plugin-rbac:build: ESM dist/index.js     9.46 KB
+@holeauth/plugin-rbac:build: ESM dist/index.js.map 26.23 KB
+@holeauth/plugin-rbac:build: ESM ⚡️ Build success in 68ms
+@holeauth/plugin-2fa:build: DTS Build start
+@holeauth/nextjs:build: CLI Building entry: src/index.ts, src/middleware.ts
+@holeauth/nextjs:build: CLI Using tsconfig: tsconfig.json
+@holeauth/nextjs:build: CLI tsup v8.5.1
+@holeauth/nextjs:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/nextjs/tsup.config.ts
+@holeauth/nextjs:build: CLI Target: es2022
+@holeauth/nextjs:build: CLI Cleaning output folder
+@holeauth/nextjs:build: ESM Build start
+@holeauth/nextjs:build: ESM dist/middleware.js     2.54 KB
+@holeauth/nextjs:build: ESM dist/index.js          20.86 KB
+@holeauth/nextjs:build: ESM dist/middleware.js.map 6.49 KB
+@holeauth/nextjs:build: ESM dist/index.js.map      46.11 KB
+@holeauth/nextjs:build: ESM ⚡️ Build success in 18ms
+@holeauth/plugin-rbac:build: DTS Build start
+@holeauth/plugin-passkey:build: DTS ⚡️ Build success in 547ms
+@holeauth/plugin-passkey:build: DTS dist/index.d.ts 2.67 KB
+@holeauth/nextjs:build: DTS Build start
+@holeauth/passkey-drizzle:build: cache miss, executing de1585fcbb494daf
+@holeauth/plugin-idp:build: DTS ⚡️ Build success in 486ms
+@holeauth/plugin-idp:build: DTS dist/index.d.ts 11.62 KB
+@holeauth/idp-drizzle:build: cache miss, executing 9299c1c05a21d69f
+@holeauth/plugin-2fa:build: DTS ⚡️ Build success in 463ms
+@holeauth/plugin-2fa:build: DTS dist/index.d.ts 6.14 KB
+@holeauth/2fa-drizzle:build: cache miss, executing 438f5fc5339eba28
+@holeauth/plugin-rbac:build: DTS ⚡️ Build success in 428ms
+@holeauth/plugin-rbac:build: DTS dist/index.d.ts 5.42 KB
+@holeauth/passkey-drizzle:build: 
+@holeauth/passkey-drizzle:build: > @holeauth/passkey-drizzle@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/passkey-drizzle
+@holeauth/passkey-drizzle:build: > tsup
+@holeauth/passkey-drizzle:build: 
+@holeauth/rbac-drizzle:build: cache miss, executing b6513dd9ce80a785
+@holeauth/rbac-yaml:build: cache miss, executing 58b183c9ef0af6aa
+@holeauth/idp-drizzle:build: 
+@holeauth/idp-drizzle:build: > @holeauth/idp-drizzle@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/idp-drizzle
+@holeauth/idp-drizzle:build: > tsup
+@holeauth/idp-drizzle:build: 
+@holeauth/2fa-drizzle:build: 
+@holeauth/2fa-drizzle:build: > @holeauth/2fa-drizzle@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/2fa-drizzle
+@holeauth/2fa-drizzle:build: > tsup
+@holeauth/2fa-drizzle:build: 
+@holeauth/rbac-yaml:build: 
+@holeauth/rbac-yaml:build: > @holeauth/rbac-yaml@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/rbac-yaml
+@holeauth/rbac-yaml:build: > tsup
+@holeauth/rbac-yaml:build: 
+@holeauth/rbac-drizzle:build: 
+@holeauth/rbac-drizzle:build: > @holeauth/rbac-drizzle@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/rbac-drizzle
+@holeauth/rbac-drizzle:build: > tsup
+@holeauth/rbac-drizzle:build: 
+@holeauth/passkey-drizzle:build: CLI Building entry: src/index.ts, src/mysql/index.ts, src/pg/index.ts, src/sqlite/index.ts
+@holeauth/passkey-drizzle:build: CLI Using tsconfig: tsconfig.json
+@holeauth/passkey-drizzle:build: CLI tsup v8.5.1
+@holeauth/passkey-drizzle:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/passkey-drizzle/tsup.config.ts
+@holeauth/passkey-drizzle:build: CLI Target: es2022
+@holeauth/passkey-drizzle:build: CLI Cleaning output folder
+@holeauth/passkey-drizzle:build: ESM Build start
+@holeauth/passkey-drizzle:build: CJS Build start
+@holeauth/passkey-drizzle:build: Generated an empty chunk: "index".
+@holeauth/passkey-drizzle:build: Generated an empty chunk: "index".
+@holeauth/passkey-drizzle:build: CJS dist/sqlite/index.cjs     2.74 KB
+@holeauth/passkey-drizzle:build: CJS dist/mysql/index.cjs      2.83 KB
+@holeauth/passkey-drizzle:build: CJS dist/pg/index.cjs         2.58 KB
+@holeauth/passkey-drizzle:build: CJS dist/index.cjs            84.00 B
+@holeauth/passkey-drizzle:build: CJS dist/mysql/index.cjs.map  6.93 KB
+@holeauth/passkey-drizzle:build: CJS dist/index.cjs.map        70.00 B
+@holeauth/passkey-drizzle:build: CJS dist/sqlite/index.cjs.map 6.57 KB
+@holeauth/passkey-drizzle:build: CJS dist/pg/index.cjs.map     6.35 KB
+@holeauth/passkey-drizzle:build: CJS ⚡️ Build success in 69ms
+@holeauth/passkey-drizzle:build: ESM dist/sqlite/index.js     2.54 KB
+@holeauth/passkey-drizzle:build: ESM dist/index.js            68.00 B
+@holeauth/passkey-drizzle:build: ESM dist/mysql/index.js      2.65 KB
+@holeauth/passkey-drizzle:build: ESM dist/pg/index.js         2.44 KB
+@holeauth/passkey-drizzle:build: ESM dist/sqlite/index.js.map 6.47 KB
+@holeauth/passkey-drizzle:build: ESM dist/index.js.map        69.00 B
+@holeauth/passkey-drizzle:build: ESM dist/mysql/index.js.map  6.81 KB
+@holeauth/passkey-drizzle:build: ESM dist/pg/index.js.map     6.25 KB
+@holeauth/passkey-drizzle:build: ESM ⚡️ Build success in 70ms
+@holeauth/idp-drizzle:build: CLI Building entry: src/index.ts, src/pg/index.ts
+@holeauth/idp-drizzle:build: CLI Using tsconfig: tsconfig.json
+@holeauth/idp-drizzle:build: CLI tsup v8.5.1
+@holeauth/idp-drizzle:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/idp-drizzle/tsup.config.ts
+@holeauth/idp-drizzle:build: CLI Target: es2022
+@holeauth/idp-drizzle:build: CLI Cleaning output folder
+@holeauth/idp-drizzle:build: ESM Build start
+@holeauth/idp-drizzle:build: CJS Build start
+@holeauth/idp-drizzle:build: Generated an empty chunk: "index".
+@holeauth/idp-drizzle:build: Generated an empty chunk: "index".
+@holeauth/passkey-drizzle:build: DTS Build start
+@holeauth/idp-drizzle:build: ESM dist/index.js        68.00 B
+@holeauth/idp-drizzle:build: ESM dist/pg/index.js     15.78 KB
+@holeauth/idp-drizzle:build: ESM dist/index.js.map    69.00 B
+@holeauth/idp-drizzle:build: ESM dist/pg/index.js.map 39.50 KB
+@holeauth/idp-drizzle:build: ESM ⚡️ Build success in 86ms
+@holeauth/idp-drizzle:build: CJS dist/index.cjs        84.00 B
+@holeauth/idp-drizzle:build: CJS dist/pg/index.cjs     16.76 KB
+@holeauth/idp-drizzle:build: CJS dist/index.cjs.map    70.00 B
+@holeauth/idp-drizzle:build: CJS dist/pg/index.cjs.map 39.75 KB
+@holeauth/idp-drizzle:build: CJS ⚡️ Build success in 86ms
+@holeauth/2fa-drizzle:build: CLI Building entry: src/index.ts, src/mysql/index.ts, src/pg/index.ts, src/sqlite/index.ts
+@holeauth/2fa-drizzle:build: CLI Using tsconfig: tsconfig.json
+@holeauth/2fa-drizzle:build: CLI tsup v8.5.1
+@holeauth/2fa-drizzle:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/2fa-drizzle/tsup.config.ts
+@holeauth/2fa-drizzle:build: CLI Target: es2022
+@holeauth/2fa-drizzle:build: CLI Cleaning output folder
+@holeauth/2fa-drizzle:build: ESM Build start
+@holeauth/2fa-drizzle:build: CJS Build start
+@holeauth/2fa-drizzle:build: Generated an empty chunk: "index".
+@holeauth/idp-drizzle:build: DTS Build start
+@holeauth/2fa-drizzle:build: Generated an empty chunk: "index".
+@holeauth/2fa-drizzle:build: ESM dist/index.js            68.00 B
+@holeauth/2fa-drizzle:build: ESM dist/pg/index.js         2.54 KB
+@holeauth/2fa-drizzle:build: ESM dist/sqlite/index.js     2.62 KB
+@holeauth/2fa-drizzle:build: ESM dist/mysql/index.js      2.67 KB
+@holeauth/2fa-drizzle:build: ESM dist/pg/index.js.map     6.20 KB
+@holeauth/2fa-drizzle:build: ESM dist/sqlite/index.js.map 6.37 KB
+@holeauth/2fa-drizzle:build: ESM dist/mysql/index.js.map  6.63 KB
+@holeauth/2fa-drizzle:build: ESM dist/index.js.map        69.00 B
+@holeauth/2fa-drizzle:build: ESM ⚡️ Build success in 80ms
+@holeauth/2fa-drizzle:build: CJS dist/index.cjs            84.00 B
+@holeauth/2fa-drizzle:build: CJS dist/pg/index.cjs         2.67 KB
+@holeauth/2fa-drizzle:build: CJS dist/mysql/index.cjs      2.83 KB
+@holeauth/2fa-drizzle:build: CJS dist/sqlite/index.cjs     2.79 KB
+@holeauth/2fa-drizzle:build: CJS dist/index.cjs.map        70.00 B
+@holeauth/2fa-drizzle:build: CJS dist/pg/index.cjs.map     6.27 KB
+@holeauth/2fa-drizzle:build: CJS dist/mysql/index.cjs.map  6.72 KB
+@holeauth/2fa-drizzle:build: CJS dist/sqlite/index.cjs.map 6.44 KB
+@holeauth/2fa-drizzle:build: CJS ⚡️ Build success in 83ms
+@holeauth/rbac-yaml:build: CLI Building entry: src/index.ts
+@holeauth/rbac-yaml:build: CLI Using tsconfig: tsconfig.json
+@holeauth/rbac-yaml:build: CLI tsup v8.5.1
+@holeauth/rbac-yaml:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/rbac-yaml/tsup.config.ts
+@holeauth/rbac-yaml:build: CLI Target: es2022
+@holeauth/rbac-yaml:build: CLI Cleaning output folder
+@holeauth/rbac-yaml:build: ESM Build start
+@holeauth/nextjs:build: DTS ⚡️ Build success in 1014ms
+@holeauth/nextjs:build: DTS dist/index.d.ts      5.11 KB
+@holeauth/nextjs:build: DTS dist/middleware.d.ts 1.88 KB
+@holeauth/rbac-yaml:build: ESM dist/index.js     4.20 KB
+@holeauth/rbac-yaml:build: ESM dist/index.js.map 11.95 KB
+@holeauth/rbac-yaml:build: ESM ⚡️ Build success in 48ms
+@holeauth/2fa-drizzle:build: DTS Build start
+@holeauth/rbac-drizzle:build: CLI Building entry: src/index.ts, src/mysql/index.ts, src/pg/index.ts, src/sqlite/index.ts
+@holeauth/rbac-drizzle:build: CLI Using tsconfig: tsconfig.json
+@holeauth/rbac-drizzle:build: CLI tsup v8.5.1
+@holeauth/rbac-drizzle:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/rbac-drizzle/tsup.config.ts
+@holeauth/rbac-drizzle:build: CLI Target: es2022
+@holeauth/rbac-drizzle:build: CLI Cleaning output folder
+@holeauth/rbac-drizzle:build: ESM Build start
+@holeauth/rbac-drizzle:build: CJS Build start
+@holeauth/rbac-drizzle:build: Generated an empty chunk: "index".
+@holeauth/rbac-drizzle:build: Generated an empty chunk: "index".
+@holeauth/rbac-drizzle:build: ESM dist/mysql/index.js      3.84 KB
+@holeauth/rbac-drizzle:build: ESM dist/pg/index.js         3.70 KB
+@holeauth/rbac-drizzle:build: ESM dist/index.js            68.00 B
+@holeauth/rbac-drizzle:build: ESM dist/sqlite/index.js     3.81 KB
+@holeauth/rbac-drizzle:build: ESM dist/mysql/index.js.map  9.59 KB
+@holeauth/rbac-drizzle:build: ESM dist/pg/index.js.map     9.38 KB
+@holeauth/rbac-drizzle:build: ESM dist/index.js.map        69.00 B
+@holeauth/rbac-drizzle:build: ESM dist/sqlite/index.js.map 9.49 KB
+@holeauth/rbac-drizzle:build: ESM ⚡️ Build success in 88ms
+@holeauth/rbac-drizzle:build: CJS dist/mysql/index.cjs      4.14 KB
+@holeauth/rbac-drizzle:build: CJS dist/pg/index.cjs         3.95 KB
+@holeauth/rbac-drizzle:build: CJS dist/index.cjs            84.00 B
+@holeauth/rbac-drizzle:build: CJS dist/sqlite/index.cjs     4.16 KB
+@holeauth/rbac-drizzle:build: CJS dist/pg/index.cjs.map     9.51 KB
+@holeauth/rbac-drizzle:build: CJS dist/mysql/index.cjs.map  9.74 KB
+@holeauth/rbac-drizzle:build: CJS dist/index.cjs.map        70.00 B
+@holeauth/rbac-drizzle:build: CJS dist/sqlite/index.cjs.map 9.61 KB
+@holeauth/rbac-drizzle:build: CJS ⚡️ Build success in 88ms
+@holeauth/rbac-yaml:build: DTS Build start
+@holeauth/rbac-drizzle:build: DTS Build start
+@holeauth/adapter-drizzle:build: DTS ⚡️ Build success in 1785ms
+@holeauth/adapter-drizzle:build: DTS dist/index.d.ts         13.00 B
+@holeauth/adapter-drizzle:build: DTS dist/mysql/index.d.ts   24.25 KB
+@holeauth/adapter-drizzle:build: DTS dist/pg/index.d.ts      24.01 KB
+@holeauth/adapter-drizzle:build: DTS dist/sqlite/index.d.ts  24.10 KB
+@holeauth/adapter-drizzle:build: DTS dist/index.d.cts        13.00 B
+@holeauth/adapter-drizzle:build: DTS dist/mysql/index.d.cts  24.25 KB
+@holeauth/adapter-drizzle:build: DTS dist/pg/index.d.cts     24.01 KB
+@holeauth/adapter-drizzle:build: DTS dist/sqlite/index.d.cts 24.10 KB
+@holeauth/rbac-yaml:build: DTS ⚡️ Build success in 576ms
+@holeauth/rbac-yaml:build: DTS dist/index.d.ts 4.85 KB
+@holeauth/idp-drizzle:build: DTS ⚡️ Build success in 1008ms
+@holeauth/idp-drizzle:build: DTS dist/index.d.ts     13.00 B
+@holeauth/idp-drizzle:build: DTS dist/pg/index.d.ts  38.67 KB
+@holeauth/idp-drizzle:build: DTS dist/index.d.cts    13.00 B
+@holeauth/idp-drizzle:build: DTS dist/pg/index.d.cts 38.67 KB
+@holeauth/passkey-drizzle:build: DTS ⚡️ Build success in 1438ms
+@holeauth/passkey-drizzle:build: DTS dist/index.d.ts         13.00 B
+@holeauth/passkey-drizzle:build: DTS dist/mysql/index.d.ts   6.83 KB
+@holeauth/passkey-drizzle:build: DTS dist/pg/index.d.ts      7.41 KB
+@holeauth/passkey-drizzle:build: DTS dist/sqlite/index.d.ts  6.80 KB
+@holeauth/passkey-drizzle:build: DTS dist/index.d.cts        13.00 B
+@holeauth/passkey-drizzle:build: DTS dist/mysql/index.d.cts  6.83 KB
+@holeauth/passkey-drizzle:build: DTS dist/pg/index.d.cts     7.41 KB
+@holeauth/passkey-drizzle:build: DTS dist/sqlite/index.d.cts 6.80 KB
+@holeauth/2fa-drizzle:build: DTS ⚡️ Build success in 1309ms
+@holeauth/2fa-drizzle:build: DTS dist/index.d.ts         13.00 B
+@holeauth/2fa-drizzle:build: DTS dist/mysql/index.d.ts   5.41 KB
+@holeauth/2fa-drizzle:build: DTS dist/pg/index.d.ts      6.02 KB
+@holeauth/2fa-drizzle:build: DTS dist/sqlite/index.d.ts  5.39 KB
+@holeauth/2fa-drizzle:build: DTS dist/index.d.cts        13.00 B
+@holeauth/2fa-drizzle:build: DTS dist/mysql/index.d.cts  5.41 KB
+@holeauth/2fa-drizzle:build: DTS dist/pg/index.d.cts     6.02 KB
+@holeauth/2fa-drizzle:build: DTS dist/sqlite/index.d.cts 5.39 KB
+@holeauth/rbac-drizzle:build: DTS ⚡️ Build success in 1287ms
+@holeauth/rbac-drizzle:build: DTS dist/index.d.ts         13.00 B
+@holeauth/rbac-drizzle:build: DTS dist/mysql/index.d.ts   10.80 KB
+@holeauth/rbac-drizzle:build: DTS dist/pg/index.d.ts      12.17 KB
+@holeauth/rbac-drizzle:build: DTS dist/sqlite/index.d.ts  10.74 KB
+@holeauth/rbac-drizzle:build: DTS dist/index.d.cts        13.00 B
+@holeauth/rbac-drizzle:build: DTS dist/mysql/index.d.cts  10.80 KB
+@holeauth/rbac-drizzle:build: DTS dist/pg/index.d.cts     12.17 KB
+@holeauth/rbac-drizzle:build: DTS dist/sqlite/index.d.cts 10.74 KB
+playground:build: cache miss, executing 850ae76f0e1fea4c
+playground:build: 
+playground:build: > playground@0.0.0 build /Users/robertjuliankratz/development/holeauth/apps/playground
+playground:build: > next build
+playground:build: 
+playground:build: ▲ Next.js 16.2.4 (Turbopack)
+playground:build: - Environments: .env.local
+playground:build: 
+playground:build: ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+playground:build:   Creating an optimized production build ...
+playground:build: ✓ Compiled successfully in 1788ms
+playground:build:   Running TypeScript ...
+docs:build:  ✓ Compiled successfully in 8.0s
+docs:build:    Skipping validation of types
+docs:build:    Skipping linting
+docs:build:    Collecting page data ...
+docs:build:    Generating static pages (0/26) ...
+docs:build:    Generating static pages (6/26) 
+docs:build:    Generating static pages (12/26) 
+docs:build:    Generating static pages (19/26) 
+docs:build:  ✓ Generating static pages (26/26)
+docs:build:    Finalizing page optimization ...
+docs:build:    Collecting build traces ...
+playground:build:   Finished TypeScript in 1485ms ...
+playground:build:   Collecting page data using 17 workers ...
+playground:build:   Generating static pages using 17 workers (0/26) ...
+playground:build: ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/password/reset". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+playground:build:     at S (/Users/robertjuliankratz/development/holeauth/apps/playground/.next/server/chunks/ssr/0p91_next_0-sx_63._.js:2:2692)
+playground:build:     at r (/Users/robertjuliankratz/development/holeauth/apps/playground/.next/server/chunks/ssr/0p91_next_0-sx_63._.js:4:6758)
+playground:build:     at /Users/robertjuliankratz/development/holeauth/apps/playground/.next/server/chunks/ssr/_0keqgnf._.js:1:2468
+playground:build:     at an (/Users/robertjuliankratz/development/holeauth/node_modules/.pnpm/next@16.2.4_react-dom@19.2.5_react@19.2.5__react@19.2.5/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:84267)
+playground:build:     at ai (/Users/robertjuliankratz/development/holeauth/node_modules/.pnpm/next@16.2.4_react-dom@19.2.5_react@19.2.5__react@19.2.5/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:86086)
+playground:build:     at al (/Users/robertjuliankratz/development/holeauth/node_modules/.pnpm/next@16.2.4_react-dom@19.2.5_react@19.2.5__react@19.2.5/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:107860)
+playground:build:     at ao (/Users/robertjuliankratz/development/holeauth/node_modules/.pnpm/next@16.2.4_react-dom@19.2.5_react@19.2.5__react@19.2.5/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:105275)
+playground:build:     at aa (/Users/robertjuliankratz/development/holeauth/node_modules/.pnpm/next@16.2.4_react-dom@19.2.5_react@19.2.5__react@19.2.5/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:84619)
+playground:build:     at ai (/Users/robertjuliankratz/development/holeauth/node_modules/.pnpm/next@16.2.4_react-dom@19.2.5_react@19.2.5__react@19.2.5/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:86135)
+playground:build:     at ai (/Users/robertjuliankratz/development/holeauth/node_modules/.pnpm/next@16.2.4_react-dom@19.2.5_react@19.2.5__react@19.2.5/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:104615)
+playground:build: Error occurred prerendering page "/password/reset". Read more: https://nextjs.org/docs/messages/prerender-error
+playground:build: Export encountered an error on /(guest)/password/reset/page: /password/reset, exiting the build.
+playground:build: ⨯ Next.js build worker exited with code: 1 and signal: null
+playground:build:  ELIFECYCLE  Command failed with exit code 1.
+playground#build:  WARNING  command finished with error, but continuing...
+docs:build:    Exporting (0/2) ...
+docs:build:  ✓ Exporting (2/2)
+docs:build: 
+docs:build: Route (app)                                 Size  First Load JS
+docs:build: ┌ ○ /                                      162 B         106 kB
+docs:build: ├ ○ /_not-found                            992 B         104 kB
+docs:build: └ ● /docs/[[...slug]]                     5.9 kB         147 kB
+docs:build:     ├ /docs/concepts
+docs:build:     ├ /docs/configuration
+docs:build:     ├ /docs/getting-started
+docs:build:     └ [+19 more paths]
+docs:build: + First Load JS shared by all             103 kB
+docs:build:   ├ chunks/399-cdf01d0572a8e055.js       46.2 kB
+docs:build:   ├ chunks/495ed1de-ef13b73ea9667117.js  54.2 kB
+docs:build:   └ other shared chunks (total)          2.08 kB
+docs:build: 
+docs:build: 
+docs:build: ○  (Static)  prerendered as static content
+docs:build: ●  (SSG)     prerendered as static HTML (uses generateStaticParams)
+docs:build: 
+ ERROR  client-playground#build: command (/Users/robertjuliankratz/development/holeauth/apps/client-playground) /Users/robertjuliankratz/Library/pnpm/.tools/pnpm/9.12.0/bin/pnpm run build exited (1)
+ ERROR  playground#build: command (/Users/robertjuliankratz/development/holeauth/apps/playground) /Users/robertjuliankratz/Library/pnpm/.tools/pnpm/9.12.0/bin/pnpm run build exited (1)
+
+ Tasks:    14 successful, 16 total
+Cached:    1 cached, 16 total
+  Time:    12.942s 
+Failed:    client-playground#build, playground#build
+
+ ERROR  run failed: command  exited (1)

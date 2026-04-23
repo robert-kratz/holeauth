@@ -1,0 +1,116 @@
+---
+title: Events & Audit Logging
+description: Observability, compliance logs, and reacting to security events in real time.
+---
+
+# Events & Audit Logging
+
+holeauth emits typed events for every meaningful action. They have two purposes:
+
+1. **Persistent audit trail** — `adapters.auditLog.record()` is called for every event. Your store is the source of truth for compliance.
+2. **Runtime observability** — `config.onEvent()` is called fire-and-forget for analytics, SIEM, webhooks, or real-time UI.
+
+## The event shape
+
+```ts
+interface HoleauthEvent {
+  type: HoleauthEventType;
+  userId?: string | null;
+  sessionId?: string | null;
+  at?: Date;
+  ip?: string | null;
+  userAgent?: string | null;
+  data?: Record<string, unknown> | null;
+}
+```
+
+## Event catalog
+
+| Type | When |
+| --- | --- |
+| `user.registered` | `/register` succeeds. |
+| `user.signed_in` | Any successful sign-in (password, SSO, passkey, 2FA). |
+| `user.signed_out` | `/signout` succeeds. |
+| `session.created` | A fresh session is issued. |
+| `session.rotated` | `/refresh` rotated the token. |
+| `session.revoked` | A session was manually revoked. |
+| `session.reuse_detected` | A replayed refresh token was seen. The entire family was revoked. |
+| `twofa.enabled` | TOTP setup confirmed. |
+| `twofa.disabled` | 2FA turned off. |
+| `twofa.verified` | `/2fa/verify` succeeded. |
+| `twofa.failed` | `/2fa/verify` rejected the code. |
+| `sso.authorize` | `/authorize/:provider` redirected to the IdP. |
+| `sso.callback_ok` | Provider callback verified. |
+| `sso.callback_failed` | State/nonce/PKCE/exchange failure. |
+| `account.linked` | A provider account was attached to a user. |
+| `account.unlinked` | A provider account was detached. |
+| `passkey.registered` | A WebAuthn credential was registered. |
+| `passkey.login` | A WebAuthn assertion succeeded. |
+| `passkey.failed` | A WebAuthn assertion failed verification. |
+
+## Example: streaming to a logger
+
+```ts
+import pino from 'pino';
+
+const log = pino({ name: 'holeauth' });
+
+createAuthHandler({
+  ...,
+  onEvent: (e) => {
+    log.info({
+      type: e.type,
+      userId: e.userId,
+      sessionId: e.sessionId,
+      ip: e.ip,
+      ua: e.userAgent,
+      ...e.data,
+    });
+  },
+});
+```
+
+## Example: security alerting
+
+```ts
+onEvent: async (e) => {
+  if (e.type === 'session.reuse_detected') {
+    await notifySecurityTeam({
+      userId: e.userId,
+      ip: e.ip,
+      userAgent: e.userAgent,
+    });
+  }
+  if (e.type === 'twofa.failed') {
+    await incrementRateLimitCounter(e.userId ?? e.ip ?? 'unknown');
+  }
+};
+```
+
+## Audit log adapter
+
+```ts
+interface AuditLogAdapter {
+  record(event: AdapterAuditEvent): Promise<void>; // awaited
+  list?(filter: { userId?: string; type?: string; limit?: number }): Promise<AdapterAuditEvent[]>;
+}
+```
+
+`record` is **awaited** during the flow, so it must be fast. If you need heavy enrichment, push to a queue in `record` and process it downstream.
+
+A minimal Postgres implementation:
+
+```ts
+const auditLogAdapter: AuditLogAdapter = {
+  async record(e) {
+    await db.insert(auditLogs).values({
+      type: e.type,
+      userId: e.userId ?? null,
+      sessionId: e.sessionId ?? null,
+      ip: e.ip ?? null,
+      userAgent: e.userAgent ?? null,
+      data: e.data ?? null,
+    });
+  },
+};
+```

@@ -1,0 +1,202 @@
+---
+title: HTTP Endpoints
+description: Every route mounted under /api/auth by createAuthHandler.
+---
+
+# HTTP Endpoints
+
+All routes are relative to `basePath` (default `/api/auth`).
+
+| Method | Path | Auth | CSRF | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET`  | `/session` | cookie | no | Current session or `null`. |
+| `GET`  | `/csrf` | no | no | Rotate / fetch the CSRF token. |
+| `POST` | `/register` | no | no | Create a new user. |
+| `POST` | `/signin` | no | no | Email/password sign-in (may return `pending2fa`). |
+| `POST` | `/signout` | cookie | **yes** | Revoke session & clear cookies. |
+| `POST` | `/refresh` | refresh cookie | no | Rotate refresh; mint new access & CSRF. |
+| `GET`  | `/authorize/:provider` | no | no | Start SSO; 302 to the provider. |
+| `GET`  | `/callback/:provider` | no | no | Finish SSO; 302 to `defaultRedirect`. |
+| `POST` | `/2fa/setup` | cookie | no | Generate TOTP secret & recovery codes. |
+| `POST` | `/2fa/verify` | pending2fa cookie | no | Verify TOTP; mint real tokens. |
+| `POST` | `/2fa/disable` | cookie | **yes** | Disable 2FA after verifying a code. |
+| `POST` | `/passkey/register/options` | cookie | **yes** | Get WebAuthn registration options. |
+| `POST` | `/passkey/register/verify` | cookie | **yes** | Persist a new credential. |
+| `POST` | `/passkey/login/options` | no | no | Get WebAuthn authentication options. |
+| `POST` | `/passkey/login/verify` | no | no | Verify assertion & mint tokens. |
+
+## `GET /session`
+
+```jsonc
+// 200 OK
+{ "userId": "u_123", "sessionId": "s_456", "expiresAt": 1735689600000 }
+
+// 200 OK — no session
+null
+```
+
+## `GET /csrf`
+
+Sets (or rotates) the `holeauth.csrf` cookie. Use it to bootstrap before sign-in.
+
+```jsonc
+// 200 OK
+{ "csrfToken": "…" }
+```
+
+## `POST /register`
+
+```jsonc
+// Request
+{ "email": "ada@example.com", "password": "…", "name": "Ada" }
+
+// 200 OK
+{ "user": { "id": "u_123", "email": "ada@example.com", "name": "Ada" } }
+
+// 409 ACCOUNT_CONFLICT — email already exists
+```
+
+## `POST /signin`
+
+```jsonc
+// Request
+{ "email": "ada@example.com", "password": "…" }
+
+// 200 OK — fully signed in
+{ "ok": true, "user": { "id": "…" }, "expiresAt": 1735689600000 }
+
+// 200 OK — 2FA required
+{ "pending2fa": true, "pendingExpiresAt": 1735689900000 }
+
+// 401 INVALID_CREDENTIALS
+```
+
+On success, `holeauth.access`, `holeauth.refresh`, `holeauth.csrf` cookies are set. On `pending2fa`, `holeauth.pending2fa` is set instead.
+
+## `POST /signout`
+
+Requires `x-csrf-token`.
+
+```jsonc
+// 200 OK
+{ "ok": true }
+```
+
+## `POST /refresh`
+
+No body. Uses the `holeauth.refresh` cookie automatically.
+
+```jsonc
+// 200 OK
+{ "ok": true, "expiresAt": 1735689600000 }
+
+// 401 REFRESH_REUSE — replay detected; family revoked
+// 401 SESSION_EXPIRED
+```
+
+## `GET /authorize/:provider`
+
+```
+302 Found
+Location: https://accounts.google.com/o/oauth2/v2/auth?...
+Set-Cookie: holeauth.oauthState=…; Path=/api/auth; HttpOnly
+Set-Cookie: holeauth.oauthPkce=…;  Path=/api/auth; HttpOnly
+```
+
+## `GET /callback/:provider?code=…&state=…`
+
+```
+302 Found
+Location: /dashboard     (configurable via defaultRedirect)
+Set-Cookie: holeauth.access=…
+Set-Cookie: holeauth.refresh=…
+Set-Cookie: holeauth.csrf=…
+```
+
+## `POST /2fa/setup`
+
+```jsonc
+// 200 OK
+{
+  "secret": "JBSWY3DPEHPK3PXP",
+  "otpauthUrl": "otpauth://totp/My%20App:ada@example.com?secret=…&issuer=My%20App",
+  "recoveryCodes": ["a1b2c3d4e5f6", "…"]
+}
+```
+
+## `POST /2fa/verify`
+
+```jsonc
+// Request
+{ "code": "123456" }  // TOTP or recovery code
+
+// 200 OK
+{ "ok": true, "user": { "id": "…" }, "expiresAt": 1735689600000 }
+
+// 401 INVALID_CREDENTIALS
+```
+
+## `POST /2fa/disable`
+
+Requires `x-csrf-token`.
+
+```jsonc
+// Request
+{ "code": "123456" }
+
+// 200 OK
+{ "ok": true }
+```
+
+## `POST /passkey/register/options`
+
+Requires `x-csrf-token`. Authenticated user only.
+
+```jsonc
+// 200 OK
+{
+  "options": { /* PublicKeyCredentialCreationOptionsJSON */ },
+  "challenge": "base64url-challenge"
+}
+```
+
+## `POST /passkey/register/verify`
+
+Requires `x-csrf-token`.
+
+```jsonc
+// Request
+{
+  "response": { /* from startRegistration() */ },
+  "expectedChallenge": "base64url-challenge",
+  "deviceName": "MacBook Touch ID"
+}
+
+// 200 OK
+{ "ok": true }
+```
+
+## `POST /passkey/login/options`
+
+```jsonc
+// Request (optional)
+{ "userId": "u_123" }  // omit for passwordless/discovery
+
+// 200 OK
+{ "options": { /* PublicKeyCredentialRequestOptionsJSON */ }, "challenge": "…" }
+```
+
+## `POST /passkey/login/verify`
+
+```jsonc
+// Request
+{
+  "response": { /* from startAuthentication() */ },
+  "expectedChallenge": "…"
+}
+
+// 200 OK
+{ "ok": true, "user": { "id": "…" }, "expiresAt": 1735689600000 }
+
+// 401 INVALID_CREDENTIALS
+```

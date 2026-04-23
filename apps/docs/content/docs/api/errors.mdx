@@ -1,0 +1,63 @@
+---
+title: Errors
+description: HTTP status codes, error classes, and when holeauth emits each.
+---
+
+# Errors
+
+holeauth exposes a small class hierarchy under `@holeauth/core/errors`:
+
+```ts
+class HoleauthError extends Error {
+  code: string;
+  status: number;
+}
+```
+
+All specific errors extend `HoleauthError`. The Next.js handler serializes them as:
+
+```jsonc
+{ "error": { "code": "INVALID_CREDENTIALS", "message": "Invalid credentials" } }
+```
+
+with the appropriate HTTP status.
+
+## Error catalog
+
+| Code | Status | Class | Meaning |
+| --- | --- | --- | --- |
+| `INVALID_TOKEN` | 401 | `InvalidTokenError` | JWT signature or format invalid / malformed. |
+| `SESSION_EXPIRED` | 401 | `SessionExpiredError` | Session is past `expiresAt` or has been revoked. |
+| `INVALID_CREDENTIALS` | 401 | `CredentialsError` | Bad email/password, bad TOTP, failed passkey assertion. |
+| `TWOFA_REQUIRED` | 401 | `TwoFactorRequiredError` | 2FA step not completed. |
+| `CSRF_FAILED` | 403 | `CsrfError` | CSRF header missing or mismatched. |
+| `ACCOUNT_CONFLICT` | 409 | `AccountConflictError` | Email already registered. |
+| `REFRESH_REUSE` | 401 | `RefreshReuseError` | Replayed refresh token detected — family revoked. |
+| `PASSKEY_NOT_CONFIGURED` | 500 | `PasskeyNotConfiguredError` | Missing `passkey` config or `@simplewebauthn/server`. |
+| `PROVIDER_ERROR` | 502 | `ProviderError` | Upstream OAuth/OIDC provider failed. |
+| `ADAPTER_ERROR` | 500 | `AdapterError` | Your adapter threw or returned invalid data. |
+
+## Handling errors in custom code
+
+```ts
+import { HoleauthError, InvalidTokenError } from '@holeauth/core';
+
+try {
+  await auth.getSession(token);
+} catch (err) {
+  if (err instanceof InvalidTokenError) {
+    // surface a nice message
+  } else if (err instanceof HoleauthError) {
+    return new Response(err.message, { status: err.status });
+  }
+  throw err;
+}
+```
+
+## Client-side UX guidance
+
+- `INVALID_CREDENTIALS` — never distinguish "no such user" from "wrong password".
+- `REFRESH_REUSE` — treat as a hard sign-out; the user's current tokens are invalid everywhere.
+- `CSRF_FAILED` — almost always a bug in the client (missing header) or a cookie mismatch across subdomains.
+- `ACCOUNT_CONFLICT` — show "that email is already registered" on the sign-up form.
+- `PROVIDER_ERROR` — usually transient; retry with exponential backoff.

@@ -1,0 +1,230 @@
+
+> holeauth@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth
+> turbo run typecheck "--force"
+
+
+   • Packages in scope: @holeauth/adapter-drizzle, @holeauth/core, @holeauth/eslint-config, @holeauth/nextjs, @holeauth/plugin-2fa, @holeauth/plugin-passkey, @holeauth/plugin-rbac, @holeauth/rbac-yaml, @holeauth/react, @holeauth/tsconfig, docs, playground
+   • Running typecheck in 12 packages
+   • Remote caching disabled
+
+docs:typecheck: cache bypass, force executing 9332e3cd445d9a9c
+@holeauth/react:typecheck: cache bypass, force executing 91bc80226b928e34
+@holeauth/react:build: cache bypass, force executing fcc8a1a8aeadf755
+@holeauth/core:build: cache bypass, force executing 8b498c1ccce89a81
+@holeauth/core:typecheck: cache bypass, force executing 6da351051c6a1202
+docs:typecheck: 
+docs:typecheck: > docs@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/apps/docs
+docs:typecheck: > echo "docs: type-checked via next build"
+docs:typecheck: 
+@holeauth/react:typecheck: 
+@holeauth/react:typecheck: > @holeauth/react@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/packages/react
+@holeauth/react:typecheck: > tsc --noEmit
+@holeauth/react:typecheck: 
+@holeauth/core:typecheck: 
+@holeauth/core:typecheck: > @holeauth/core@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/packages/core
+@holeauth/core:typecheck: > tsc --noEmit
+@holeauth/core:typecheck: 
+@holeauth/react:build: 
+@holeauth/react:build: > @holeauth/react@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/react
+@holeauth/react:build: > tsup
+@holeauth/react:build: 
+@holeauth/core:build: 
+@holeauth/core:build: > @holeauth/core@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/core
+@holeauth/core:build: > tsup
+@holeauth/core:build: 
+docs:typecheck: docs: type-checked via next build
+@holeauth/react:build: CLI Building entry: src/index.ts
+@holeauth/react:build: CLI Using tsconfig: tsconfig.json
+@holeauth/react:build: CLI tsup v8.5.1
+@holeauth/react:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/react/tsup.config.ts
+@holeauth/core:build: CLI Building entry: src/index.ts, src/adapters/index.ts, src/cookies/index.ts, src/errors/index.ts, src/events/index.ts, src/flows/index.ts, src/jwt/index.ts, src/otp/index.ts, src/password/index.ts, src/plugins/index.ts, src/session/index.ts, src/sso/index.ts
+@holeauth/core:build: CLI Using tsconfig: tsconfig.json
+@holeauth/core:build: CLI tsup v8.5.1
+@holeauth/core:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/core/tsup.config.ts
+@holeauth/react:build: CLI Target: es2022
+@holeauth/react:build: CLI Cleaning output folder
+@holeauth/react:build: ESM Build start
+@holeauth/core:build: CLI Target: es2022
+@holeauth/core:build: CLI Cleaning output folder
+@holeauth/core:build: ESM Build start
+@holeauth/react:build: ESM dist/index.js     1.35 KB
+@holeauth/react:build: ESM dist/index.js.map 2.93 KB
+@holeauth/react:build: ESM ⚡️ Build success in 6ms
+@holeauth/core:build: Generated an empty chunk: "index".
+@holeauth/core:build: "decodeJwt" is imported from external module "jose" but never used in "dist/flows/index.js".
+@holeauth/core:build: "jwtVerify" and "decodeJwt" are imported from external module "jose" but never used in "dist/plugins/index.js".
+@holeauth/core:build: "decodeJwt" is imported from external module "jose" but never used in "dist/session/index.js".
+@holeauth/core:build: "jwtVerify" is imported from external module "jose" but never used in "dist/sso/index.js".
+@holeauth/core:build: ESM dist/password/index.js     2.28 KB
+@holeauth/core:build: ESM dist/events/index.js       1.43 KB
+@holeauth/core:build: ESM dist/jwt/index.js          1.41 KB
+@holeauth/core:build: ESM dist/cookies/index.js      2.35 KB
+@holeauth/core:build: ESM dist/errors/index.js       1.82 KB
+@holeauth/core:build: ESM dist/index.js              46.95 KB
+@holeauth/core:build: ESM dist/flows/index.js        19.95 KB
+@holeauth/core:build: ESM dist/plugins/index.js      14.06 KB
+@holeauth/core:build: ESM dist/adapters/index.js     68.00 B
+@holeauth/core:build: ESM dist/sso/index.js          14.90 KB
+@holeauth/core:build: ESM dist/otp/index.js          554.00 B
+@holeauth/core:build: ESM dist/session/index.js      9.27 KB
+@holeauth/core:build: ESM dist/cookies/index.js.map  6.41 KB
+@holeauth/core:build: ESM dist/jwt/index.js.map      4.71 KB
+@holeauth/core:build: ESM dist/password/index.js.map 6.14 KB
+@holeauth/core:build: ESM dist/flows/index.js.map    57.52 KB
+@holeauth/core:build: ESM dist/events/index.js.map   4.21 KB
+@holeauth/core:build: ESM dist/errors/index.js.map   3.17 KB
+@holeauth/core:build: ESM dist/plugins/index.js.map  42.39 KB
+@holeauth/core:build: ESM dist/adapters/index.js.map 69.00 B
+@holeauth/core:build: ESM dist/sso/index.js.map      40.90 KB
+@holeauth/core:build: ESM dist/index.js.map          129.87 KB
+@holeauth/core:build: ESM dist/otp/index.js.map      1.24 KB
+@holeauth/core:build: ESM dist/session/index.js.map  27.35 KB
+@holeauth/core:build: ESM ⚡️ Build success in 154ms
+@holeauth/react:build: DTS Build start
+@holeauth/core:build: DTS Build start
+@holeauth/react:build: DTS ⚡️ Build success in 358ms
+@holeauth/react:build: DTS dist/index.d.ts 904.00 B
+@holeauth/core:build: DTS ⚡️ Build success in 1942ms
+@holeauth/core:build: DTS dist/index.d.ts             2.23 KB
+@holeauth/core:build: DTS dist/errors/index.d.ts      1.16 KB
+@holeauth/core:build: DTS dist/cookies/index.d.ts     312.00 B
+@holeauth/core:build: DTS dist/events/index.d.ts      198.00 B
+@holeauth/core:build: DTS dist/flows/index.d.ts       349.00 B
+@holeauth/core:build: DTS dist/jwt/index.d.ts         109.00 B
+@holeauth/core:build: DTS dist/otp/index.d.ts         121.00 B
+@holeauth/core:build: DTS dist/password/index.d.ts    63.00 B
+@holeauth/core:build: DTS dist/plugins/index.d.ts     635.00 B
+@holeauth/core:build: DTS dist/session/index.d.ts     263.00 B
+@holeauth/core:build: DTS dist/sso/index.d.ts         382.00 B
+@holeauth/core:build: DTS dist/adapters/index.d.ts    292.00 B
+@holeauth/core:build: DTS dist/index-BLsVi_4b.d.ts    2.81 KB
+@holeauth/core:build: DTS dist/index-GfSJ4Edm.d.ts    1.36 KB
+@holeauth/core:build: DTS dist/index-C4-Nhdq1.d.ts    4.23 KB
+@holeauth/core:build: DTS dist/index-CjEXpqaW.d.ts    879.00 B
+@holeauth/core:build: DTS dist/index-BwEvEa8-.d.ts    888.00 B
+@holeauth/core:build: DTS dist/index-BYtkmk9_.d.ts    635.00 B
+@holeauth/core:build: DTS dist/index-BQzxkf-B.d.ts    3.20 KB
+@holeauth/core:build: DTS dist/registry-CEbWcA7g.d.ts 3.27 KB
+@holeauth/core:build: DTS dist/index-Cz-CcCwR.d.ts    2.76 KB
+@holeauth/core:build: DTS dist/index-CXIasc3Q.d.ts    3.98 KB
+@holeauth/core:build: DTS dist/index-BFFDZEvm.d.ts    17.34 KB
+@holeauth/core:build: DTS dist/index-TW_7d8ir.d.ts    5.53 KB
+@holeauth/plugin-passkey:build: cache bypass, force executing 108aed17a72a382b
+@holeauth/nextjs:build: cache bypass, force executing eb5bb9391166efdc
+@holeauth/plugin-passkey:typecheck: cache bypass, force executing 8af30a96fce89c81
+@holeauth/plugin-rbac:build: cache bypass, force executing effb04134fd338a8
+@holeauth/plugin-2fa:build: cache bypass, force executing 8e2bdaac41a75f4c
+@holeauth/adapter-drizzle:typecheck: cache bypass, force executing 39f16d804b21f00a
+@holeauth/plugin-2fa:typecheck: cache bypass, force executing e2ce7d683c97a466
+@holeauth/plugin-rbac:typecheck: cache bypass, force executing 16602db8715ecb75
+@holeauth/nextjs:typecheck: cache bypass, force executing f35349d58af97df7
+@holeauth/nextjs:typecheck: 
+@holeauth/nextjs:typecheck: > @holeauth/nextjs@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/packages/nextjs
+@holeauth/nextjs:typecheck: > tsc --noEmit
+@holeauth/nextjs:typecheck: 
+@holeauth/plugin-rbac:build: 
+@holeauth/plugin-rbac:build: > @holeauth/plugin-rbac@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/plugin-rbac
+@holeauth/plugin-rbac:build: > tsup
+@holeauth/plugin-rbac:build: 
+@holeauth/nextjs:build: 
+@holeauth/nextjs:build: > @holeauth/nextjs@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/nextjs
+@holeauth/nextjs:build: > tsup
+@holeauth/nextjs:build: 
+@holeauth/plugin-passkey:typecheck: 
+@holeauth/plugin-passkey:typecheck: > @holeauth/plugin-passkey@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/packages/plugin-passkey
+@holeauth/plugin-passkey:typecheck: > tsc --noEmit
+@holeauth/plugin-passkey:typecheck: 
+@holeauth/plugin-2fa:typecheck: 
+@holeauth/plugin-2fa:typecheck: > @holeauth/plugin-2fa@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/packages/plugin-2fa
+@holeauth/plugin-2fa:typecheck: > tsc --noEmit
+@holeauth/plugin-2fa:typecheck: 
+@holeauth/plugin-passkey:build: 
+@holeauth/plugin-passkey:build: > @holeauth/plugin-passkey@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/plugin-passkey
+@holeauth/plugin-passkey:build: > tsup
+@holeauth/plugin-passkey:build: 
+@holeauth/plugin-2fa:build: 
+@holeauth/plugin-2fa:build: > @holeauth/plugin-2fa@0.0.0 build /Users/robertjuliankratz/development/holeauth/packages/plugin-2fa
+@holeauth/plugin-2fa:build: > tsup
+@holeauth/plugin-2fa:build: 
+@holeauth/adapter-drizzle:typecheck: 
+@holeauth/adapter-drizzle:typecheck: > @holeauth/adapter-drizzle@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/packages/adapter-drizzle
+@holeauth/adapter-drizzle:typecheck: > tsc --noEmit
+@holeauth/adapter-drizzle:typecheck: 
+@holeauth/plugin-rbac:typecheck: 
+@holeauth/plugin-rbac:typecheck: > @holeauth/plugin-rbac@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/packages/plugin-rbac
+@holeauth/plugin-rbac:typecheck: > tsc --noEmit
+@holeauth/plugin-rbac:typecheck: 
+@holeauth/plugin-rbac:build: CLI Building entry: src/index.ts
+@holeauth/nextjs:build: CLI Building entry: src/index.ts, src/middleware.ts
+@holeauth/plugin-rbac:build: CLI Using tsconfig: tsconfig.json
+@holeauth/nextjs:build: CLI Using tsconfig: tsconfig.json
+@holeauth/plugin-rbac:build: CLI tsup v8.5.1
+@holeauth/plugin-rbac:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/plugin-rbac/tsup.config.ts
+@holeauth/nextjs:build: CLI tsup v8.5.1
+@holeauth/nextjs:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/nextjs/tsup.config.ts
+@holeauth/nextjs:build: CLI Target: es2022
+@holeauth/plugin-rbac:build: CLI Target: es2022
+@holeauth/nextjs:build: CLI Cleaning output folder
+@holeauth/plugin-rbac:build: CLI Cleaning output folder
+@holeauth/plugin-passkey:build: CLI Building entry: src/index.ts
+@holeauth/nextjs:build: ESM Build start
+@holeauth/plugin-passkey:build: CLI Using tsconfig: tsconfig.json
+@holeauth/plugin-rbac:build: ESM Build start
+@holeauth/plugin-passkey:build: CLI tsup v8.5.1
+@holeauth/plugin-passkey:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/plugin-passkey/tsup.config.ts
+@holeauth/plugin-passkey:build: CLI Target: es2022
+@holeauth/plugin-2fa:build: CLI Building entry: src/index.ts
+@holeauth/plugin-2fa:build: CLI Using tsconfig: tsconfig.json
+@holeauth/plugin-2fa:build: CLI tsup v8.5.1
+@holeauth/plugin-2fa:build: CLI Using tsup config: /Users/robertjuliankratz/development/holeauth/packages/plugin-2fa/tsup.config.ts
+@holeauth/plugin-passkey:build: CLI Cleaning output folder
+@holeauth/plugin-passkey:build: ESM Build start
+@holeauth/plugin-2fa:build: CLI Target: es2022
+@holeauth/plugin-2fa:build: CLI Cleaning output folder
+@holeauth/plugin-2fa:build: ESM Build start
+@holeauth/nextjs:build: ESM dist/middleware.js     1.14 KB
+@holeauth/nextjs:build: ESM dist/index.js          13.62 KB
+@holeauth/nextjs:build: ESM dist/middleware.js.map 2.52 KB
+@holeauth/nextjs:build: ESM dist/index.js.map      28.04 KB
+@holeauth/nextjs:build: ESM ⚡️ Build success in 16ms
+@holeauth/plugin-rbac:build: ESM dist/index.js     8.22 KB
+@holeauth/plugin-rbac:build: ESM dist/index.js.map 23.00 KB
+@holeauth/plugin-rbac:build: ESM ⚡️ Build success in 53ms
+@holeauth/plugin-passkey:build: ESM dist/index.js     9.91 KB
+@holeauth/plugin-passkey:build: ESM dist/index.js.map 22.78 KB
+@holeauth/plugin-passkey:build: ESM ⚡️ Build success in 54ms
+@holeauth/plugin-2fa:build: ESM dist/index.js     9.54 KB
+@holeauth/plugin-2fa:build: ESM dist/index.js.map 22.94 KB
+@holeauth/plugin-2fa:build: ESM ⚡️ Build success in 52ms
+@holeauth/plugin-rbac:build: DTS Build start
+@holeauth/nextjs:build: DTS Build start
+@holeauth/plugin-passkey:build: DTS Build start
+@holeauth/plugin-2fa:build: DTS Build start
+@holeauth/plugin-rbac:build: DTS ⚡️ Build success in 576ms
+@holeauth/plugin-rbac:build: DTS dist/index.d.ts 5.42 KB
+@holeauth/plugin-2fa:build: DTS ⚡️ Build success in 586ms
+@holeauth/plugin-2fa:build: DTS dist/index.d.ts 3.01 KB
+@holeauth/rbac-yaml:typecheck: cache bypass, force executing ff8b87b38738d181
+@holeauth/plugin-passkey:build: DTS ⚡️ Build success in 685ms
+@holeauth/plugin-passkey:build: DTS dist/index.d.ts 2.67 KB
+@holeauth/rbac-yaml:typecheck: 
+@holeauth/rbac-yaml:typecheck: > @holeauth/rbac-yaml@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/packages/rbac-yaml
+@holeauth/rbac-yaml:typecheck: > tsc --noEmit
+@holeauth/rbac-yaml:typecheck: 
+@holeauth/nextjs:build: DTS ⚡️ Build success in 992ms
+@holeauth/nextjs:build: DTS dist/index.d.ts      2.18 KB
+@holeauth/nextjs:build: DTS dist/middleware.d.ts 819.00 B
+playground:typecheck: cache bypass, force executing 5fd98584a519fddd
+playground:typecheck: 
+playground:typecheck: > playground@0.0.0 typecheck /Users/robertjuliankratz/development/holeauth/apps/playground
+playground:typecheck: > tsc --noEmit
+playground:typecheck: 
+playground:typecheck: lib/auth.ts(253,5): error TS2353: Object literal may only specify known properties, and 'file' does not exist in type 'RbacOptions'.
+playground:typecheck:  ELIFECYCLE  Command failed with exit code 2.
+
+ Tasks:    15 successful, 16 total
+Cached:    0 cached, 16 total
+  Time:    5.815s 
+Failed:    playground#typecheck
+
+ ELIFECYCLE  Command failed with exit code 2.

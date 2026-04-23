@@ -1,0 +1,112 @@
+---
+title: Passkeys (WebAuthn)
+description: Add passwordless sign-in with platform authenticators using WebAuthn.
+---
+
+# Passkeys (WebAuthn)
+
+holeauth implements WebAuthn registration and authentication via [`@simplewebauthn/server`](https://simplewebauthn.dev). Use it for passwordless sign-in, second factor, or step-up auth.
+
+> Passkey endpoints are **Node-only**. Set `export const runtime = 'nodejs'` on your auth route handler.
+
+## What you need
+
+```bash
+pnpm add @simplewebauthn/server @simplewebauthn/browser
+```
+
+- `adapters.passkey` implemented (see [Adapters reference](/docs/api/adapters)).
+- A `passkey` config block:
+
+```ts
+passkey: {
+  rpID: 'example.com',            // no scheme, no port
+  rpName: 'My App',
+  origin: 'https://example.com',  // or an array for multiple origins
+}
+```
+
+## Registering a passkey
+
+The user must already be authenticated. Typical flow:
+
+```ts
+import { startRegistration } from '@simplewebauthn/browser';
+
+// 1. Ask the server for a challenge.
+const optsRes = await fetch('/api/auth/passkey/register/options', {
+  method: 'POST',
+  headers: { 'x-csrf-token': csrf },
+});
+const { options, challenge } = await optsRes.json();
+
+// 2. Browser creates the credential.
+const attestation = await startRegistration(options as any);
+
+// 3. Send it back with the original challenge.
+await fetch('/api/auth/passkey/register/verify', {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    'x-csrf-token': csrf,
+  },
+  body: JSON.stringify({
+    response: attestation,
+    expectedChallenge: challenge,
+    deviceName: 'MacBook Touch ID',
+  }),
+});
+```
+
+Emits `passkey.registered` on success.
+
+## Signing in with a passkey
+
+Completely passwordless — no prior authentication needed. The `userId` is discovered from the assertion:
+
+```ts
+import { startAuthentication } from '@simplewebauthn/browser';
+
+const optsRes = await fetch('/api/auth/passkey/login/options', { method: 'POST' });
+const { options, challenge } = await optsRes.json();
+
+const assertion = await startAuthentication(options as any);
+
+const res = await fetch('/api/auth/passkey/login/verify', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    response: assertion,
+    expectedChallenge: challenge,
+  }),
+});
+
+if (res.ok) window.location.href = '/dashboard';
+```
+
+Emits `passkey.login` on success, or `passkey.failed` on a bad assertion.
+
+## Challenge storage
+
+Challenges are returned to the client and must be echoed back in `expectedChallenge`. The server verifies that the assertion contains the same challenge. There is no per-user server-side challenge store, which means challenges work in stateless deployments.
+
+## Listing & revoking credentials
+
+There is no built-in UI endpoint, but you can implement it with your passkey adapter:
+
+```ts
+// list
+const credentials = await passkeyAdapter.list(userId);
+
+// revoke
+await passkeyAdapter.delete(credential.id);
+```
+
+Expose these through your own authenticated API endpoints.
+
+## Errors
+
+| Code | Cause |
+| --- | --- |
+| `PASSKEY_NOT_CONFIGURED` | `adapters.passkey` is missing, or `@simplewebauthn/server` is not installed. |
+| `INVALID_CREDENTIALS` | Assertion failed verification. |

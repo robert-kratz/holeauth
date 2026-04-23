@@ -1,0 +1,14 @@
+node_modules
+dist
+.next
+out
+.turbo
+coverage
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

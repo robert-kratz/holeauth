@@ -1,0 +1,156 @@
+---
+title: Configuration
+description: Every option accepted by defineHoleauth / createAuthHandler, with defaults and guidance.
+---
+
+# Configuration reference
+
+`defineHoleauth` (and its Next.js wrapper `createAuthHandler`) accept a single config object:
+
+```ts
+import { defineHoleauth } from '@holeauth/core';
+
+const auth = defineHoleauth({
+  secrets,
+  adapters,
+  tokens,
+  providers,
+  passkey,
+  allowDangerousEmailAccountLinking,
+  onEvent,
+});
+```
+
+## `secrets` (required)
+
+```ts
+secrets: {
+  jwtSecret: string | Uint8Array;
+}
+```
+
+- Must be **at least 32 bytes** of entropy (256-bit).
+- Used to sign and verify every access token with HS256.
+- Rotate by setting a new value and invalidating existing sessions.
+
+```bash
+# generate a strong secret
+node -e "console.log(crypto.randomBytes(32).toString('base64url'))"
+```
+
+## `adapters` (required)
+
+```ts
+adapters: {
+  user: UserAdapter;                         // required
+  session: SessionAdapter;                   // required
+  auditLog: AuditLogAdapter;                 // required
+  account?: AccountAdapter;                  // required for SSO
+  verificationToken?: VerificationTokenAdapter;
+  passkey?: PasskeyAdapter;                  // required for WebAuthn
+}
+```
+
+See [Adapters reference](/docs/api/adapters) for full interface signatures.
+
+## `tokens` (optional)
+
+```ts
+tokens: {
+  accessTtl?: number;        // seconds  — default 900   (15 min)
+  refreshTtl?: number;       // seconds  — default 2_592_000 (30 days)
+  pending2faTtl?: number;    // seconds  — default 300  (5 min)
+  cookiePrefix?: string;     // default 'holeauth'
+  cookieDomain?: string;     // e.g. '.example.com'
+  cookieSecure?: boolean;    // auto-true in production
+  sameSite?: 'lax' | 'strict' | 'none'; // default 'lax'
+}
+```
+
+Cookie names derive from the prefix:
+
+| Kind | Cookie name (default) | httpOnly | Path |
+| --- | --- | --- | --- |
+| access | `holeauth.access` | yes | `/` |
+| refresh | `holeauth.refresh` | yes | `/api/auth` |
+| csrf | `holeauth.csrf` | no | `/` |
+| pending2fa | `holeauth.pending2fa` | yes | `/` |
+| oauthState | `holeauth.oauthState` | yes | `/api/auth` |
+| oauthPkce | `holeauth.oauthPkce` | yes | `/api/auth` |
+
+## `providers` (optional)
+
+Array of OIDC / OAuth2 providers. Use the built-in helpers or declare your own:
+
+```ts
+import { GoogleProvider, GithubProvider } from '@holeauth/core/sso';
+
+providers: [
+  GoogleProvider({
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    redirectUri: 'https://example.com/api/auth/callback/google',
+    scopes: ['openid', 'email', 'profile'], // default
+  }),
+  GithubProvider({
+    clientId: process.env.GITHUB_CLIENT_ID!,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    redirectUri: 'https://example.com/api/auth/callback/github',
+  }),
+];
+```
+
+See [SSO guide](/docs/guides/sso) for custom providers.
+
+## `passkey` (optional)
+
+Enables the `/api/auth/passkey/*` endpoints. Requires `adapters.passkey` and the `@simplewebauthn/server` dependency installed.
+
+```ts
+passkey: {
+  rpID: string;                   // e.g. 'example.com' — do NOT include scheme
+  rpName: string;                 // e.g. 'My App'
+  origin: string | string[];      // e.g. 'https://example.com'
+}
+```
+
+For multi-domain you can pass an array of origins.
+
+## `allowDangerousEmailAccountLinking`
+
+```ts
+allowDangerousEmailAccountLinking?: boolean; // default false
+```
+
+When `true`, a new SSO sign-in whose email matches an **existing local account** links the two automatically. This is convenient but allows an attacker who controls a third-party account with the same email to hijack the local account if that email is not verified locally. Keep it `false` unless you understand the implications.
+
+## `onEvent`
+
+```ts
+onEvent?: (event: HoleauthEvent) => void | Promise<void>;
+```
+
+Fire-and-forget handler for every event emitted by holeauth. See [Events & Audit](/docs/guides/events-audit) and the [event type reference](/docs/api/events).
+
+## Environment variables (convention)
+
+holeauth does not read `process.env` for you. By convention:
+
+```bash
+HOLEAUTH_SECRET=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+```
+
+## Minimal valid config
+
+```ts
+defineHoleauth({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: { user, session, auditLog },
+});
+```
+
+This gives you registration, email/password sign-in, sign-out, refresh rotation, and session reads — without SSO, 2FA, or passkeys.

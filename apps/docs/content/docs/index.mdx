@@ -1,0 +1,43 @@
+---
+title: Introduction
+description: A modular, edge-native authentication ecosystem for modern TypeScript applications.
+---
+
+# holeauth
+
+**holeauth** is a modular, edge-native authentication ecosystem for modern TypeScript applications. It ships production-grade auth primitives behind a clean adapter pattern — you bring the database, holeauth brings the cryptography, the token lifecycle, and the integration glue.
+
+## Highlights
+
+- **Edge-first** — powered by [`jose`](https://github.com/panva/jose) and WebCrypto with a runtime-detected Argon2id / PBKDF2 password hasher.
+- **Adapter-based** — holeauth never touches your database directly. Implement a small set of interfaces, or use a reference adapter.
+- **Framework-agnostic core** — first-class Next.js (App Router) handlers and middleware today; Vue and Svelte on the roadmap.
+- **Secure by default** — rotating refresh tokens with reuse detection, `httpOnly` access cookies, double-submit CSRF, constant-time comparisons, mandatory audit logging.
+- **Full auth toolkit** — email / password, TOTP 2FA with recovery codes, WebAuthn passkeys, OIDC (Google) and OAuth2 (GitHub), account linking, numeric OTP helpers, and 19 observable event types.
+
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| [`@holeauth/core`](/docs/packages/core) | Primitives: JWT, sessions, password, TOTP/OTP, OIDC/OAuth2, WebAuthn, events, adapters. |
+| [`@holeauth/nextjs`](/docs/packages/nextjs) | App Router route handler, middleware, cookie helpers. |
+| [`@holeauth/react`](/docs/packages/react) | `HoleauthProvider`, `useSession`, `useAuth` hooks. |
+| [`@holeauth/adapter-prisma`](/docs/packages/adapter-prisma) | Prisma reference adapter. |
+| [`@holeauth/adapter-drizzle`](/docs/packages/adapter-drizzle) | Drizzle reference adapter. |
+
+## What can you build?
+
+- Classic **email + password** authentication with argon2 hashing.
+- **Two-factor authentication** (TOTP) with recovery codes and a `pending2fa` transition step.
+- **WebAuthn passkeys** for passwordless sign-in and second factor.
+- **Single Sign-On** with Google (OIDC + PKCE) and GitHub (OAuth2), or your own provider.
+- **Session management** with rotating refresh tokens, family tracking, and reuse detection.
+- **CSRF-protected** mutation endpoints using a double-submit cookie pattern.
+- **Audit logging** and observability via a typed event stream.
+
+## Next steps
+
+- Follow the [Getting Started](/docs/getting-started) guide to wire holeauth into a Next.js app.
+- Read [Core Concepts](/docs/concepts) for the mental model.
+- Jump into the [Guides](/docs/guides) for end-to-end flows.
+- Browse the [Configuration reference](/docs/configuration) for every option.

@@ -1,0 +1,60 @@
+{
+  "name": "@holeauth/plugin-rbac",
+  "version": "0.0.0",
+  "description": "holeauth plugin: headless role/group/permission system with Minecraft-style wildcards and negations. Use @holeauth/rbac-yaml for YAML config, @holeauth/rbac-drizzle for DB storage.",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/plugin-rbac"
+  },
+  "keywords": [
+    "holeauth",
+    "holeauth-plugin",
+    "rbac",
+    "permissions",
+    "authorization"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "cjs-error.cjs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "@holeauth/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@holeauth/core": "workspace:*",
+    "@holeauth/eslint-config": "workspace:*",
+    "@holeauth/tsconfig": "workspace:*",
+    "@types/node": "^20.16.10",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

@@ -1,0 +1,83 @@
+---
+title: Events
+description: Complete catalog of events emitted by holeauth.
+---
+
+# Events
+
+Every event passes through two sinks:
+
+1. `adapters.auditLog.record(event)` — **persisted**, awaited.
+2. `config.onEvent(event)` — **fire-and-forget**, never blocks flows.
+
+```ts
+interface HoleauthEvent {
+  type: HoleauthEventType;
+  userId?: string | null;
+  sessionId?: string | null;
+  at?: Date;
+  ip?: string | null;
+  userAgent?: string | null;
+  data?: Record<string, unknown> | null;
+}
+```
+
+## Catalog
+
+### User lifecycle
+
+| Type | Emitted when | Notable `data` |
+| --- | --- | --- |
+| `user.registered` | `/register` succeeds | `email` |
+| `user.signed_in` | Any successful sign-in | `method`: `'password' \| 'sso' \| 'passkey' \| '2fa'` |
+| `user.signed_out` | `/signout` succeeds | — |
+
+### Sessions
+
+| Type | Emitted when |
+| --- | --- |
+| `session.created` | New session row created. |
+| `session.rotated` | Refresh token rotated. |
+| `session.revoked` | Session manually revoked. |
+| `session.reuse_detected` | Replayed refresh token; **family was revoked**. |
+
+### Two-factor
+
+| Type | Emitted when |
+| --- | --- |
+| `twofa.enabled` | TOTP setup confirmed. |
+| `twofa.disabled` | `/2fa/disable` succeeds. |
+| `twofa.verified` | `/2fa/verify` succeeds. |
+| `twofa.failed` | `/2fa/verify` rejected the code. |
+
+### SSO
+
+| Type | Emitted when | `data` |
+| --- | --- | --- |
+| `sso.authorize` | Redirect to IdP. | `provider` |
+| `sso.callback_ok` | Callback verified & user signed in. | `provider`, `isNewUser` |
+| `sso.callback_failed` | Any error on callback. | `provider`, `reason` |
+| `account.linked` | Provider account linked. | `provider`, `providerAccountId` |
+| `account.unlinked` | Provider account unlinked. | `provider`, `providerAccountId` |
+
+### Passkey
+
+| Type | Emitted when |
+| --- | --- |
+| `passkey.registered` | New credential stored. |
+| `passkey.login` | Assertion verified. |
+| `passkey.failed` | Assertion failed verification. |
+
+## Type
+
+```ts
+type HoleauthEventType =
+  | 'user.registered' | 'user.signed_in' | 'user.signed_out'
+  | 'session.created' | 'session.rotated' | 'session.revoked' | 'session.reuse_detected'
+  | 'twofa.enabled' | 'twofa.disabled' | 'twofa.verified' | 'twofa.failed'
+  | 'sso.authorize' | 'sso.callback_ok' | 'sso.callback_failed'
+  | 'account.linked' | 'account.unlinked'
+  | 'passkey.registered' | 'passkey.login' | 'passkey.failed';
+```
+
+See the [Events & Audit guide](/docs/guides/events-audit) for end-to-end examples.

@@ -1,0 +1,121 @@
+{
+  "name": "@holeauth/core",
+  "version": "0.0.0",
+  "description": "Edge-native auth primitives: JWT, sessions, password hashing, OTP, OIDC, plugin system, adapter interfaces.",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://robert-kratz.github.io/holeauth",
+  "bugs": "https://github.com/robert-kratz/holeauth/issues",
+  "keywords": [
+    "auth",
+    "jwt",
+    "jose",
+    "edge",
+    "oidc",
+    "plugins",
+    "holeauth"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./jwt": {
+      "types": "./dist/jwt/index.d.ts",
+      "import": "./dist/jwt/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./session": {
+      "types": "./dist/session/index.d.ts",
+      "import": "./dist/session/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./password": {
+      "types": "./dist/password/index.d.ts",
+      "import": "./dist/password/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./otp": {
+      "types": "./dist/otp/index.d.ts",
+      "import": "./dist/otp/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./sso": {
+      "types": "./dist/sso/index.d.ts",
+      "import": "./dist/sso/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./errors": {
+      "types": "./dist/errors/index.d.ts",
+      "import": "./dist/errors/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./cookies": {
+      "types": "./dist/cookies/index.d.ts",
+      "import": "./dist/cookies/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./events": {
+      "types": "./dist/events/index.d.ts",
+      "import": "./dist/events/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./flows": {
+      "types": "./dist/flows/index.d.ts",
+      "import": "./dist/flows/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./plugins": {
+      "types": "./dist/plugins/index.d.ts",
+      "import": "./dist/plugins/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "cjs-error.cjs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "jose": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "@node-rs/argon2": "^2.0.0"
+  },
+  "devDependencies": {
+    "@holeauth/eslint-config": "workspace:*",
+    "@holeauth/tsconfig": "workspace:*",
+    "@types/node": "^20.16.10",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

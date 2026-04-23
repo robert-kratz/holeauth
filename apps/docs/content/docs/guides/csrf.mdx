@@ -1,0 +1,79 @@
+---
+title: CSRF Protection
+description: How the double-submit cookie pattern works and when to send the x-csrf-token header.
+---
+
+# CSRF Protection
+
+holeauth uses the **double-submit cookie** pattern. It is stateless, works on the edge, and does not require reading a session on every mutating request.
+
+## How it works
+
+1. On a successful sign-in, holeauth sets a readable cookie: `holeauth.csrf=<random>`.
+2. Your client reads that cookie and echoes the same value in an `x-csrf-token` header on every **mutating** request.
+3. The server compares cookie vs. header with a constant-time comparison. Mismatch → `403 CSRF_FAILED`.
+
+Because a cross-origin attacker cannot read cookies from your domain, they cannot forge a matching header — even though the browser would send the cookie itself.
+
+## Endpoints that require CSRF
+
+| Endpoint | CSRF required? |
+| --- | --- |
+| `POST /register` | no |
+| `POST /signin` | no |
+| `POST /signout` | **yes** |
+| `POST /refresh` | no (uses httpOnly refresh cookie only) |
+| `POST /2fa/setup` | authenticated (access cookie) |
+| `POST /2fa/verify` | no |
+| `POST /2fa/disable` | **yes** |
+| `POST /passkey/register/options` | **yes** |
+| `POST /passkey/register/verify` | **yes** |
+| `POST /passkey/login/*` | no |
+
+Unauthenticated endpoints do not require CSRF because there is no session to protect. Login flows are protected by rate limiting and credential checks at your edge.
+
+## Sending the header from the client
+
+```ts
+function getCsrfCookie(): string | undefined {
+  return document.cookie
+    .split('; ')
+    .find((c) => c.startsWith('holeauth.csrf='))
+    ?.split('=')[1];
+}
+
+await fetch('/api/auth/signout', {
+  method: 'POST',
+  headers: { 'x-csrf-token': getCsrfCookie() ?? '' },
+});
+```
+
+If you use `@holeauth/react`'s `useAuth().signOut()`, this is handled for you.
+
+## Bootstrapping
+
+If you need a CSRF token before sign-in (for example to protect your own routes), call:
+
+```
+GET /api/auth/csrf
+```
+
+It sets / rotates the `holeauth.csrf` cookie and returns the value in the body.
+
+## Implementation primitives
+
+Exposed from `@holeauth/core/cookies` if you need them in custom routes:
+
+```ts
+import { generateCsrfToken, verifyCsrf, CSRF_HEADER } from '@holeauth/core/cookies';
+```
+
+Or from `@holeauth/nextjs`:
+
+```ts
+import { checkCsrf } from '@holeauth/nextjs';
+
+if (!checkCsrf(req, auth.config)) {
+  return new Response('Forbidden', { status: 403 });
+}
+```

@@ -1,0 +1,62 @@
+{
+  "name": "@holeauth/plugin-idp",
+  "version": "0.0.0",
+  "description": "holeauth plugin: OIDC / OAuth2 Identity Provider (issue tokens to third-party apps).",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/plugin-idp"
+  },
+  "keywords": [
+    "holeauth",
+    "holeauth-plugin",
+    "oidc",
+    "oauth2",
+    "idp"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "cjs-error.cjs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "@holeauth/core": "workspace:*",
+    "jose": "^5.9.3"
+  },
+  "devDependencies": {
+    "@holeauth/core": "workspace:*",
+    "@holeauth/eslint-config": "workspace:*",
+    "@holeauth/tsconfig": "workspace:*",
+    "@types/node": "^20.16.10",
+    "jose": "^5.9.3",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

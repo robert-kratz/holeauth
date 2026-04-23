@@ -1,0 +1,14 @@
+import type { Config } from 'drizzle-kit';
+
+export default {
+  schema: './db/schema.ts',
+  out: './db/migrations',
+  dialect: 'postgresql',
+  dbCredentials: {
+    url:
+      process.env.DATABASE_URL ??
+      'postgres://holeauth:holeauth@localhost:54329/client_playground',
+  },
+  strict: true,
+  verbose: true,
+} satisfies Config;

@@ -1,0 +1,165 @@
+---
+title: Adapter Interfaces
+description: The interfaces you implement to persist holeauth data in your own database.
+---
+
+# Adapter Interfaces
+
+Adapters live under `@holeauth/core/adapters`. Only `user`, `session`, and `auditLog` are required.
+
+```ts
+interface HoleauthAdapters {
+  user: UserAdapter;
+  session: SessionAdapter;
+  auditLog: AuditLogAdapter;
+  account?: AccountAdapter;
+  verificationToken?: VerificationTokenAdapter;
+  passkey?: PasskeyAdapter;
+}
+```
+
+## `UserAdapter`
+
+```ts
+interface AdapterUser {
+  id: string;
+  email: string;
+  emailVerified?: Date | null;
+  name?: string | null;
+  image?: string | null;
+  passwordHash?: string | null;
+  twoFactorSecret?: string | null;
+  twoFactorEnabled?: boolean;
+  twoFactorRecoveryCodes?: string[] | null;
+}
+
+interface UserAdapter {
+  getUserById(id: string): Promise<AdapterUser | null>;
+  getUserByEmail(email: string): Promise<AdapterUser | null>;
+  createUser(data: Omit<AdapterUser, 'id'>): Promise<AdapterUser>;
+  updateUser(id: string, patch: Partial<AdapterUser>): Promise<AdapterUser>;
+  deleteUser(id: string): Promise<void>;
+}
+```
+
+## `SessionAdapter`
+
+```ts
+interface AdapterSession {
+  id: string;
+  userId: string;
+  familyId: string;
+  refreshTokenHash: string;  // SHA-256(refreshToken) — never store raw
+  expiresAt: Date;
+  createdAt?: Date;
+  revokedAt?: Date | null;
+  userAgent?: string | null;
+  ip?: string | null;
+}
+
+interface SessionAdapter {
+  createSession(data: AdapterSession): Promise<AdapterSession>;
+  getSession(id: string): Promise<AdapterSession | null>;
+  getByRefreshHash(hash: string): Promise<AdapterSession | null>;
+  findByFamily(familyId: string): Promise<AdapterSession[]>;
+  deleteSession(id: string): Promise<void>;
+  rotateRefresh(id: string, newHash: string, expiresAt: Date): Promise<AdapterSession>;
+  revokeFamily(familyId: string): Promise<void>;
+  revokeUser?(userId: string): Promise<void>; // optional — powers global sign-out
+}
+```
+
+## `AccountAdapter` (SSO)
+
+```ts
+interface AdapterAccount {
+  id: string;
+  userId: string;
+  provider: string;              // 'google', 'github', ...
+  providerAccountId: string;
+  email?: string | null;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  expiresAt?: Date | null;
+  tokenType?: string | null;
+  scope?: string | null;
+  idToken?: string | null;
+}
+
+interface AccountAdapter {
+  linkAccount(data: Omit<AdapterAccount, 'id'>): Promise<AdapterAccount>;
+  getAccountByProvider(provider: string, providerAccountId: string): Promise<AdapterAccount | null>;
+  getByProviderEmail?(provider: string, email: string): Promise<AdapterAccount | null>;
+  listByUser(userId: string): Promise<AdapterAccount[]>;
+  unlinkAccount(id: string): Promise<void>;
+}
+```
+
+## `PasskeyAdapter` (WebAuthn)
+
+```ts
+interface AdapterPasskey {
+  id: string;
+  userId: string;
+  credentialId: string;          // base64url
+  publicKey: string;             // base64url
+  counter: number;
+  transports?: string[] | null;
+  deviceName?: string | null;
+  createdAt?: Date;
+}
+
+interface PasskeyAdapter {
+  list(userId: string): Promise<AdapterPasskey[]>;
+  getByCredentialId(credentialId: string): Promise<AdapterPasskey | null>;
+  create(data: Omit<AdapterPasskey, 'id'>): Promise<AdapterPasskey>;
+  updateCounter(credentialId: string, counter: number): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+```
+
+## `AuditLogAdapter`
+
+```ts
+interface AdapterAuditEvent {
+  id?: string;
+  type: string;
+  userId?: string | null;
+  sessionId?: string | null;
+  at?: Date;
+  ip?: string | null;
+  userAgent?: string | null;
+  data?: Record<string, unknown> | null;
+}
+
+interface AuditLogAdapter {
+  record(event: AdapterAuditEvent): Promise<void>;
+  list?(filter: { userId?: string; type?: string; limit?: number }): Promise<AdapterAuditEvent[]>;
+}
+```
+
+`record` is awaited inside flows — keep it fast. Offload heavy enrichment to a queue.
+
+## `VerificationTokenAdapter`
+
+Reserved for email verification and magic link flows.
+
+```ts
+interface AdapterVerificationToken {
+  identifier: string; // e.g. email
+  token: string;
+  expires: Date;
+}
+
+interface VerificationTokenAdapter {
+  create(data: AdapterVerificationToken): Promise<AdapterVerificationToken>;
+  useToken(identifier: string, token: string): Promise<AdapterVerificationToken | null>; // atomic: returns & deletes
+}
+```
+
+## Implementation tips
+
+- **Hash refresh tokens with SHA-256** and store only the hash. `session.sha256b64url` is available from `@holeauth/core/session`.
+- **Never read `refreshTokenHash` back to the application** except by exact-match lookups.
+- **Keep `record` fast.** Asynchronous enrichment should run outside the critical path.
+- **Index by `familyId`, `userId`, and `providerAccountId`** for performance.

@@ -1,0 +1,50 @@
+{
+  "name": "@holeauth/rbac-yaml",
+  "version": "0.0.0",
+  "description": "YAML loader + validator for @holeauth/plugin-rbac. Node-only helper; plugin-rbac itself is headless.",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/rbac-yaml"
+  },
+  "keywords": ["holeauth", "rbac", "yaml"],
+  "sideEffects": false,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "cjs-error.cjs", "README.md", "LICENSE"],
+  "publishConfig": { "access": "public", "provenance": true },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "@holeauth/plugin-rbac": "workspace:*"
+  },
+  "dependencies": {
+    "yaml": "^2.5.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@holeauth/plugin-rbac": "workspace:*",
+    "@holeauth/eslint-config": "workspace:*",
+    "@holeauth/tsconfig": "workspace:*",
+    "@types/node": "^20.16.10",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

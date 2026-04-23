@@ -1,0 +1,63 @@
+{
+  "name": "@holeauth/plugin-passkey",
+  "version": "0.0.0",
+  "description": "holeauth plugin: WebAuthn / Passkey authentication.",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/plugin-passkey"
+  },
+  "keywords": [
+    "holeauth",
+    "holeauth-plugin",
+    "passkey",
+    "webauthn"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "cjs-error.cjs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "@holeauth/core": "workspace:*"
+  },
+  "optionalDependencies": {
+    "@simplewebauthn/server": "^11.0.0"
+  },
+  "devDependencies": {
+    "@holeauth/core": "workspace:*",
+    "@holeauth/eslint-config": "workspace:*",
+    "@holeauth/tsconfig": "workspace:*",
+    "@simplewebauthn/server": "^11.0.0",
+    "@types/node": "^20.16.10",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

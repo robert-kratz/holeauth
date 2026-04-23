@@ -1,0 +1,14 @@
+name: Bug report
+description: Something is broken
+labels: [bug]
+body:
+  - type: input
+    attributes: { label: Package, placeholder: '@holeauth/core' }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: Reproduction, description: Minimal repro or code snippet }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: Expected vs actual }
+  - type: input
+    attributes: { label: Version }

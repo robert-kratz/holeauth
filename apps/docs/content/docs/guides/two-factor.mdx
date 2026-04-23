@@ -1,0 +1,103 @@
+---
+title: Two-Factor Authentication
+description: Enable TOTP-based 2FA with recovery codes and a pending-2FA transition step.
+---
+
+# Two-Factor Authentication (TOTP)
+
+holeauth ships TOTP (RFC 6238) two-factor authentication with recovery codes. The sign-in flow returns a `pending2fa` state when 2FA is enabled; your client must complete it before access and refresh tokens are issued.
+
+## What you need
+
+- `adapters.user` — users must store `twoFactorSecret`, `twoFactorEnabled`, and `twoFactorRecoveryCodes` fields (the `AdapterUser` interface covers this).
+- The built-in `otpauth` dependency (installed transitively by `@holeauth/core`).
+
+## Enable 2FA for a user
+
+`POST /api/auth/2fa/setup` — authenticated endpoint.
+
+```ts
+const res = await fetch('/api/auth/2fa/setup', { method: 'POST' });
+const { secret, otpauthUrl, recoveryCodes } = await res.json();
+```
+
+- Render `otpauthUrl` as a QR code (for example with [`qrcode`](https://www.npmjs.com/package/qrcode)).
+- Show `recoveryCodes` once and ask the user to save them. They are hex-encoded 6-byte strings.
+- 2FA only becomes active after the user provides a correct TOTP code in the same flow (your UI should call a verify step immediately to confirm the secret).
+
+## Sign in with 2FA
+
+Step 1 — regular sign-in:
+
+```ts
+const res = await fetch('/api/auth/signin', {
+  method: 'POST',
+  body: JSON.stringify({ email, password }),
+});
+const json = await res.json();
+
+if (json.pending2fa) {
+  // A short-lived `pending2fa` cookie is set.
+  window.location.href = '/2fa/verify';
+}
+```
+
+Step 2 — verify the TOTP code:
+
+```ts
+const res = await fetch('/api/auth/2fa/verify', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ code: '123456' }), // 6-digit TOTP or recovery code
+});
+
+if (res.ok) {
+  window.location.href = '/dashboard';
+}
+```
+
+- Accepts either the current 6-digit TOTP code (±30 s drift tolerated) or one of the one-time recovery codes.
+- A used recovery code is consumed and removed from the stored list.
+- On success: access, refresh, and CSRF cookies are set; the pending cookie is cleared.
+- On failure: `401 INVALID_CREDENTIALS` and a `twofa.failed` event.
+
+### Middleware integration
+
+The Next.js middleware can redirect users stuck in the `pending2fa` state:
+
+```ts
+holeauthMiddleware({
+  config: auth.config,
+  protect: ['/dashboard'],
+  signInPath: '/login',
+  twoFactorPath: '/2fa/verify',
+});
+```
+
+When a request has the `pending2fa` cookie but no access cookie, middleware redirects to `twoFactorPath`.
+
+## Disable 2FA
+
+`POST /api/auth/2fa/disable` — authenticated, requires CSRF.
+
+```ts
+await fetch('/api/auth/2fa/disable', {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    'x-csrf-token': csrf,
+  },
+  body: JSON.stringify({ code: '123456' }),
+});
+```
+
+The user must prove possession of the second factor by providing a current code. On success, `twoFactorEnabled` is set to `false`, the secret and recovery codes are wiped, and a `twofa.disabled` event is emitted.
+
+## Events
+
+| Event | Trigger |
+| --- | --- |
+| `twofa.enabled` | User completes setup. |
+| `twofa.disabled` | User disables 2FA. |
+| `twofa.verified` | `/2fa/verify` succeeds. |
+| `twofa.failed` | `/2fa/verify` rejects a code. |

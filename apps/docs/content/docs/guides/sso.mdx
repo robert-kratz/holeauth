@@ -1,0 +1,133 @@
+---
+title: Single Sign-On
+description: Add Google (OIDC + PKCE) and GitHub (OAuth2) sign-in, or bring your own provider.
+---
+
+# Single Sign-On (OIDC & OAuth2)
+
+holeauth ships a small SSO engine with PKCE, `state`, and `nonce` enforcement. Google (OIDC) and GitHub (OAuth2) have built-in helpers; any other provider can be added with a plain config object.
+
+## What you need
+
+- `adapters.user`, `adapters.session`, `adapters.auditLog`.
+- `adapters.account` — stores the link between a provider's account and a local user.
+- At least one entry in `providers`.
+
+## Google (OIDC + PKCE)
+
+```ts
+import { GoogleProvider } from '@holeauth/core/sso';
+
+providers: [
+  GoogleProvider({
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    redirectUri: 'https://example.com/api/auth/callback/google',
+    scopes: ['openid', 'email', 'profile'], // default
+    id: 'google', // default
+  }),
+];
+```
+
+## GitHub (OAuth2)
+
+```ts
+import { GithubProvider } from '@holeauth/core/sso';
+
+providers: [
+  GithubProvider({
+    clientId: process.env.GITHUB_CLIENT_ID!,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    redirectUri: 'https://example.com/api/auth/callback/github',
+    scopes: ['read:user', 'user:email'], // default
+    id: 'github',
+  }),
+];
+```
+
+## Starting the flow
+
+Point your button to `/api/auth/authorize/:provider`:
+
+```tsx
+<a href="/api/auth/authorize/google">Continue with Google</a>
+<a href="/api/auth/authorize/github">Continue with GitHub</a>
+```
+
+The handler:
+
+1. Generates a cryptographic `state` and `codeVerifier` (PKCE).
+2. Stores both in `httpOnly` cookies scoped to `/api/auth`.
+3. Responds with a `302` to the provider's authorization URL.
+
+Emits `sso.authorize`.
+
+## The callback
+
+The provider redirects back to `redirectUri`. holeauth:
+
+1. Validates `state` and, for OIDC, the ID token `nonce`.
+2. Exchanges the authorization code for tokens (with PKCE verifier).
+3. Fetches the user profile and derives `{ providerAccountId, email, name, image }`.
+4. Looks up `adapters.account.getAccountByProvider`.
+   - If a link exists → loads the user.
+   - Else if an **existing local user** has the same email and `allowDangerousEmailAccountLinking` is `true` → links and signs them in.
+   - Else → creates a new user and links the account.
+5. Issues access, refresh, and CSRF cookies.
+6. Redirects to `defaultRedirect` (default `/dashboard`, configurable via `createAuthHandler(config, { defaultRedirect })`).
+
+Emits `sso.callback_ok`, `account.linked` (if a new link was created), and `user.signed_in` — or `sso.callback_failed` on any error.
+
+## Custom providers
+
+```ts
+import type { OAuth2ProviderConfig } from '@holeauth/core/sso';
+
+const discord: OAuth2ProviderConfig = {
+  kind: 'oauth2',
+  id: 'discord',
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  redirectUri: 'https://example.com/api/auth/callback/discord',
+  authorizationUrl: 'https://discord.com/api/oauth2/authorize',
+  tokenUrl: 'https://discord.com/api/oauth2/token',
+  userinfoUrl: 'https://discord.com/api/users/@me',
+  scopes: ['identify', 'email'],
+  profile(raw: any) {
+    return {
+      providerAccountId: raw.id,
+      email: raw.email,
+      name: raw.username,
+      image: raw.avatar
+        ? `https://cdn.discordapp.com/avatars/${raw.id}/${raw.avatar}.png`
+        : null,
+    };
+  },
+};
+
+providers: [discord];
+```
+
+OIDC providers use `kind: 'oidc'` and require an `issuer` plus `authorizationUrl` / `tokenUrl` / `userinfoUrl`; the ID token is verified automatically.
+
+## Account linking
+
+After a successful SSO, your app can list linked accounts:
+
+```ts
+const accounts = await accountAdapter.listByUser(session.userId);
+```
+
+Unlink:
+
+```ts
+await accountAdapter.unlinkAccount(account.id);
+```
+
+Emits `account.linked` / `account.unlinked`.
+
+## Security notes
+
+- Always set `redirectUri` to an **exact** URL registered with the provider.
+- `state` and PKCE mitigate CSRF on the callback.
+- Keep `allowDangerousEmailAccountLinking` off unless you explicitly verify emails locally — an attacker who controls an OAuth account with the same email could otherwise take over a local account.

@@ -1,0 +1,15 @@
+{
+  "title": "holeauth",
+  "pages": [
+    "index",
+    "getting-started",
+    "concepts",
+    "configuration",
+    "---Guides---",
+    "guides",
+    "---Packages---",
+    "packages",
+    "---Reference---",
+    "api"
+  ]
+}

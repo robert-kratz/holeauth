@@ -1,0 +1,65 @@
+{
+  "name": "@holeauth/adapter-drizzle",
+  "version": "0.0.0",
+  "description": "Drizzle factory-based adapters for holeauth core (users, sessions, accounts, verification, audit). Supports Postgres, MySQL, SQLite.",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/adapter-drizzle"
+  },
+  "homepage": "https://robert-kratz.github.io/holeauth",
+  "bugs": "https://github.com/robert-kratz/holeauth/issues",
+  "keywords": ["auth", "holeauth", "drizzle", "postgres", "mysql", "sqlite"],
+  "sideEffects": false,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./pg": {
+      "types": "./dist/pg/index.d.ts",
+      "import": "./dist/pg/index.js",
+      "require": "./dist/pg/index.cjs"
+    },
+    "./mysql": {
+      "types": "./dist/mysql/index.d.ts",
+      "import": "./dist/mysql/index.js",
+      "require": "./dist/mysql/index.cjs"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite/index.d.ts",
+      "import": "./dist/sqlite/index.js",
+      "require": "./dist/sqlite/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": { "access": "public", "provenance": true },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "@holeauth/core": "workspace:*",
+    "drizzle-orm": ">=0.33.0"
+  },
+  "devDependencies": {
+    "@holeauth/core": "workspace:*",
+    "@holeauth/eslint-config": "workspace:*",
+    "@holeauth/tsconfig": "workspace:*",
+    "@types/node": "^20.16.10",
+    "drizzle-orm": "^0.36.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

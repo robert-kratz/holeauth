@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: holeauth-playground-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: holeauth
+      POSTGRES_PASSWORD: holeauth
+      POSTGRES_DB: holeauth
+    ports:
+      - '54329:5432'
+    volumes:
+      - holeauth_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U holeauth -d holeauth']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  holeauth_pg_data:

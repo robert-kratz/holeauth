@@ -1,0 +1,10 @@
+{
+  "title": "Reference",
+  "pages": [
+    "index",
+    "endpoints",
+    "adapters",
+    "events",
+    "errors"
+  ]
+}

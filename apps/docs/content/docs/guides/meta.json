@@ -1,0 +1,13 @@
+{
+  "title": "Guides",
+  "pages": [
+    "index",
+    "email-password",
+    "two-factor",
+    "passkeys",
+    "sso",
+    "sessions-refresh",
+    "csrf",
+    "events-audit"
+  ]
+}

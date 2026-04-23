@@ -1,0 +1,134 @@
+---
+title: '@holeauth/adapter-drizzle'
+description: Reference adapter for persisting users, sessions, and accounts with Drizzle ORM.
+---
+
+# @holeauth/adapter-drizzle
+
+```bash
+pnpm add @holeauth/adapter-drizzle
+```
+
+> This package is a **reference adapter**. The current release exposes the expected schema and factory surface; the runtime is still being finalized. For production use today, implement the adapter interfaces directly against your Drizzle queries.
+
+## Recommended schema (Postgres)
+
+```ts
+import {
+  pgTable, text, timestamp, boolean, integer, jsonb, uniqueIndex, index,
+} from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  emailVerified: timestamp('email_verified'),
+  name: text('name'),
+  image: text('image'),
+  passwordHash: text('password_hash'),
+  twoFactorSecret: text('two_factor_secret'),
+  twoFactorEnabled: boolean('two_factor_enabled').notNull().default(false),
+  twoFactorRecoveryCodes: text('two_factor_recovery_codes').array(),
+});
+
+export const sessions = pgTable('sessions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  familyId: text('family_id').notNull(),
+  refreshTokenHash: text('refresh_token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  revokedAt: timestamp('revoked_at'),
+  userAgent: text('user_agent'),
+  ip: text('ip'),
+}, (t) => ({
+  familyIdx: index('sessions_family_idx').on(t.familyId),
+  userIdx: index('sessions_user_idx').on(t.userId),
+}));
+
+export const accounts = pgTable('accounts', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(),
+  providerAccountId: text('provider_account_id').notNull(),
+  email: text('email'),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  expiresAt: timestamp('expires_at'),
+  tokenType: text('token_type'),
+  scope: text('scope'),
+  idToken: text('id_token'),
+}, (t) => ({
+  providerUnique: uniqueIndex('accounts_provider_unique').on(t.provider, t.providerAccountId),
+}));
+
+export const passkeys = pgTable('passkeys', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  credentialId: text('credential_id').notNull().unique(),
+  publicKey: text('public_key').notNull(),
+  counter: integer('counter').notNull().default(0),
+  transports: text('transports').array(),
+  deviceName: text('device_name'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const auditLogs = pgTable('audit_logs', {
+  id: text('id').primaryKey(),
+  type: text('type').notNull(),
+  userId: text('user_id'),
+  sessionId: text('session_id'),
+  at: timestamp('at').notNull().defaultNow(),
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  data: jsonb('data'),
+});
+```
+
+## Usage (future / manual)
+
+```ts
+import { drizzleAdapter } from '@holeauth/adapter-drizzle';
+import { db } from './db';
+import * as schema from './schema';
+
+const { user, session } = drizzleAdapter(db, {
+  users: schema.users,
+  sessions: schema.sessions,
+  accounts: schema.accounts,
+});
+```
+
+## Manual implementation sketch
+
+Minimal `SessionAdapter`:
+
+```ts
+import { eq, and } from 'drizzle-orm';
+
+const sessionAdapter: SessionAdapter = {
+  createSession: async (data) => {
+    const [row] = await db.insert(sessions).values(data).returning();
+    return row;
+  },
+  getSession: (id) => db.query.sessions.findFirst({ where: eq(sessions.id, id) }),
+  getByRefreshHash: (hash) =>
+    db.query.sessions.findFirst({ where: eq(sessions.refreshTokenHash, hash) }),
+  findByFamily: (familyId) =>
+    db.select().from(sessions).where(eq(sessions.familyId, familyId)),
+  deleteSession: async (id) => { await db.delete(sessions).where(eq(sessions.id, id)); },
+  rotateRefresh: async (id, newHash, expiresAt) => {
+    const [row] = await db.update(sessions)
+      .set({ refreshTokenHash: newHash, expiresAt })
+      .where(eq(sessions.id, id))
+      .returning();
+    return row;
+  },
+  revokeFamily: async (familyId) => {
+    await db.update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(sessions.familyId, familyId));
+  },
+};
+```
+
+See the full interface in the [Adapters reference](/docs/api/adapters).

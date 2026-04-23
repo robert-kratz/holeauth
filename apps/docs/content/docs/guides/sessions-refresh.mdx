@@ -1,0 +1,84 @@
+---
+title: Sessions & Refresh Rotation
+description: How holeauth issues, validates, rotates, and revokes sessions — with reuse detection.
+---
+
+# Sessions & Refresh Rotation
+
+## Anatomy of a session
+
+After a successful sign-in (password, 2FA, SSO, or passkey), `session.issueSession` runs:
+
+1. Creates a new session row via `adapters.session.createSession` with a fresh `familyId`.
+2. Signs an access JWT (HS256) with `{ sub: userId, sid: sessionId, exp }`.
+3. Generates an opaque 32-byte refresh token; stores only its SHA-256 hash.
+4. Generates a CSRF token.
+5. Sets all three as cookies.
+
+## Validating access
+
+Every time you call `auth.getSession()` (or the `/api/auth/session` endpoint):
+
+1. The access JWT is verified against `secrets.jwtSecret`.
+2. If `exp` is in the past → `null`.
+3. If valid → the decoded payload is returned as `SessionData`.
+
+This is a **zero-database** operation as long as the access token is still valid.
+
+## Refreshing
+
+`POST /api/auth/refresh` — uses the httpOnly refresh cookie.
+
+1. The refresh token is SHA-256 hashed.
+2. `adapters.session.getByRefreshHash(hash)` looks it up.
+3. A brand-new refresh token is generated; its hash replaces the old one (`rotateRefresh`).
+4. A new access token and CSRF token are minted.
+5. All new cookies are set.
+
+### Reuse detection
+
+If a refresh token hash is not found **but a session with the same family exists with a newer hash**, holeauth interprets this as a replayed / stolen refresh token:
+
+- Emits `session.reuse_detected`.
+- Revokes the **entire family** via `adapters.session.revokeFamily(familyId)`.
+- Responds with `401 REFRESH_REUSE`.
+
+Your client should treat this as a hard sign-out.
+
+## Revoking sessions
+
+- `POST /api/auth/signout` — revokes the current session.
+- Programmatic: `session.revokeSession(cfg, sessionId)` or `session.revokeByRefresh(cfg, refreshToken)`.
+- Global sign-out: `session.revokeAllForUser(cfg, userId)` — calls `adapters.session.revokeUser?.(userId)` when implemented.
+
+## Tuning TTLs
+
+```ts
+tokens: {
+  accessTtl: 60 * 15,               // 15 minutes
+  refreshTtl: 60 * 60 * 24 * 30,    // 30 days
+  pending2faTtl: 300,               // 5 minutes
+}
+```
+
+Shorter access TTLs reduce blast radius on token theft; longer refresh TTLs reduce login friction.
+
+## Session data shape
+
+```ts
+interface SessionData {
+  userId: string;
+  sessionId: string;
+  expiresAt: number; // ms epoch
+  [key: string]: unknown;
+}
+```
+
+The token payload can be extended by your handler wrappers if needed.
+
+## Client-side refresh strategy
+
+Two common strategies:
+
+1. **Automatic on 401** — intercept fetch responses; on 401 call `/api/auth/refresh` once, then retry the original request.
+2. **Preemptive** — before the access token `expiresAt`, call `/api/auth/refresh` proactively. `@holeauth/react`'s `useAuth().refresh()` helper does this on demand.

@@ -1,0 +1,190 @@
+---
+title: Getting Started
+description: Install holeauth and wire it into a Next.js App Router project in a few minutes.
+---
+
+# Getting Started
+
+This guide installs holeauth into a Next.js 15 App Router application, mounts the auth handler under `/api/auth`, protects routes with middleware, and uses the React hooks on the client.
+
+## 1. Install
+
+```bash
+pnpm add @holeauth/core @holeauth/nextjs @holeauth/react
+```
+
+Optional, depending on what you enable:
+
+```bash
+# TOTP 2FA
+pnpm add otpauth
+
+# WebAuthn / Passkeys
+pnpm add @simplewebauthn/server @simplewebauthn/browser
+
+# Better password hashing on Node (Argon2id)
+pnpm add argon2
+```
+
+> holeauth auto-detects `argon2`. If it is not installed, passwords are hashed with PBKDF2-SHA256 (100k iterations), which also works on the Edge runtime.
+
+## 2. Create an auth instance
+
+Create a single shared `auth` module. You choose which adapters to wire up — `user`, `session`, and `auditLog` are required.
+
+```ts
+// lib/auth.ts
+import { createAuthHandler } from '@holeauth/nextjs';
+import { GoogleProvider, GithubProvider } from '@holeauth/core/sso';
+import {
+  userAdapter,
+  sessionAdapter,
+  accountAdapter,
+  passkeyAdapter,
+  auditLogAdapter,
+} from './adapters'; // your Prisma / Drizzle / custom adapters
+
+export const auth = createAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: userAdapter,
+    session: sessionAdapter,
+    auditLog: auditLogAdapter,
+    account: accountAdapter,   // optional — needed for SSO
+    passkey: passkeyAdapter,   // optional — needed for WebAuthn
+  },
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      redirectUri: 'http://localhost:3000/api/auth/callback/google',
+    }),
+    GithubProvider({
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      redirectUri: 'http://localhost:3000/api/auth/callback/github',
+    }),
+  ],
+  passkey: {
+    rpID: 'localhost',
+    rpName: 'My App',
+    origin: 'http://localhost:3000',
+  },
+  tokens: {
+    cookiePrefix: 'holeauth',
+    accessTtl: 60 * 15,           // 15 minutes
+    refreshTtl: 60 * 60 * 24 * 30, // 30 days
+  },
+  onEvent: (event) => {
+    console.log('[holeauth]', event.type, event.userId);
+  },
+});
+```
+
+> Need an adapter? See the [Adapters reference](/docs/api/adapters) or the [Prisma](/docs/packages/adapter-prisma) / [Drizzle](/docs/packages/adapter-drizzle) reference adapters.
+
+## 3. Mount the route handler
+
+```ts
+// app/api/auth/[...holeauth]/route.ts
+import { auth } from '@/lib/auth';
+
+export const runtime = 'nodejs'; // argon2 and @simplewebauthn/server are Node-only
+
+export const { GET, POST } = auth.handlers;
+```
+
+This exposes every endpoint documented in [API endpoints](/docs/api/endpoints): `/session`, `/csrf`, `/register`, `/signin`, `/signout`, `/refresh`, `/authorize/:provider`, `/callback/:provider`, `/2fa/*`, `/passkey/*`.
+
+## 4. Protect routes with middleware
+
+```ts
+// middleware.ts
+import { holeauthMiddleware } from '@holeauth/nextjs';
+import { auth } from '@/lib/auth';
+
+export const middleware = holeauthMiddleware({
+  config: auth.config,
+  protect: ['/dashboard', /^\/account\/.*/],
+  signInPath: '/login',
+  twoFactorPath: '/2fa/verify',
+});
+
+export const config = {
+  matcher: ['/((?!_next|public|api/auth).*)'],
+};
+```
+
+## 5. Use the session on the server
+
+```tsx
+// app/dashboard/page.tsx
+import { redirect } from 'next/navigation';
+import { auth } from '@/lib/auth';
+
+export default async function Dashboard() {
+  const session = await auth.getSession();
+  if (!session) redirect('/login');
+
+  return <pre>{JSON.stringify(session, null, 2)}</pre>;
+}
+```
+
+## 6. Wrap the client with the provider
+
+```tsx
+// app/layout.tsx
+import { HoleauthProvider } from '@holeauth/react';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html>
+      <body>
+        <HoleauthProvider>{children}</HoleauthProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+```tsx
+// app/components/UserMenu.tsx
+'use client';
+import { useAuth } from '@holeauth/react';
+
+export function UserMenu() {
+  const { session, loading, signOut } = useAuth();
+  if (loading) return null;
+  if (!session) return <a href="/login">Sign in</a>;
+  return <button onClick={signOut}>Sign out</button>;
+}
+```
+
+## 7. Sign in from the client
+
+```ts
+// app/login/page.tsx (client component)
+const res = await fetch('/api/auth/signin', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email, password }),
+});
+
+const json = await res.json();
+if (json.pending2fa) {
+  // TOTP required — redirect the user
+  window.location.href = '/2fa/verify';
+} else {
+  window.location.href = '/dashboard';
+}
+```
+
+## Where to go next
+
+- [Email & Password](/docs/guides/email-password)
+- [Two-Factor Authentication](/docs/guides/two-factor)
+- [Passkeys (WebAuthn)](/docs/guides/passkeys)
+- [Single Sign-On](/docs/guides/sso)
+- [Sessions & Refresh Rotation](/docs/guides/sessions-refresh)

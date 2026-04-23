@@ -1,0 +1,90 @@
+---
+title: '@holeauth/react'
+description: Client-side provider and hooks for session state in React apps.
+---
+
+# @holeauth/react
+
+```bash
+pnpm add @holeauth/react
+```
+
+Ships a small, unopinionated React layer over the holeauth session endpoints. No UI, just state.
+
+## `<HoleauthProvider>`
+
+Wraps your app and fetches the current session on mount.
+
+```tsx
+// app/layout.tsx
+import { HoleauthProvider } from '@holeauth/react';
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <HoleauthProvider
+          sessionUrl="/api/auth/session"    // default
+          signOutUrl="/api/auth/signout"    // default
+        >
+          {children}
+        </HoleauthProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+## `useSession()`
+
+```tsx
+import { useSession } from '@holeauth/react';
+
+function Greeting() {
+  const session = useSession(); // ClientSession | null
+  if (!session) return <a href="/login">Sign in</a>;
+  return <p>Hello, {session.userId}</p>;
+}
+
+interface ClientSession {
+  userId: string;
+  sessionId: string;
+  expiresAt: number;
+}
+```
+
+Returns `null` while loading or when the user is unauthenticated. Throws if used outside a `HoleauthProvider`.
+
+## `useAuth()`
+
+Full auth context — session plus actions:
+
+```tsx
+import { useAuth } from '@holeauth/react';
+
+function UserMenu() {
+  const { session, loading, refresh, signOut } = useAuth();
+  if (loading) return <Spinner />;
+  if (!session) return <a href="/login">Sign in</a>;
+  return (
+    <>
+      <button onClick={refresh}>Refresh session</button>
+      <button onClick={signOut}>Sign out</button>
+    </>
+  );
+}
+```
+
+- `refresh()` — re-fetches `sessionUrl`.
+- `signOut()` — `POST`s to `signOutUrl` with the CSRF header automatically set, then re-fetches the session.
+
+## Custom fetchers
+
+The provider uses `window.fetch` with credentials. If you proxy auth under a different prefix or origin, pass `sessionUrl` / `signOutUrl`:
+
+```tsx
+<HoleauthProvider
+  sessionUrl="https://auth.example.com/api/auth/session"
+  signOutUrl="https://auth.example.com/api/auth/signout"
+>
+```
