@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/2fa-drizzle",
-  "version": "0.0.0",
+  "version": "0.0.1-alpha.0",
   "description": "Drizzle adapter for @holeauth/plugin-2fa (TOTP + recovery codes).",
   "license": "MIT",
   "author": "Robert Kratz",

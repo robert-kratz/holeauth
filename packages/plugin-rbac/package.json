@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/plugin-rbac",
-  "version": "0.0.0",
+  "version": "0.0.1-alpha.0",
   "description": "holeauth plugin: headless role/group/permission system with Minecraft-style wildcards and negations. Use @holeauth/rbac-yaml for YAML config, @holeauth/rbac-drizzle for DB storage.",
   "license": "MIT",
   "author": "Robert Kratz",

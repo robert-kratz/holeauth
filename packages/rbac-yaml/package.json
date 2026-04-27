@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/rbac-yaml",
-  "version": "0.0.0",
+  "version": "0.0.1-alpha.0",
   "description": "YAML loader + validator for @holeauth/plugin-rbac. Node-only helper; plugin-rbac itself is headless.",
   "license": "MIT",
   "author": "Robert Kratz",
