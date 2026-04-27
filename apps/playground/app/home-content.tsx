@@ -39,6 +39,7 @@ export function HomeContent() {
         <li><Link href="/passkey/register">Register a passkey →</Link></li>
         <li><Link href="/password/change">Change password →</Link></li>
         <li><Link href="/developer/apps">OAuth apps (developer) →</Link></li>
+        <li><Link href="/trpc-demo">tRPC demo (auth + refresh + RBAC) →</Link></li>
         <li><Link href="/admin">Admin →</Link></li>
       </ul>
     </div>

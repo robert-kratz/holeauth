@@ -1,32 +1,52 @@
 ---
 title: '@holeauth/react'
-description: Client-side provider and hooks for session state in React apps.
+description: React provider and hooks for holeauth session state, auth actions, RBAC, invites, 2FA, passkeys, SSO, and audit log.
 ---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # @holeauth/react
 
+Thin, unopinionated React hooks over the holeauth session and action endpoints. No UI — just state and fetch wrappers.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
 ```bash
 pnpm add @holeauth/react
 ```
-
-Ships a small, unopinionated React layer over the holeauth session endpoints. No UI, just state.
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/react
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/react
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/react
+```
+</Tab>
+</Tabs>
 
 ## `<HoleauthProvider>`
 
-Wraps your app and fetches the current session on mount.
+Wraps your app, fetches the session on mount, and exposes context to all hooks.
 
-```tsx
-// app/layout.tsx
+```tsx title="app/layout.tsx"
 import { HoleauthProvider } from '@holeauth/react';
 
-export default function RootLayout({ children }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html>
       <body>
-        <HoleauthProvider
-          sessionUrl="/api/auth/session"    // default
-          signOutUrl="/api/auth/signout"    // default
-        >
+        <HoleauthProvider basePath="/api/auth" cookiePrefix="holeauth">
           {children}
         </HoleauthProvider>
       </body>
@@ -35,7 +55,37 @@ export default function RootLayout({ children }) {
 }
 ```
 
-## `useSession()`
+<TypeTable
+  type={{
+    basePath: {
+      description: 'Base URL of the auth handler. Must match the server-side basePath.',
+      type: 'string',
+      default: '"/api/auth"',
+    },
+    cookiePrefix: {
+      description: 'Cookie prefix used by the server. Used to read the CSRF cookie client-side.',
+      type: 'string',
+      default: '"holeauth"',
+    },
+    children: {
+      description: 'React children.',
+      type: 'ReactNode',
+      required: true,
+    },
+  }}
+/>
+
+<Callout type="warn">
+  **`sessionUrl` / `signOutUrl` do not exist.** The correct props are `basePath` and `cookiePrefix`. All endpoint URLs are derived from `basePath` automatically.
+</Callout>
+
+---
+
+## Core session hooks
+
+### `useSession()`
+
+Returns the current session or `null` when unauthenticated / loading.
 
 ```tsx
 import { useSession } from '@holeauth/react';
@@ -45,46 +95,599 @@ function Greeting() {
   if (!session) return <a href="/login">Sign in</a>;
   return <p>Hello, {session.userId}</p>;
 }
+```
 
+**Returns:** `ClientSession | null`
+
+```ts
 interface ClientSession {
   userId: string;
   sessionId: string;
   expiresAt: number;
+  [key: string]: unknown; // plugin-extended fields
 }
 ```
 
-Returns `null` while loading or when the user is unauthenticated. Throws if used outside a `HoleauthProvider`.
+Throws when called outside a `<HoleauthProvider>`.
 
-## `useAuth()`
+---
 
-Full auth context — session plus actions:
+### `useAuth()`
+
+Session + loading state + manual refresh.
 
 ```tsx
 import { useAuth } from '@holeauth/react';
 
-function UserMenu() {
-  const { session, loading, refresh, signOut } = useAuth();
+function Header() {
+  const { session, loading, refresh } = useAuth();
   if (loading) return <Spinner />;
   if (!session) return <a href="/login">Sign in</a>;
+  return <button onClick={refresh}>Refresh</button>;
+}
+```
+
+**Returns:**
+
+<TypeTable
+  type={{
+    session: { description: 'Current session or null.', type: 'ClientSession | null', required: true },
+    loading: { description: 'True while the initial session fetch is in-flight.', type: 'boolean', required: true },
+    refresh: { description: 'Re-fetch the session from the server.', type: '() => Promise<void>', required: true },
+  }}
+/>
+
+<Callout type="info">
+  `useAuth()` does **not** expose `signOut`. Use `useSignOut()` for that.
+</Callout>
+
+---
+
+### `useCsrf()`
+
+Reads the CSRF token from the `holeauth.csrf` cookie. Pass it in the `x-holeauth-csrf` header for mutation requests.
+
+```tsx
+import { useCsrf } from '@holeauth/react';
+
+function DeleteButton({ id }: { id: string }) {
+  const csrf = useCsrf();
+  return (
+    <button
+      onClick={() =>
+        fetch('/api/resources/' + id, {
+          method: 'DELETE',
+          headers: { 'x-holeauth-csrf': csrf ?? '' },
+        })
+      }
+    >
+      Delete
+    </button>
+  );
+}
+```
+
+**Returns:** `string | null`
+
+---
+
+## Auth action hooks
+
+### `useSignIn()`
+
+Email/password sign in with pending-token support for 2FA.
+
+```tsx
+import { useSignIn } from '@holeauth/react';
+
+function LoginForm() {
+  const { signIn, loading, error, pending } = useSignIn();
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const result = await signIn({
+      email: fd.get('email') as string,
+      password: fd.get('password') as string,
+    });
+
+    if (!result.ok) return; // error is set on the hook
+    if (result.pending) {
+      // redirect to 2FA page with result.pending.token
+    }
+    // else: session is set, redirect to dashboard
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input name="email" type="email" />
+      <input name="password" type="password" />
+      <button disabled={loading}>Sign in</button>
+      {error && <p>{error.message}</p>}
+    </form>
+  );
+}
+```
+
+**Returns:**
+
+<TypeTable
+  type={{
+    signIn: { description: 'Call with email + password. Returns ok/error or pending 2FA token.', type: '(input: { email: string; password: string }) => Promise<SignInResult>', required: true },
+    loading: { description: 'True while the request is in-flight.', type: 'boolean', required: true },
+    error: { description: 'Last error message + optional code, or null.', type: '{ message: string; code?: string } | null', required: true },
+    pending: { description: 'Set when 2FA is required. Contains token and type.', type: '{ token: string; type: string } | null', required: true },
+  }}
+/>
+
+---
+
+### `useSignUp()`
+
+Register a new account.
+
+```tsx
+import { useSignUp } from '@holeauth/react';
+
+const { signUp, loading, error } = useSignUp();
+
+await signUp({
+  email: 'user@example.com',
+  password: 'secret',
+  name: 'Ada Lovelace',
+  autoSignIn: true, // default true — signs in immediately after register
+});
+```
+
+**Returns:** `{ signUp, loading, error }`
+
+---
+
+### `useSignOut()`
+
+Sign out and clear the session.
+
+```tsx
+import { useSignOut } from '@holeauth/react';
+
+function SignOutButton() {
+  const { signOut, loading } = useSignOut();
+  return <button onClick={signOut} disabled={loading}>Sign out</button>;
+}
+```
+
+**Returns:** `{ signOut: () => Promise<{ ok: boolean }>; loading: boolean; error }`
+
+---
+
+## Password hooks
+
+### `usePasswordReset()`
+
+Two-step password reset (request token → consume token).
+
+```tsx
+import { usePasswordReset } from '@holeauth/react';
+
+const { request, consume, loading, error } = usePasswordReset();
+
+// Step 1: send reset email
+await request('user@example.com');
+
+// Step 2: on the /reset-password page
+await consume({ email, token, newPassword });
+```
+
+**Returns:** `{ request, consume, loading, error }`
+
+---
+
+### `usePasswordChange()`
+
+Change password while authenticated.
+
+```tsx
+import { usePasswordChange } from '@holeauth/react';
+
+const { change, loading, error } = usePasswordChange();
+
+await change({
+  currentPassword: 'old-secret',
+  newPassword: 'new-secret',
+  revokeOtherSessions: true,
+});
+```
+
+**Returns:** `{ change, loading, error }`
+
+---
+
+## Two-factor auth hooks
+
+### `use2faSetup()`
+
+Begin 2FA enrollment (start → show QR → activate).
+
+```tsx
+import { use2faSetup } from '@holeauth/react';
+
+function TwoFaEnroll() {
+  const { start, activate, data, loading, error } = use2faSetup();
+
   return (
     <>
-      <button onClick={refresh}>Refresh session</button>
-      <button onClick={signOut}>Sign out</button>
+      <button onClick={start}>Enable 2FA</button>
+      {data && (
+        <>
+          <img src={data.qrUrl} alt="Scan with your authenticator" />
+          <button onClick={() => activate(userEnteredCode)}>Activate</button>
+        </>
+      )}
     </>
   );
 }
 ```
 
-- `refresh()` — re-fetches `sessionUrl`.
-- `signOut()` — `POST`s to `signOutUrl` with the CSRF header automatically set, then re-fetches the session.
+**Returns:**
 
-## Custom fetchers
+<TypeTable
+  type={{
+    start: { description: 'Calls POST /2fa/setup. Sets data on success.', type: '() => Promise<TwoFaSetupResult | null>', required: true },
+    activate: { description: 'Calls POST /2fa/activate with the user-entered TOTP code.', type: '(code: string) => Promise<{ ok: boolean }>', required: true },
+    data: { description: 'Setup result — null until start() is called.', type: 'TwoFaSetupResult | null', required: true },
+    loading: { description: 'True while a request is in-flight.', type: 'boolean', required: true },
+    error: { description: 'Last error or null.', type: 'ErrorState | null', required: true },
+  }}
+/>
 
-The provider uses `window.fetch` with credentials. If you proxy auth under a different prefix or origin, pass `sessionUrl` / `signOutUrl`:
+```ts
+interface TwoFaSetupResult {
+  qrUrl: string;
+  secret: string;
+  recoveryCodes: string[];
+}
+```
+
+---
+
+### `use2faVerify()`
+
+Complete a pending 2FA challenge after sign-in.
 
 ```tsx
-<HoleauthProvider
-  sessionUrl="https://auth.example.com/api/auth/session"
-  signOutUrl="https://auth.example.com/api/auth/signout"
->
+import { use2faVerify } from '@holeauth/react';
+
+const { verify, loading, error } = use2faVerify();
+
+await verify({ pendingToken, code });
+// On success, session is refreshed automatically
 ```
+
+**Returns:** `{ verify: (input: { pendingToken: string; code: string }) => Promise<{ ok: boolean }>; loading; error }`
+
+---
+
+## Passkey hooks
+
+### `usePasskeyRegister()`
+
+Register a new passkey (WebAuthn registration ceremony).
+
+```tsx
+import { usePasskeyRegister } from '@holeauth/react';
+
+const { register, loading, error } = usePasskeyRegister();
+
+await register('My MacBook'); // optional device name
+```
+
+Requires `@simplewebauthn/browser` — bundled as a lazy dynamic import so non-passkey pages pay no upfront cost.
+
+**Returns:** `{ register: (deviceName?: string) => Promise<{ ok: boolean }>; loading; error }`
+
+---
+
+### `usePasskeyLogin()`
+
+Authenticate with a passkey (WebAuthn authentication ceremony).
+
+```tsx
+import { usePasskeyLogin } from '@holeauth/react';
+
+const { login, loading, error } = usePasskeyLogin();
+
+await login('user@example.com'); // optional email hint for conditional UI
+```
+
+**Returns:** `{ login: (email?: string) => Promise<{ ok: boolean }>; loading; error }`
+
+---
+
+## SSO hook
+
+### `useSso(providerId)`
+
+Initiate an SSO/OAuth2 redirect.
+
+```tsx
+import { useSso } from '@holeauth/react';
+
+function GoogleSignIn() {
+  const { start } = useSso('google');
+  return <button onClick={() => start('/dashboard')}>Sign in with Google</button>;
+}
+```
+
+**Parameters:** `providerId` — the key of the provider in your `defineHoleauth` config.
+
+**Returns:** `{ start: (redirectAfter?: string) => void }`
+
+---
+
+## RBAC hooks
+
+### `usePermission(node)`
+
+Check if the current user has a permission node (or all of multiple nodes).
+
+```tsx
+import { usePermission } from '@holeauth/react';
+
+function PublishButton() {
+  const { allowed, loading } = usePermission('posts.publish');
+  if (loading) return null;
+  if (!allowed) return null;
+  return <button>Publish</button>;
+}
+```
+
+Pass an array to require ALL permissions:
+
+```tsx
+const { allowed } = usePermission(['admin.users.read', 'admin.users.write']);
+```
+
+**Returns:**
+
+<TypeTable
+  type={{
+    allowed: { description: 'True when the user has the required permission(s). False while loading or when denied.', type: 'boolean', required: true },
+    loading: { description: 'True while the RBAC snapshot is being fetched.', type: 'boolean', required: true },
+  }}
+/>
+
+<Callout type="info">
+  Requires `@holeauth/plugin-rbac` installed on the server. The snapshot is fetched once per session from `GET {basePath}/rbac/me` and cached in context.
+</Callout>
+
+---
+
+### `useGroups()`
+
+Get the current user's assigned group IDs.
+
+```tsx
+import { useGroups } from '@holeauth/react';
+
+const { groups, loading } = useGroups();
+// groups: string[] — e.g. ['editor', 'viewer']
+```
+
+**Returns:** `{ groups: string[]; loading: boolean }`
+
+---
+
+## Invite hooks
+
+### `useCreateInvite()`
+
+Create an invitation link.
+
+```tsx
+import { useCreateInvite } from '@holeauth/react';
+
+const { createInvite, result, loading, error } = useCreateInvite();
+
+const { invite } = await createInvite({
+  email: 'newmember@example.com',
+  groupIds: ['editor'],
+  ttlSeconds: 7 * 24 * 3600,
+});
+// invite.url — shareable invite link
+// invite.token — raw token
+```
+
+**Returns:** `{ createInvite, result: InviteResult | null, loading, error, reset }`
+
+---
+
+### `useConsumeInvite()`
+
+Accept an invite and create an account.
+
+```tsx
+import { useConsumeInvite } from '@holeauth/react';
+
+const { consume, loading, error } = useConsumeInvite();
+
+await consume({ token, password: 'new-password', autoSignIn: true });
+```
+
+**Returns:** `{ consume, loading, error }`
+
+---
+
+### `useInviteInfo(token)`
+
+Fetch invite metadata (email, name, expiry) to pre-fill a registration form.
+
+```tsx
+import { useInviteInfo } from '@holeauth/react';
+
+const { info, loading, error } = useInviteInfo(tokenFromUrl);
+```
+
+**Returns:** `{ info: InviteInfo | null; loading: boolean; error }`
+
+---
+
+### `useListInvites()`
+
+List all pending invites (admin use).
+
+```tsx
+import { useListInvites } from '@holeauth/react';
+
+const { invites, loading, reload } = useListInvites();
+```
+
+**Returns:** `{ invites: InviteListItem[]; loading: boolean; error; reload }`
+
+---
+
+### `useRevokeInvite()`
+
+Revoke a pending invite by its identifier.
+
+```tsx
+import { useRevokeInvite } from '@holeauth/react';
+
+const { revoke } = useRevokeInvite();
+await revoke(identifier);
+```
+
+**Returns:** `{ revoke: (identifier: string) => Promise<{ ok: boolean }>; loading; error }`
+
+---
+
+## Audit log hook
+
+### `useAuditLog(opts?)`
+
+Fetch the current user's audit log entries.
+
+```tsx
+import { useAuditLog } from '@holeauth/react';
+
+function AuditPage() {
+  const { entries, loading, reload } = useAuditLog({ limit: 50 });
+
+  return (
+    <ul>
+      {entries.map((e) => (
+        <li key={e.id}>{e.type} — {e.at}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+<TypeTable
+  type={{
+    limit: { description: 'Maximum number of entries to return.', type: 'number' },
+  }}
+/>
+
+**Returns:** `{ entries: AuditEntry[]; loading: boolean; error; reload: () => Promise<void> }`
+
+---
+
+## Server-validated session bridge
+
+Use this pattern to pass the result of `validateCurrentRequest` from a Server Component into the client tree — avoiding a redundant client-side fetch.
+
+### `<AuthenticatedProvider>`
+
+```tsx title="app/dashboard/layout.tsx"
+import { validateCurrentRequest } from '@holeauth/nextjs';
+import { AuthenticatedProvider } from '@holeauth/react';
+import { auth } from '@/lib/auth';
+
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const validated = await validateCurrentRequest(auth, {
+    redirectTo: '/login',
+    loadUser: true,
+  });
+
+  return (
+    <AuthenticatedProvider value={validated}>
+      {children}
+    </AuthenticatedProvider>
+  );
+}
+```
+
+### `useAuthenticated()`
+
+Access the server-validated bundle synchronously (throws if unauthenticated).
+
+```tsx
+import { useAuthenticated } from '@holeauth/react';
+
+function UserBadge() {
+  const { session, user } = useAuthenticated<{ name: string; email: string }>();
+  return <p>{user?.name ?? session.userId}</p>;
+}
+```
+
+### `useOptionalAuthenticated()`
+
+Same as `useAuthenticated()` but returns `null` for guests instead of throwing.
+
+```tsx
+import { useOptionalAuthenticated } from '@holeauth/react';
+
+const auth = useOptionalAuthenticated();
+if (!auth) return <GuestView />;
+```
+
+---
+
+## `holeauthFetch(url, opts)`
+
+Low-level fetch wrapper exported for advanced use cases. Automatically sets the CSRF header from the cookie.
+
+```ts
+import { holeauthFetch } from '@holeauth/react';
+
+const res = await holeauthFetch('/api/auth/session', {
+  method: 'GET',
+  cookiePrefix: 'holeauth',
+});
+```
+
+<TypeTable
+  type={{
+    cookiePrefix: { description: 'Cookie prefix to read the CSRF token from.', type: 'string', required: true },
+    method: { description: 'HTTP method. Default GET.', type: 'string' },
+    body: { description: 'Request body (JSON string).', type: 'string' },
+  }}
+/>
+
+---
+
+## Type exports
+
+```ts
+export type {
+  ClientSession,
+  RbacSnapshot,
+  HoleauthProviderProps,
+  UseAuth,
+  InviteResult,
+  InviteInfo,
+  InviteListItem,
+  TwoFaSetupResult,
+  AuditEntry,
+  AuthenticatedSnapshot,
+  AuthenticatedProviderProps,
+  HoleauthFetchOptions,
+} from '@holeauth/react';
+```
+
+<Cards>
+  <Card title="@holeauth/nextjs" href="/docs/packages/nextjs" description="Server-side session reads, route protection, and cookies." />
+  <Card title="@holeauth/plugin-2fa" href="/docs/packages/plugin-2fa" description="TOTP 2FA plugin — pairs with use2faSetup and use2faVerify." />
+  <Card title="@holeauth/plugin-passkey" href="/docs/packages/plugin-passkey" description="WebAuthn passkeys — pairs with usePasskeyRegister and usePasskeyLogin." />
+  <Card title="@holeauth/plugin-rbac" href="/docs/packages/plugin-rbac" description="RBAC — pairs with usePermission and useGroups." />
+</Cards>

@@ -1,0 +1,566 @@
+---
+title: Copilot integration skills
+description: Copy these GitHub Copilot skill files into your project to get AI-assisted holeauth integration with step-by-step, context-aware guidance.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Accordions, Accordion } from 'fumadocs-ui/components/accordion';
+
+# Copilot integration skills
+
+holeauth ships a set of [GitHub Copilot skills](https://code.visualstudio.com/docs/copilot/customization/agent-skills) — reusable instruction files that teach Copilot how to integrate each package into your project. When invoked, each skill **interviews you about your stack** via a question dialog and then walks you through the exact steps for your setup.
+
+<Callout type="info">
+  Skills require GitHub Copilot in VS Code with agent mode enabled. Copy the files below into `.github/skills/<skill-name>/SKILL.md` in your own project.
+</Callout>
+
+## How to use
+
+1. Copy the skill file(s) below into your project under `.github/skills/<folder-name>/SKILL.md`.
+2. Open GitHub Copilot chat in VS Code (agent mode).
+3. Type `/integrate-holeauth` to start the main skill, or invoke a specific skill directly (e.g. `/integrate-holeauth-2fa`).
+4. Copilot will ask you questions about your stack and generate the integration code.
+
+<Callout type="warn">
+  Always start with `/integrate-holeauth-core` before adding any plugin skills. The plugin skills assume the core setup is already in place.
+</Callout>
+
+---
+
+## Main entry-point skill
+
+This skill asks which features you need and loads the relevant package skills automatically.
+
+**File**: `.github/skills/integrate-holeauth/SKILL.md`
+
+````markdown title=".github/skills/integrate-holeauth/SKILL.md"
+---
+name: integrate-holeauth
+description: "Integrate holeauth into a project from scratch. Use when: adding authentication, setting up auth, integrating holeauth, installing holeauth, adding login, adding 2FA, adding passkeys, adding RBAC, adding SSO, adding sessions. Asks what features are needed and loads the right per-package skills."
+argument-hint: "Describe your project (framework, DB, desired auth features)"
+---
+
+# Integrate holeauth
+
+This skill is the **entry point** for adding holeauth to any project. It interviews you about your stack and goals, then loads the appropriate per-package skills for your exact setup.
+
+## Procedure
+
+### Step 1 — Interview
+
+Use the `vscode/askQuestions` tool to ask the following questions before doing anything else:
+
+**Questions to ask:**
+
+1. **Framework** — Which framework are you using?
+   - Options: Next.js (App Router), Next.js (Pages Router), Express / Fastify (Node), Other
+   - *Currently only Next.js (App Router) has first-class support via `@holeauth/nextjs`.*
+
+2. **Database** — Which database / ORM are you using?
+   - Options: PostgreSQL + Drizzle, MySQL + Drizzle, SQLite + Drizzle, Other / Bring your own adapter
+
+3. **Auth features** — Which features do you need? (multi-select)
+   - Options: Core (email + password), Two-Factor Authentication (TOTP), Passkeys (WebAuthn), RBAC (roles & permissions), SSO / OAuth (IDP)
+
+4. **User table** — Do you already have a users table in your project?
+   - Options: Yes — I have an existing users table, No — start from scratch
+
+### Step 2 — Route to the right skills
+
+Based on the answers above, tell the user which skills to invoke and load them yourself if they are in scope:
+
+| Selected feature | Skill to load |
+|---|---|
+| Any (always required) | `integrate-holeauth-core` |
+| Two-Factor Authentication | `integrate-holeauth-2fa` |
+| Passkeys | `integrate-holeauth-passkey` |
+| RBAC | `integrate-holeauth-rbac` |
+| SSO / OAuth | `integrate-holeauth-idp` |
+
+Load each relevant skill's `SKILL.md` via `read_file` from `.github/skills/<skill-name>/SKILL.md` and follow its procedure.
+
+### Step 3 — Summarize
+
+After all skills complete, generate a checklist of everything that was installed and configured so the user can verify their setup.
+
+## Scope
+
+- Covers Next.js (App Router) as the primary target.
+- Other Node frameworks: the core + adapter steps apply; route handler wiring differs.
+- Does **not** cover email delivery or custom UI design.
+````
+
+---
+
+## Core setup skill
+
+Covers `@holeauth/core`, `@holeauth/adapter-drizzle`, `@holeauth/nextjs`, `@holeauth/react`.
+
+**File**: `.github/skills/integrate-holeauth-core/SKILL.md`
+
+````markdown title=".github/skills/integrate-holeauth-core/SKILL.md"
+---
+name: integrate-holeauth-core
+description: "Set up the holeauth core packages in a project: @holeauth/core, @holeauth/adapter-drizzle, @holeauth/nextjs, @holeauth/react. Use when: installing holeauth core, setting up auth instance, creating Drizzle schema for auth, wiring Next.js route handler, adding HoleauthProvider."
+argument-hint: "PostgreSQL / MySQL / SQLite, Next.js App Router"
+---
+
+# Integrate holeauth — Core Setup
+
+Covers `@holeauth/core`, `@holeauth/adapter-drizzle`, `@holeauth/nextjs`, `@holeauth/react`.
+
+## Procedure
+
+### Step 1 — Clarify requirements
+
+Use `vscode/askQuestions` to ask:
+
+1. **Database dialect** — Which database are you using?
+   - Options: PostgreSQL, MySQL, SQLite
+
+2. **Existing user table** — Do you have an existing users table in your Drizzle schema?
+   - Options: Yes — show me the table definition, No — create a new one
+
+3. **Environment** — Where do you store secrets?
+   - Options: `.env.local` (Next.js default), `.env`, Custom / Vault
+
+4. **Base path** — What path should auth endpoints live at?
+   - Options: `/api/auth` (default), Custom path
+
+5. **Session duration** — How long should access tokens live?
+   - Options: 15 minutes (default), 1 hour, Custom
+
+### Step 2 — Install packages
+
+Based on the chosen dialect (`pg` | `mysql` | `sqlite`), install:
+
+```
+@holeauth/core
+@holeauth/adapter-drizzle
+@holeauth/nextjs
+@holeauth/react
+```
+
+### Step 3 — Drizzle schema
+
+Call `createHoleauthTables({ usersTable: users })` from `@holeauth/adapter-drizzle/<dialect>` and merge into the exported schema:
+
+```ts title="db/schema.ts"
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+const core = createHoleauthTables({ usersTable: users });
+export const schema = { ...users, ...core.tables };
+```
+
+Run `drizzle-kit push` or `drizzle-kit generate` + migrate.
+
+### Step 4 — Auth instance
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+});
+```
+
+Set `HOLEAUTH_SECRET` (≥ 32 random chars) in `.env.local`.
+
+### Step 5 — Route handler
+
+```ts title="app/api/auth/[...holeauth]/route.ts"
+import { auth } from '@/lib/auth';
+import { toNextRouteHandler } from '@holeauth/nextjs';
+
+export const { GET, POST } = toNextRouteHandler(auth);
+```
+
+### Step 6 — React provider
+
+```tsx title="app/layout.tsx"
+import { HoleauthProvider } from '@holeauth/react';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html><body>
+      <HoleauthProvider basePath="/api/auth">{children}</HoleauthProvider>
+    </body></html>
+  );
+}
+```
+
+### Step 7 — Verify
+
+- `GET /api/auth/session` → `null`
+- `POST /api/auth/register` with `{ email, password, name }` → creates user
+- `POST /api/auth/signin/password` → `{ accessToken, refreshToken }`
+````
+
+---
+
+## Two-Factor Authentication skill
+
+Covers `@holeauth/plugin-2fa` and `@holeauth/2fa-drizzle`.
+
+**File**: `.github/skills/integrate-holeauth-2fa/SKILL.md`
+
+````markdown title=".github/skills/integrate-holeauth-2fa/SKILL.md"
+---
+name: integrate-holeauth-2fa
+description: "Add Two-Factor Authentication (TOTP / 2FA) to a holeauth project using @holeauth/plugin-2fa and @holeauth/2fa-drizzle. Use when: adding 2FA, adding TOTP, adding two-factor auth, adding OTP, setting up authenticator app support. Requires integrate-holeauth-core to be completed first."
+argument-hint: "Requires core setup. Database dialect: PostgreSQL / MySQL / SQLite"
+---
+
+# Integrate holeauth — Two-Factor Authentication (2FA)
+
+> **Prerequisite**: Core setup must be complete (`integrate-holeauth-core`).
+
+## Procedure
+
+### Step 1 — Clarify requirements
+
+Use `vscode/askQuestions` to ask:
+
+1. **Database dialect** — PostgreSQL, MySQL, or SQLite?
+2. **Recovery codes** — Should users get one-time recovery codes on enable?
+3. **Issuer name** — Name shown in authenticator apps?
+4. **Enforcement** — Opt-in, required for all, or required for specific roles?
+5. **QR code** — Server-side PNG via `/2fa/render-qr`, client-side, or both?
+
+### Step 2 — Install
+
+```
+@holeauth/plugin-2fa
+@holeauth/2fa-drizzle
+```
+
+### Step 3 — Schema
+
+```ts title="db/schema.ts"
+import { createTwoFactorTables } from '@holeauth/2fa-drizzle/pg';
+const twoFa = createTwoFactorTables({ usersTable: users });
+export const schema = { ...core.tables, ...twoFa.tables };
+```
+
+### Step 4 — Register plugin
+
+```ts title="lib/auth.ts"
+import { twoFactorPlugin } from '@holeauth/plugin-2fa';
+import { drizzle2faAdapter } from '@holeauth/2fa-drizzle/pg';
+
+export const auth = defineHoleauth({
+  plugins: [
+    twoFactorPlugin({
+      adapter: drizzle2faAdapter(db),
+      issuer: 'My App',
+      recoveryCodesCount: 10,
+    }),
+  ],
+});
+```
+
+### Step 5 — API surface
+
+```ts
+const { secret, qrCodeUrl, recoveryCodes } = await auth.twofa.setup(userId);
+await auth.twofa.activate(userId, totpCode);
+await auth.twofa.disable(userId, totpCode);
+const enabled = await auth.twofa.isEnabled(userId);
+```
+
+### Step 6 — Challenge flow
+
+When 2FA is enabled, `signIn()` returns `{ challengeToken }`. Client must POST to `/api/auth/2fa/verify` with `{ challengeToken, code }`.
+
+### Step 7 — Verify
+
+- Enable 2FA → sign out → sign in → receive `challengeToken` → verify with valid code → receive tokens.
+- Test invalid code → 401. Test recovery code → tokens.
+````
+
+---
+
+## Passkeys skill
+
+Covers `@holeauth/plugin-passkey` and `@holeauth/passkey-drizzle`.
+
+**File**: `.github/skills/integrate-holeauth-passkey/SKILL.md`
+
+````markdown title=".github/skills/integrate-holeauth-passkey/SKILL.md"
+---
+name: integrate-holeauth-passkey
+description: "Add Passkey (WebAuthn / FIDO2) authentication to a holeauth project using @holeauth/plugin-passkey and @holeauth/passkey-drizzle. Use when: adding passkeys, adding WebAuthn, adding biometric login, adding FIDO2, passwordless login, passkey registration. Requires integrate-holeauth-core to be completed first."
+argument-hint: "Requires core setup. Database dialect: PostgreSQL / MySQL / SQLite"
+---
+
+# Integrate holeauth — Passkeys (WebAuthn)
+
+> **Prerequisite**: Core setup must be complete (`integrate-holeauth-core`).
+
+## Procedure
+
+### Step 1 — Clarify requirements
+
+Use `vscode/askQuestions` to ask:
+
+1. **Database dialect** — PostgreSQL, MySQL, or SQLite?
+2. **Relying Party name** — Human-readable app name shown in the passkey dialog?
+3. **Relying Party ID** — Domain for passkeys (e.g. `myapp.com`, `localhost`)?
+4. **Origin** — Full origin (e.g. `https://myapp.com`, `http://localhost:3000`)?
+5. **Mode** — Primary login (passwordless) or second factor?
+6. **User verification** — Preferred, required, or discouraged?
+
+### Step 2 — Install
+
+```
+@holeauth/plugin-passkey
+@holeauth/passkey-drizzle
+@simplewebauthn/server
+@simplewebauthn/browser
+```
+
+### Step 3 — Schema
+
+```ts title="db/schema.ts"
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/pg';
+const passkeys = createPasskeyTables({ usersTable: users });
+export const schema = { ...core.tables, ...passkeys.tables };
+```
+
+### Step 4 — Register plugin
+
+```ts title="lib/auth.ts"
+import { passkeyPlugin } from '@holeauth/plugin-passkey';
+import { drizzlePasskeyAdapter } from '@holeauth/passkey-drizzle/pg';
+
+export const auth = defineHoleauth({
+  plugins: [
+    passkeyPlugin({
+      adapter: drizzlePasskeyAdapter(db),
+      rpName: 'My App',
+      rpId: process.env.NEXT_PUBLIC_RP_ID ?? 'localhost',
+      origin: process.env.NEXT_PUBLIC_ORIGIN ?? 'http://localhost:3000',
+    }),
+  ],
+});
+```
+
+Routes added: `GET/POST /api/auth/passkey/register/options|verify`, `GET/POST /api/auth/passkey/login/options|verify`.
+
+### Step 5 — Client-side
+
+```ts
+import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
+
+// Register
+const opts = await fetch('/api/auth/passkey/register/options').then(r => r.json());
+const response = await startRegistration(opts);
+await fetch('/api/auth/passkey/register/verify', { method: 'POST', body: JSON.stringify(response) });
+
+// Login
+const loginOpts = await fetch('/api/auth/passkey/login/options').then(r => r.json());
+const loginResp = await startAuthentication(loginOpts);
+const { accessToken } = await fetch('/api/auth/passkey/login/verify', { method: 'POST', body: JSON.stringify(loginResp) }).then(r => r.json());
+```
+
+### Step 6 — Verify
+
+- Register → login → receive tokens. Test on device with biometrics or browser passkey manager.
+````
+
+---
+
+## RBAC skill
+
+Covers `@holeauth/plugin-rbac`, `@holeauth/rbac-drizzle`, `@holeauth/rbac-yaml`.
+
+**File**: `.github/skills/integrate-holeauth-rbac/SKILL.md`
+
+````markdown title=".github/skills/integrate-holeauth-rbac/SKILL.md"
+---
+name: integrate-holeauth-rbac
+description: "Add Role-Based Access Control (RBAC) to a holeauth project using @holeauth/plugin-rbac, @holeauth/rbac-drizzle, and @holeauth/rbac-yaml. Use when: adding roles, adding permissions, adding RBAC, adding authorization, protecting routes, restricting access, adding groups, adding user roles. Requires integrate-holeauth-core to be completed first."
+argument-hint: "Requires core setup. Database dialect: PostgreSQL / MySQL / SQLite"
+---
+
+# Integrate holeauth — RBAC (Roles & Permissions)
+
+> **Prerequisite**: Core setup must be complete (`integrate-holeauth-core`).
+
+## Procedure
+
+### Step 1 — Clarify requirements
+
+Use `vscode/askQuestions` to ask:
+
+1. **Database dialect** — PostgreSQL, MySQL, or SQLite?
+2. **Group storage** — YAML file (recommended), database-only, or both?
+3. **Default role** — What role should new users receive? (e.g. `user`)
+4. **Initial roles** — List roles needed (e.g. `user, moderator, admin`)
+5. **Permission style** — Dot-notation paths or flat strings?
+6. **Enforcement** — RSC page components, middleware, API handlers, or all?
+
+### Step 2 — Install
+
+```
+@holeauth/plugin-rbac
+@holeauth/rbac-drizzle
+@holeauth/rbac-yaml
+```
+
+### Step 3 — Schema
+
+```ts title="db/schema.ts"
+import { createRbacTables } from '@holeauth/rbac-drizzle/pg';
+const rbac = createRbacTables({ usersTable: users });
+export const schema = { ...core.tables, ...rbac.tables };
+```
+
+### Step 4 — YAML group definitions
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  user:
+    default: true
+    displayName: User
+    priority: 0
+    permissions:
+      - profile.read
+      - profile.edit.self
+  admin:
+    displayName: Admin
+    priority: 100
+    inherits: [user]
+    permissions:
+      - '*'
+      - '!admin.delete'
+```
+
+### Step 5 — Register plugin
+
+```ts title="lib/auth.ts"
+import { rbacPlugin } from '@holeauth/plugin-rbac';
+import { drizzleRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const groups = await loadRbacYaml('./holeauth.rbac.yml');
+
+export const auth = defineHoleauth({
+  plugins: [
+    rbacPlugin({ adapter: drizzleRbacAdapter(db), groups }),
+  ],
+});
+```
+
+### Step 6 — Server-side protection (Next.js RSC)
+
+```ts title="app/admin/page.tsx"
+import { validateCurrentRequest } from '@holeauth/nextjs';
+const { session } = await validateCurrentRequest(auth, {
+  permissions: ['admin.read'],
+  redirectTo: '/login',
+});
+```
+
+### Step 7 — Client-side
+
+```tsx
+import { useRbac } from '@holeauth/react';
+const { can } = useRbac();
+if (can('posts.edit.own')) { /* show edit button */ }
+```
+
+### Step 8 — Verify
+
+- Assign `admin` group → `can('admin.read')` returns `true`.
+- Plain `user` → `can('admin.read')` returns `false`.
+- Protected page: admin renders, user redirects.
+````
+
+---
+
+## Identity Provider (SSO) skill
+
+Covers `@holeauth/plugin-idp` and `@holeauth/idp-drizzle`.
+
+**File**: `.github/skills/integrate-holeauth-idp/SKILL.md`
+
+````markdown title=".github/skills/integrate-holeauth-idp/SKILL.md"
+---
+name: integrate-holeauth-idp
+description: "Add an OAuth 2.0 / OpenID Connect Identity Provider (SSO) to a holeauth project using @holeauth/plugin-idp and @holeauth/idp-drizzle. Use when: adding SSO, adding OAuth provider, adding OpenID Connect, adding OIDC, adding IDP, acting as OAuth server, issuing access tokens to third-party apps, adding authorization server. Requires integrate-holeauth-core to be completed first."
+argument-hint: "Requires core setup. Database dialect: PostgreSQL / MySQL / SQLite"
+---
+
+# Integrate holeauth — Identity Provider (SSO / OAuth 2.0 / OIDC)
+
+> **Note**: This turns your app into an OAuth 2.0 Authorization Server. For consuming external OAuth (e.g. "Login with Google"), see the SSO guide instead.
+> **Prerequisite**: Core setup must be complete (`integrate-holeauth-core`).
+
+## Procedure
+
+### Step 1 — Clarify requirements
+
+Use `vscode/askQuestions` to ask:
+
+1. **Database dialect** — PostgreSQL, MySQL, or SQLite?
+2. **Signing algorithm** — RS256 (asymmetric, recommended) or HS256?
+3. **Client types** — Public (SPA/mobile), confidential (server), or both?
+4. **Scopes** — Additional scopes beyond `openid profile email`?
+5. **Consent screen** — Always show, skip, or remember per user×app×scope?
+6. **Team ownership** — Multi-tenant app registry or single-owner?
+
+### Step 2 — Install
+
+```
+@holeauth/plugin-idp
+@holeauth/idp-drizzle
+```
+
+### Step 3 — Schema
+
+```ts title="db/schema.ts"
+import { createIdpTables } from '@holeauth/idp-drizzle/pg';
+const idp = createIdpTables({ usersTable: users });
+export const schema = { ...core.tables, ...idp.tables };
+```
+
+### Step 4 — Register plugin
+
+```ts title="lib/auth.ts"
+import { idpPlugin } from '@holeauth/plugin-idp';
+import { drizzleIdpAdapter } from '@holeauth/idp-drizzle/pg';
+
+export const auth = defineHoleauth({
+  plugins: [
+    idpPlugin({
+      adapter: drizzleIdpAdapter(db),
+      signingAlg: 'RS256',
+      issuer: process.env.NEXT_PUBLIC_APP_URL!,
+    }),
+  ],
+});
+```
+
+Endpoints added: `/.well-known/openid-configuration`, `/.well-known/jwks.json`, `/oauth2/authorize`, `/oauth2/token`, `/oauth2/revoke`, `/oauth2/userinfo`, `/oauth2/end-session`.
+
+### Step 5 — Register an OAuth app
+
+```ts
+const app = await auth.idp.registerApp({
+  name: 'My Client App',
+  type: 'confidential',
+  redirectUris: ['https://client.example.com/callback'],
+  scopes: ['openid', 'profile', 'email'],
+  ownerId: userId,
+});
+```
+
+### Step 6 — Verify
+
+- `GET /.well-known/openid-configuration` → valid OIDC discovery document.
+- Authorization code flow → consent → token exchange → userinfo.
+````

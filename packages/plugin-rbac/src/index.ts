@@ -157,6 +157,27 @@ function requireAdapter(adapter: RbacAdapter | undefined): RbacAdapter {
   return adapter;
 }
 
+const MAX_RBAC_STRING_LENGTH = 256;
+
+/** Narrow + length-guard untrusted string inputs. */
+function sanitizeRbacString(raw: unknown, field: string): string {
+  if (typeof raw !== 'string' || raw.length === 0) {
+    throw new HoleauthError(
+      'RBAC_INVALID_INPUT',
+      `${field} must be a non-empty string`,
+      400,
+    );
+  }
+  if (raw.length > MAX_RBAC_STRING_LENGTH) {
+    throw new HoleauthError(
+      'RBAC_INVALID_INPUT',
+      `${field} exceeds maximum length`,
+      400,
+    );
+  }
+  return raw;
+}
+
 export function rbac(options: RbacOptions): RbacPlugin {
   const initialGroups = options.groups;
   const optAdapter = options.adapter;
@@ -235,23 +256,23 @@ export function rbac(options: RbacOptions): RbacPlugin {
 
     hooks: {
       register: {
-        async after(user) {
+        async after(user, ctx) {
           try {
             const adapter = requireAdapter(resolvedAdapter);
             await adapter.assignGroup(user.id, index.defaultGroupId);
           } catch (e) {
-            logger?.error('rbac: failed to assign default group', e);
+            (logger ?? ctx.logger).error('rbac: failed to assign default group', e);
           }
         },
       },
       userDelete: {
-        async after({ userId }) {
+        async after({ userId }, ctx) {
           await cache.invalidate(userId);
           try {
             const adapter = requireAdapter(resolvedAdapter);
             await adapter.purgeUser(userId);
           } catch (e) {
-            logger?.error('rbac: purgeUser failed', e);
+            (logger ?? ctx.logger).error('rbac: purgeUser failed', e);
           }
         },
       },
@@ -266,13 +287,23 @@ export function rbac(options: RbacOptions): RbacPlugin {
 
       return {
         async can(userId, node) {
-          return can(await computeEffective(userId), node);
+          const uid = sanitizeRbacString(userId, 'userId');
+          const q = sanitizeRbacString(node, 'node');
+          return can(await computeEffective(uid), q);
         },
         async canAll(userId, nodes) {
-          return canAll(await computeEffective(userId), nodes);
+          const uid = sanitizeRbacString(userId, 'userId');
+          if (!Array.isArray(nodes)) {
+            throw new HoleauthError('RBAC_INVALID_INPUT', 'nodes must be an array', 400);
+          }
+          return canAll(await computeEffective(uid), nodes.map((n) => sanitizeRbacString(n, 'node')));
         },
         async canAny(userId, nodes) {
-          return canAny(await computeEffective(userId), nodes);
+          const uid = sanitizeRbacString(userId, 'userId');
+          if (!Array.isArray(nodes)) {
+            throw new HoleauthError('RBAC_INVALID_INPUT', 'nodes must be an array', 400);
+          }
+          return canAny(await computeEffective(uid), nodes.map((n) => sanitizeRbacString(n, 'node')));
         },
         listGroups() {
           return index.order.map((id) => index.byId.get(id)!);
@@ -297,34 +328,42 @@ export function rbac(options: RbacOptions): RbacPlugin {
           return computeEffective(userId);
         },
         async assignGroup(userId, groupId) {
-          if (!index.byId.has(groupId)) {
-            throw new HoleauthError('RBAC_UNKNOWN_GROUP', `unknown group "${groupId}"`, 400);
+          const uid = sanitizeRbacString(userId, 'userId');
+          const gid = sanitizeRbacString(groupId, 'groupId');
+          if (!index.byId.has(gid)) {
+            throw new HoleauthError('RBAC_UNKNOWN_GROUP', `unknown group "${gid}"`, 400);
           }
-          await requireAdapter(resolvedAdapter).assignGroup(userId, groupId);
-          await cache.invalidate(userId);
+          await requireAdapter(resolvedAdapter).assignGroup(uid, gid);
+          await cache.invalidate(uid);
         },
         async removeGroup(userId, groupId) {
-          if (!index.byId.has(groupId)) {
-            throw new HoleauthError('RBAC_UNKNOWN_GROUP', `unknown group "${groupId}"`, 400);
+          const uid = sanitizeRbacString(userId, 'userId');
+          const gid = sanitizeRbacString(groupId, 'groupId');
+          if (!index.byId.has(gid)) {
+            throw new HoleauthError('RBAC_UNKNOWN_GROUP', `unknown group "${gid}"`, 400);
           }
-          await requireAdapter(resolvedAdapter).removeGroup(userId, groupId);
-          await cache.invalidate(userId);
+          await requireAdapter(resolvedAdapter).removeGroup(uid, gid);
+          await cache.invalidate(uid);
         },
         async grant(userId, node) {
+          const uid = sanitizeRbacString(userId, 'userId');
+          const n = sanitizeRbacString(node, 'node');
           const known = collectKnownPatterns(index.order.map((id) => index.byId.get(id)!));
-          if (!isKnownPermission(node, known)) {
+          if (!isKnownPermission(n, known)) {
             throw new HoleauthError(
               'RBAC_UNKNOWN_PERMISSION',
-              `unknown permission node "${node}"`,
+              `unknown permission node "${n}"`,
               400,
             );
           }
-          await requireAdapter(resolvedAdapter).grantPermission(userId, node);
-          await cache.invalidate(userId);
+          await requireAdapter(resolvedAdapter).grantPermission(uid, n);
+          await cache.invalidate(uid);
         },
         async revoke(userId, node) {
-          await requireAdapter(resolvedAdapter).revokePermission(userId, node);
-          await cache.invalidate(userId);
+          const uid = sanitizeRbacString(userId, 'userId');
+          const n = sanitizeRbacString(node, 'node');
+          await requireAdapter(resolvedAdapter).revokePermission(uid, n);
+          await cache.invalidate(uid);
         },
         reload(groups) {
           index = buildGroupIndex(groups);

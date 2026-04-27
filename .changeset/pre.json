@@ -1,0 +1,25 @@
+{
+  "mode": "pre",
+  "tag": "alpha",
+  "initialVersions": {
+    "client-playground": "0.0.0",
+    "docs": "0.0.0",
+    "playground": "0.0.0",
+    "@holeauth/2fa-drizzle": "0.0.0",
+    "@holeauth/adapter-drizzle": "0.0.0",
+    "@holeauth/core": "0.0.0",
+    "@holeauth/eslint-config": "0.0.0",
+    "@holeauth/idp-drizzle": "0.0.0",
+    "@holeauth/nextjs": "0.0.0",
+    "@holeauth/passkey-drizzle": "0.0.0",
+    "@holeauth/plugin-2fa": "0.0.0",
+    "@holeauth/plugin-idp": "0.0.0",
+    "@holeauth/plugin-passkey": "0.0.0",
+    "@holeauth/plugin-rbac": "0.0.0",
+    "@holeauth/rbac-drizzle": "0.0.0",
+    "@holeauth/rbac-yaml": "0.0.0",
+    "@holeauth/react": "0.0.0",
+    "@holeauth/tsconfig": "0.0.0"
+  },
+  "changesets": []
+}

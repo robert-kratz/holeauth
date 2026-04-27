@@ -8,6 +8,7 @@
     "sso",
     "sessions-refresh",
     "csrf",
-    "events-audit"
+    "events-audit",
+    "copilot-skills"
   ]
 }

@@ -1,0 +1,286 @@
+---
+title: plugin-passkey
+description: WebAuthn passkey registration and login plugin for holeauth, powered by @simplewebauthn/server.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/plugin-passkey
+
+WebAuthn / Passkey authentication as a holeauth plugin. Uses [`@simplewebauthn/server`](https://simplewebauthn.dev) for the server-side ceremony. Your application is responsible for the browser-side ceremony using `@simplewebauthn/browser`.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-passkey @simplewebauthn/server
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-passkey @simplewebauthn/server
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-passkey @simplewebauthn/server
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-passkey @simplewebauthn/server
+```
+</Tab>
+</Tabs>
+
+<Callout type="warn">
+  `@simplewebauthn/server` is a peer dependency. The plugin will throw `PASSKEY_NOT_CONFIGURED` at runtime if it is not installed.
+</Callout>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createHoleauthAdapters, createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createPasskeyTables, createPasskeyAdapter } from '@holeauth/passkey-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+const { passkeyTables } = createPasskeyTables({ usersTable: users });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeyTables });
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpID: 'app.example.com',
+      rpOrigin: 'https://app.example.com',
+      rpName: 'My App',
+    }),
+  ],
+});
+```
+
+## `passkey(options)`
+
+Factory function that creates a `PasskeyPlugin` and registers it with `defineHoleauth`.
+
+### Options
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Storage adapter for passkey credentials. Required.',
+      type: 'PasskeyAdapter',
+      required: true,
+    },
+    rpID: {
+      description: 'Relying party ID — the domain without protocol (e.g. "app.example.com").',
+      type: 'string',
+      required: true,
+    },
+    rpOrigin: {
+      description: 'Full origin for the browser (e.g. "https://app.example.com").',
+      type: 'string',
+      required: true,
+    },
+    rpName: {
+      description: 'Human-readable relying party display name shown in authenticator UIs.',
+      type: 'string',
+    },
+    pendingTtlSeconds: {
+      description: 'TTL for pending WebAuthn challenges (seconds). Defaults to core pendingTtl or 300.',
+      type: 'number',
+      default: '300',
+    },
+    rateLimiter: {
+      description: 'Rate limiter applied to every loginVerify attempt. Defaults to an in-memory limiter (10 attempts per 5 min). Supply a distributed implementation in production.',
+      type: 'PasskeyRateLimiter',
+      default: 'createMemoryRateLimiter()',
+    },
+  }}
+/>
+
+## `PasskeyApi` methods
+
+Accessible as `auth.passkey.*` after setup.
+
+### `registerOptions(userId)`
+
+Begin passkey registration for an authenticated user. Returns WebAuthn options that must be passed to `@simplewebauthn/browser`'s `startRegistration`.
+
+```ts
+const { options, challenge } = await auth.passkey.registerOptions(userId);
+// Store `challenge` server-side, then return `options` to the client
+```
+
+**Returns:**
+
+<TypeTable
+  type={{
+    options: { description: 'PublicKeyCredentialCreationOptionsJSON — pass directly to startRegistration().', type: 'unknown', required: true },
+    challenge: { description: 'The challenge string; store server-side to verify the response.', type: 'string', required: true },
+  }}
+/>
+
+### `registerVerify(userId, input)`
+
+Complete passkey registration after the client posts the authenticator response.
+
+```ts
+const { credentialId } = await auth.passkey.registerVerify(userId, {
+  response: req.body.response,       // AttestationResponse from browser
+  expectedChallenge: storedChallenge,
+  deviceName: 'MacBook Pro Touch ID',
+});
+```
+
+**Parameters:**
+
+<TypeTable
+  type={{
+    response: { description: 'AttestationResponse object posted by the browser.', type: 'unknown', required: true },
+    expectedChallenge: { description: 'Challenge string returned by registerOptions and stored server-side.', type: 'string', required: true },
+    deviceName: { description: 'Optional human-readable label for this credential.', type: 'string' },
+  }}
+/>
+
+**Returns:** `{ credentialId: string }`
+
+### `loginOptions(userId?)`
+
+Begin passkey login. If `userId` is provided, only that user's credentials are returned (targeted authentication). Omit for usernameless login.
+
+```ts
+const { options, challenge } = await auth.passkey.loginOptions();
+```
+
+### `loginVerify(input)`
+
+Complete passkey login after the client posts the authenticator response. Issues a full session.
+
+```ts
+const { user, tokens } = await auth.passkey.loginVerify({
+  response: req.body.response,
+  expectedChallenge: storedChallenge,
+  ip: req.ip,
+  userAgent: req.headers['user-agent'],
+});
+```
+
+**Parameters:**
+
+<TypeTable
+  type={{
+    response: { description: 'AssertionResponse object posted by the browser.', type: 'unknown', required: true },
+    expectedChallenge: { description: 'Challenge returned by loginOptions, stored server-side.', type: 'string', required: true },
+    ip: { description: 'Client IP for audit log and rate limiting.', type: 'string' },
+    userAgent: { description: 'Client User-Agent for audit log.', type: 'string' },
+  }}
+/>
+
+**Returns:** `{ user: AdapterUser; tokens: IssuedTokens }`
+
+### `list(userId)`
+
+List all passkey credentials registered for a user.
+
+```ts
+const credentials = await auth.passkey.list(userId);
+// PasskeyRecord[]
+```
+
+### `delete(userId, credentialId)`
+
+Remove a specific passkey credential.
+
+```ts
+await auth.passkey.delete(userId, credentialId);
+```
+
+## Routes
+
+The plugin mounts routes under the `basePath` (default `/api/auth`):
+
+| Method | Path | Auth required | Notes |
+|--------|------|---------------|-------|
+| POST | `/passkey/register/options` | ✓ | Begin registration |
+| POST | `/passkey/register/verify` | ✓ | Complete registration |
+| POST | `/passkey/login/options` | ✗ | Begin login |
+| POST | `/passkey/login/verify` | ✗ | Complete login, issues tokens |
+| GET | `/passkey/list` | ✓ | List credentials |
+| DELETE | `/passkey/delete/:credentialId` | ✓ | Remove a credential |
+
+## `PasskeyAdapter` interface
+
+<TypeTable
+  type={{
+    list: { description: 'List all credentials for a user.', type: '(userId: string) => Promise<PasskeyRecord[]>', required: true },
+    getByCredentialId: { description: 'Fetch a credential by its base64url credential ID.', type: '(credentialId: string) => Promise<PasskeyRecord | null>', required: true },
+    create: { description: 'Persist a new credential after successful registration.', type: '(data: Omit<PasskeyRecord, "id">) => Promise<PasskeyRecord>', required: true },
+    updateCounter: { description: 'Increment the signature counter after successful login.', type: '(credentialId: string, counter: number) => Promise<void>', required: true },
+    delete: { description: 'Remove a credential by its record ID.', type: '(id: string) => Promise<void>', required: true },
+  }}
+/>
+
+## `PasskeyRecord` shape
+
+<TypeTable
+  type={{
+    id: { description: 'Internal record ID.', type: 'string', required: true },
+    userId: { description: 'User ID this credential belongs to.', type: 'string', required: true },
+    credentialId: { description: 'WebAuthn credential ID (base64url).', type: 'string', required: true },
+    publicKey: { description: 'COSE public key (base64url).', type: 'string', required: true },
+    counter: { description: 'Signature counter for replay detection.', type: 'number', required: true },
+    transports: { description: 'Authenticator transport hints.', type: 'string[] | null' },
+    deviceName: { description: 'Human-readable name for this credential.', type: 'string | null' },
+    createdAt: { description: 'When this credential was registered.', type: 'Date' },
+  }}
+/>
+
+## Rate limiting
+
+Replace the default in-memory limiter with a distributed adapter for production:
+
+```ts
+import { passkey, type PasskeyRateLimiter } from '@holeauth/plugin-passkey';
+
+const redisLimiter: PasskeyRateLimiter = {
+  async check(key) {
+    // key is `login:${ip}` or `login:${userId}`
+    return { ok: true }; // or { ok: false, retryAfterSeconds: 60 }
+  },
+};
+
+passkey({ adapter, rpID, rpOrigin, rateLimiter: redisLimiter });
+```
+
+### `createMemoryRateLimiter(opts?)`
+
+```ts
+import { createMemoryRateLimiter } from '@holeauth/plugin-passkey';
+
+const limiter = createMemoryRateLimiter({ maxAttempts: 10, windowMs: 300_000 });
+```
+
+## Error codes
+
+| Code | HTTP | When |
+|------|------|------|
+| `PASSKEY_RATE_LIMITED` | 429 | Too many loginVerify attempts |
+| `PASSKEY_NOT_CONFIGURED` | 500 | `@simplewebauthn/server` not installed |
+| `PASSKEY_INVALID_INPUT` | 400 | Malformed or oversized input string |
+| `PASSKEY_NOT_FOUND` | 404 | Credential ID not in database |
+
+<Cards>
+  <Card title="passkey-drizzle" href="/docs/packages/passkey-drizzle" description="Drizzle ORM tables and adapter for this plugin." />
+  <Card title="Guides: Passkeys" href="/docs/guides/passkeys" description="End-to-end walkthrough for adding WebAuthn passkeys." />
+</Cards>

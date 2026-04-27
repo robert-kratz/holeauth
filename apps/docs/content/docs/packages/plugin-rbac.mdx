@@ -1,0 +1,313 @@
+---
+title: plugin-rbac
+description: Headless role-based access control plugin for holeauth with groups, permission nodes, and a pluggable cache.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/plugin-rbac
+
+Headless RBAC plugin for holeauth. No filesystem access, no YAML parsing — group definitions are supplied as an array and can be hot-reloaded at runtime. Combines with [`@holeauth/rbac-yaml`](/docs/packages/rbac-yaml) for YAML-driven config and [`@holeauth/rbac-drizzle`](/docs/packages/rbac-drizzle) for per-user group storage.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-rbac
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-rbac
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-rbac
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-rbac
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { rbac } from '@holeauth/plugin-rbac';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { db } from '@/db';
+
+const yaml = loadRbacYaml('./holeauth.rbac.yml', {
+  watch: process.env.NODE_ENV !== 'production',
+});
+
+const rbacAdapter = createRbacAdapter({ db });
+
+export const auth = defineHoleauth({
+  // ...adapters and secrets
+  plugins: [
+    rbac({
+      groups: yaml.snapshot.groups,
+      adapter: rbacAdapter,
+    }),
+  ],
+});
+
+// Hot-reload groups when the YAML file changes
+yaml.onReload((snapshot) => auth.rbac.reload(snapshot.groups));
+```
+
+## `rbac(options)`
+
+Factory function that creates an `RbacPlugin` and registers it with `defineHoleauth`.
+
+### Options
+
+<TypeTable
+  type={{
+    groups: {
+      description: 'Array of group definitions. Exactly one must have default: true. Pass yaml.snapshot.groups from @holeauth/rbac-yaml, or a static array.',
+      type: 'GroupDefinition[]',
+      required: true,
+    },
+    adapter: {
+      description: 'Storage adapter for per-user group and permission assignments. Optional if all users share the default group.',
+      type: 'RbacAdapter',
+    },
+    cacheTtlMs: {
+      description: 'TTL for the per-user effective-node cache (ms). Shorter values trade performance for freshness.',
+      type: 'number',
+      default: '5_000 (dev) / 30_000 (prod)',
+    },
+    cache: {
+      description: 'Custom cache adapter. Defaults to defaultRbacCache (in-memory TTL map). Implement RbacCacheAdapter to use Redis.',
+      type: 'RbacCacheAdapter',
+      default: 'defaultRbacCache(cacheTtlMs)',
+    },
+  }}
+/>
+
+## `RbacApi` methods
+
+Accessible as `auth.rbac.*`.
+
+### Permission checks
+
+#### `can(userId, node)`
+
+Returns `true` if the user has the given permission node.
+
+```ts
+const allowed = await auth.rbac.can(userId, 'posts.publish');
+```
+
+#### `canAll(userId, nodes)`
+
+Returns `true` if the user has **all** listed nodes.
+
+```ts
+const allowed = await auth.rbac.canAll(userId, ['posts.read', 'posts.write']);
+```
+
+#### `canAny(userId, nodes)`
+
+Returns `true` if the user has **at least one** of the listed nodes.
+
+```ts
+const allowed = await auth.rbac.canAny(userId, ['admin.full', 'posts.delete']);
+```
+
+### Group queries
+
+#### `listGroups()`
+
+Return all currently loaded group definitions (synchronous).
+
+```ts
+const groups = auth.rbac.listGroups(); // GroupDefinition[]
+```
+
+#### `getGroup(id)`
+
+Fetch a single group by ID, or `null` if it does not exist.
+
+```ts
+const group = auth.rbac.getGroup('editor');
+```
+
+#### `getUserGroups(userId)`
+
+Return all group definitions the user is currently assigned to.
+
+```ts
+const groups = await auth.rbac.getUserGroups(userId); // GroupDefinition[]
+```
+
+#### `getUserPermissions(userId)`
+
+Return the user's direct per-user permission nodes (not effective; excludes inherited group permissions).
+
+```ts
+const nodes = await auth.rbac.getUserPermissions(userId); // string[]
+```
+
+#### `getEffectiveNodes(userId)`
+
+Return the full merged set of permission nodes for a user (group permissions + direct grants - negations). This is what `can` / `canAll` / `canAny` use internally.
+
+```ts
+const nodes = await auth.rbac.getEffectiveNodes(userId); // string[]
+```
+
+### Group management
+
+#### `assignGroup(userId, groupId)`
+
+Add a user to a group.
+
+```ts
+await auth.rbac.assignGroup(userId, 'editor');
+```
+
+#### `removeGroup(userId, groupId)`
+
+Remove a user from a group.
+
+```ts
+await auth.rbac.removeGroup(userId, 'editor');
+```
+
+### Direct permission overrides
+
+#### `grant(userId, node)`
+
+Grant a direct permission node to a user, overriding group defaults.
+
+```ts
+await auth.rbac.grant(userId, 'posts.feature');
+```
+
+#### `revoke(userId, node)`
+
+Revoke or negate a permission node for a user.
+
+```ts
+await auth.rbac.revoke(userId, '!posts.delete'); // negation prefix
+```
+
+### Runtime management
+
+#### `reload(groups)`
+
+Hot-swap the group definitions at runtime. Clears the effective-node cache.
+
+```ts
+yaml.onReload((snapshot) => auth.rbac.reload(snapshot.groups));
+```
+
+#### `listOrphans()`
+
+Return all user-group assignments referencing a group ID that no longer exists in the current definitions.
+
+```ts
+const orphans = await auth.rbac.listOrphans(); // UserGroupAssignment[]
+```
+
+#### `snapshot()`
+
+Return the currently loaded group definitions and the default group ID (synchronous).
+
+```ts
+const { groups, defaultGroupId } = auth.rbac.snapshot();
+```
+
+## `GroupDefinition` shape
+
+<TypeTable
+  type={{
+    id: { description: 'Unique group identifier.', type: 'string', required: true },
+    default: { description: 'Exactly one group must be the default (assigned to new users).', type: 'boolean' },
+    displayName: { description: 'Human-readable name shown in admin UIs.', type: 'string' },
+    description: { description: 'Optional group description.', type: 'string' },
+    priority: { description: 'Ordering hint for admin UIs. Higher = shown first.', type: 'number' },
+    effective: { description: 'Full effective permission list — inheritance already resolved by the caller (e.g. rbac-yaml).', type: 'string[]', required: true },
+    permissions: { description: 'Raw own permissions. Informational only.', type: 'string[]' },
+  }}
+/>
+
+## `RbacAdapter` interface
+
+<TypeTable
+  type={{
+    listUserGroups: { description: 'Return all group IDs the user is assigned to.', type: '(userId: string) => Promise<string[]>', required: true },
+    assignGroup: { description: 'Add user to a group.', type: '(userId: string, groupId: string) => Promise<void>', required: true },
+    removeGroup: { description: 'Remove user from a group.', type: '(userId: string, groupId: string) => Promise<void>', required: true },
+    listUserPermissions: { description: 'Return all direct per-user permission nodes.', type: '(userId: string) => Promise<string[]>', required: true },
+    grantPermission: { description: 'Persist a direct permission node grant.', type: '(userId: string, node: string) => Promise<void>', required: true },
+    revokePermission: { description: 'Remove a direct permission node.', type: '(userId: string, node: string) => Promise<void>', required: true },
+    listAllGroupAssignments: { description: 'Return every (userId, groupId) pair. Used by listOrphans.', type: '() => Promise<UserGroupAssignment[]>', required: true },
+    purgeUser: { description: 'Bulk-remove all direct permissions for a user (called on userDelete).', type: '(userId: string) => Promise<void>', required: true },
+  }}
+/>
+
+## Permission node syntax
+
+Permission nodes are dot-separated paths. Wildcards and negations are supported:
+
+| Pattern | Meaning |
+|---------|---------|
+| `posts.read` | Single permission |
+| `posts.*` | All `posts.*` sub-nodes |
+| `*` | All permissions |
+| `!posts.delete` | Explicit deny (negation overrides grants) |
+
+## Cache adapter
+
+Replace the default in-memory cache with Redis:
+
+```ts
+import { rbac, type RbacCacheAdapter } from '@holeauth/plugin-rbac';
+
+const redisCache: RbacCacheAdapter = {
+  async get(userId) { /* return string[] | undefined */ },
+  async set(userId, nodes) { /* ... */ },
+  async invalidate(userId) { /* ... */ },
+  async clear() { /* ... */ },
+};
+
+rbac({ groups, adapter, cache: redisCache });
+```
+
+### `defaultRbacCache(ttlMs)`
+
+Creates the built-in in-memory TTL cache:
+
+```ts
+import { defaultRbacCache } from '@holeauth/plugin-rbac';
+
+const cache = defaultRbacCache(60_000); // 60-second TTL
+```
+
+## Pattern matching utilities
+
+Low-level matcher functions re-exported from `@holeauth/plugin-rbac`:
+
+```ts
+import { matchNodes, matchNodesAll, matchNodesAny, matchPattern } from '@holeauth/plugin-rbac';
+
+matchPattern('posts.*', 'posts.read'); // true
+matchNodes(['posts.*', '!posts.delete'], 'posts.delete'); // false
+```
+
+<Cards>
+  <Card title="rbac-drizzle" href="/docs/packages/rbac-drizzle" description="Drizzle ORM tables and adapter for this plugin." />
+  <Card title="rbac-yaml" href="/docs/packages/rbac-yaml" description="YAML file loader and hot-reload for group definitions." />
+</Cards>

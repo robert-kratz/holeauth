@@ -1,37 +1,55 @@
 name: Release
+
 on:
   push: { branches: [main] }
 
+# Only one release can run at a time; never cancel an in-flight publish.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   release:
+    name: Publish to npm
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
+      contents: write       # create git tags + push version commits
+      pull-requests: write  # open / update the "Version Packages" PR
+      id-token: write       # npm provenance attestation (OIDC)
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0   # full history so changesets can diff correctly
+
       - uses: pnpm/action-setup@v4
         with: { version: 9 }
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-          registry-url: 'https://registry.npmjs.org'
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo run build --filter=./packages/*
-      - uses: changesets/action@v1
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm turbo run build --filter=./packages/*
+
+      # changesets/action does two things depending on branch state:
+      #   1. If there are unconsumed changesets → opens/updates a "Version Packages" PR
+      #   2. If the PR was just merged → runs `pnpm release` (changeset publish)
+      #
+      # While .changeset/pre.json exists (alpha mode) the version PR will produce
+      # versions like 0.0.1-alpha.0 and publish with --tag alpha automatically.
+      - name: Create release PR or publish
+        uses: changesets/action@v1
         with:
-          publish: pnpm release
           version: pnpm version-packages
+          publish: pnpm release
           commit: 'chore: version packages'
           title: 'chore: version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+

@@ -1,13 +1,37 @@
 ---
 title: '@holeauth/nextjs'
-description: Route handler, middleware, and cookie helpers for the Next.js App Router.
+description: Route handler, middleware, server helpers, and cookie utilities for the Next.js App Router.
 ---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # @holeauth/nextjs
 
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
 ```bash
 pnpm add @holeauth/nextjs
 ```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/nextjs
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/nextjs
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/nextjs
+```
+</Tab>
+</Tabs>
 
 Provides a drop-in catch-all route handler, a middleware helper, and cookie utilities.
 
@@ -120,3 +144,232 @@ Pass an explicit token if you're reading it from somewhere else (for example a s
 ```ts
 const session = await auth.getSession(req.headers.get('authorization')?.slice(7));
 ```
+
+---
+
+## `validateCurrentRequest(auth, opts?)`
+
+One-stop guard for Server Components and Route Handlers. Reads the session cookie, optionally loads the full user row and RBAC snapshot, and redirects (or throws) on failure.
+
+```tsx title="app/dashboard/page.tsx"
+import { validateCurrentRequest } from '@holeauth/nextjs';
+import { auth } from '@/lib/auth';
+
+export default async function DashboardPage() {
+  const { session, user } = await validateCurrentRequest(auth, {
+    redirectTo: '/login',
+    loadUser: true,
+    permissions: 'dashboard.view',
+  });
+
+  return <h1>Welcome, {user?.email}</h1>;
+}
+```
+
+### Options
+
+<TypeTable
+  type={{
+    permissions: {
+      description: 'Required permission node(s). AND semantics — all must be granted. Requires plugin-rbac.',
+      type: 'string | string[]',
+    },
+    anyPermission: {
+      description: 'Any-of permission nodes. OR semantics — at least one must be granted. Requires plugin-rbac.',
+      type: 'string[]',
+    },
+    groups: {
+      description: 'Required group ID(s). AND semantics. Requires plugin-rbac.',
+      type: 'string | string[]',
+    },
+    redirectTo: {
+      description: 'Where to redirect on auth or permission failure.',
+      type: 'string',
+      default: '"/login"',
+    },
+    loadUser: {
+      description: 'Load the full user row from the adapter. Adds user to the return value.',
+      type: 'boolean',
+      default: 'false',
+    },
+    throwOnFail: {
+      description: 'Throw an Error instead of calling redirect() on failure. Useful in Route Handlers.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+### Return type
+
+<TypeTable
+  type={{
+    session: { description: 'Validated session data (non-null).', type: 'SessionData', required: true },
+    user: { description: 'Full user row. Only set when loadUser: true.', type: 'AdapterUser | undefined' },
+    permissions: { description: 'Effective permission nodes. Only set when loadUser: true and plugin-rbac is present.', type: 'string[] | undefined' },
+    groups: { description: 'User group IDs. Only set when a group check is requested or loadUser: true.', type: 'string[] | undefined' },
+  }}
+/>
+
+---
+
+## `getFullSession(auth, opts?)`
+
+Non-redirecting variant of `validateCurrentRequest`. Returns `null` on failure instead of calling `redirect()`.
+
+```tsx title="app/layout.tsx"
+import { getFullSession } from '@holeauth/nextjs';
+import { auth } from '@/lib/auth';
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const validated = await getFullSession(auth, { loadUser: true });
+
+  return (
+    <html>
+      <body>
+        <AuthenticatedProvider value={validated}>
+          {children}
+        </AuthenticatedProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+Accepts the same options as `validateCurrentRequest` minus `redirectTo` and `throwOnFail`.
+
+**Returns:** `Promise<ValidatedRequest | null>`
+
+---
+
+## `getSessionOrRefresh(req, instance)`
+
+Read access + refresh cookies from a `Request`, validate the JWT, and silently rotate the refresh token if needed. Returns `Set-Cookie` strings the caller must forward on the outgoing response.
+
+Designed for server middleware, tRPC context factories, and custom route handlers that need transparent session refresh without framework magic.
+
+```ts title="trpc/context.ts"
+import { getSessionOrRefresh } from '@holeauth/nextjs';
+import { auth } from '@/lib/auth';
+
+export async function createContext({ req, resHeaders }: FetchCreateContextFnOptions) {
+  const { session, setCookieHeaders } = await getSessionOrRefresh(req, auth);
+  for (const c of setCookieHeaders) resHeaders.append('Set-Cookie', c);
+  return { session };
+}
+```
+
+**Returns:**
+
+<TypeTable
+  type={{
+    session: { description: 'Validated session or null.', type: 'SessionData | null', required: true },
+    tokens: { description: 'Freshly issued tokens when a refresh occurred, or null.', type: 'IssuedTokens | null', required: true },
+    refreshed: { description: 'True when the refresh token was rotated.', type: 'boolean', required: true },
+    setCookieHeaders: { description: 'Set-Cookie strings to forward. Empty when nothing was refreshed.', type: 'string[]', required: true },
+  }}
+/>
+
+---
+
+## `createDispatcher(instance, opts?)`
+
+Low-level factory that builds the `GET`/`POST` handler function that `createAuthHandler` uses internally. Useful when you need to mount the handler somewhere other than the standard catch-all route.
+
+```ts
+import { createDispatcher } from '@holeauth/nextjs';
+
+const dispatch = createDispatcher(authInstance, {
+  basePath: '/api/auth',
+});
+
+export const GET = dispatch;
+export const POST = dispatch;
+```
+
+### `DispatchOptions`
+
+<TypeTable
+  type={{
+    basePath: { description: 'Route prefix to strip before matching internal paths.', type: 'string', default: '"/api/auth"' },
+    defaultRedirect: { description: 'Redirect destination after SSO callback (when the state carries no redirectTo).', type: 'string', default: '"/"' },
+  }}
+/>
+
+---
+
+## Cookie helpers
+
+All helpers are exported from `@holeauth/nextjs` and operate on `Headers` objects.
+
+### `writeAuthCookies(config, headers, tokens)`
+
+Append the three auth cookies (access, refresh, csrf) to a `Headers` object.
+
+```ts
+import { writeAuthCookies } from '@holeauth/nextjs';
+
+const res = new Response(null, { status: 204 });
+writeAuthCookies(auth.config, res.headers, tokens);
+return res;
+```
+
+### `clearAuthCookies(config, headers)`
+
+Expire all auth cookies (access, refresh, csrf, pending).
+
+```ts
+import { clearAuthCookies } from '@holeauth/nextjs';
+
+clearAuthCookies(auth.config, res.headers);
+```
+
+### `writePending(config, headers, pendingToken)`
+
+Set the `pending` cookie used during 2FA / passkey challenge steps.
+
+```ts
+import { writePending } from '@holeauth/nextjs';
+
+writePending(auth.config, res.headers, pendingToken);
+```
+
+### `readCookie(req, config, kind)`
+
+Read a single holeauth cookie from a `Request`.
+
+```ts
+import { readCookie } from '@holeauth/nextjs';
+
+const access = readCookie(req, auth.config, 'access');
+```
+
+### `checkCsrf(req, config)`
+
+Return `true` if the double-submit CSRF check passes (`x-holeauth-csrf` header matches the `csrf` cookie).
+
+```ts
+import { checkCsrf } from '@holeauth/nextjs';
+
+if (!checkCsrf(req, auth.config)) {
+  return new Response('Forbidden', { status: 403 });
+}
+```
+
+### `parseCookies(header)`
+
+Parse a raw `Cookie` header string into a `Record<string, string>`.
+
+```ts
+import { parseCookies } from '@holeauth/nextjs';
+
+const jar = parseCookies(req.headers.get('cookie'));
+```
+
+---
+
+<Cards>
+  <Card title="@holeauth/react" href="/docs/packages/react" description="Client hooks — AuthenticatedProvider bridges server-validated sessions." />
+  <Card title="@holeauth/core" href="/docs/packages/core" description="Framework-agnostic primitives." />
+  <Card title="Configuration" href="/docs/configuration" description="Every option for defineHoleauth." />
+</Cards>

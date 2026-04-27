@@ -1,0 +1,14 @@
+{
+  "title": "Getting Started",
+  "pages": [
+    "core",
+    "nextjs",
+    "react",
+    "adapter-drizzle",
+    "---Plugins---",
+    "plugin-2fa",
+    "plugin-passkey",
+    "plugin-rbac",
+    "plugin-idp"
+  ]
+}

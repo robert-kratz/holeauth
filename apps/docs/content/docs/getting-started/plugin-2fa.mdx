@@ -1,0 +1,90 @@
+---
+title: Getting started with plugin-2fa
+description: Add TOTP two-factor authentication to your holeauth project using @holeauth/plugin-2fa.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Getting started with @holeauth/plugin-2fa
+
+`@holeauth/plugin-2fa` adds TOTP-based two-factor authentication to holeauth. It ships with secret generation, QR code rendering, recovery codes, and a `pending2fa` sign-in step.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-2fa @holeauth/2fa-drizzle otpauth
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-2fa @holeauth/2fa-drizzle otpauth
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-2fa @holeauth/2fa-drizzle otpauth
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-2fa @holeauth/2fa-drizzle otpauth
+```
+</Tab>
+</Tabs>
+
+<Steps>
+<Step>
+
+## Register the plugin
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createHoleauthAdapters, createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createTwofaTables, createTwofaAdapter } from '@holeauth/2fa-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+
+const twofaTables = createTwofaTables({ usersTable: users });
+const twofaAdapter = createTwofaAdapter({ db, tables: twofaTables });
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    twofa({ adapter: twofaAdapter }),
+  ],
+});
+```
+
+</Step>
+<Step>
+
+## Enroll a user
+
+```ts
+const { secret, otpauthUrl, recoveryCodes } = await auth.twofa.enroll(userId);
+// Show the QR code from otpauthUrl to the user
+// Store recoveryCodes for the user to save
+```
+
+</Step>
+<Step>
+
+## Verify a TOTP code
+
+```ts
+await auth.twofa.verify({ userId, code: '123456' });
+```
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  See the [full API reference](/docs/packages/plugin-2fa) for the complete plugin API and the [2FA guide](/docs/guides/two-factor-authentication) for an end-to-end walkthrough.
+</Callout>

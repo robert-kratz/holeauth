@@ -3,13 +3,14 @@
   "pages": [
     "index",
     "getting-started",
-    "concepts",
-    "configuration",
-    "---Guides---",
-    "guides",
     "---Packages---",
     "packages",
+    "---Guides---",
+    "guides",
+    "---Getting Started (per package)---",
+    "getting-started",
     "---Reference---",
-    "api"
+    "api",
+    "configuration"
   ]
 }

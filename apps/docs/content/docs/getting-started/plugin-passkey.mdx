@@ -1,0 +1,94 @@
+---
+title: Getting started with plugin-passkey
+description: Add WebAuthn passkey registration and login to your holeauth project using @holeauth/plugin-passkey.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Getting started with @holeauth/plugin-passkey
+
+`@holeauth/plugin-passkey` adds WebAuthn / Passkey authentication to holeauth using `@simplewebauthn/server` for the server-side ceremony.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/server @simplewebauthn/browser
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/server @simplewebauthn/browser
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/server @simplewebauthn/browser
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/server @simplewebauthn/browser
+```
+</Tab>
+</Tabs>
+
+<Steps>
+<Step>
+
+## Register the plugin
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createHoleauthAdapters, createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createPasskeyTables, createPasskeyAdapter } from '@holeauth/passkey-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+
+const passkeyTables = createPasskeyTables({ usersTable: users });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeyTables });
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpName: 'My App',
+      rpId: process.env.RP_ID!,
+      origin: process.env.NEXT_PUBLIC_APP_URL!,
+    }),
+  ],
+});
+```
+
+</Step>
+<Step>
+
+## Start a registration ceremony (server)
+
+```ts
+const options = await auth.passkey.generateRegistrationOptions(userId);
+// Send options to the client
+```
+
+</Step>
+<Step>
+
+## Verify registration (server)
+
+```ts
+await auth.passkey.verifyRegistration({ userId, response });
+```
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  See the [full API reference](/docs/packages/plugin-passkey) for authentication ceremonies and the [Passkeys guide](/docs/guides/passkeys-webauthn) for an end-to-end walkthrough.
+</Callout>

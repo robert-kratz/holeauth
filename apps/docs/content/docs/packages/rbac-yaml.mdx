@@ -1,0 +1,240 @@
+---
+title: rbac-yaml
+description: YAML file loader and hot-reload for holeauth RBAC group definitions — resolves inheritance and watches for changes.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/rbac-yaml
+
+Node.js helper that loads, validates, and watches YAML-based RBAC group definitions for [`@holeauth/plugin-rbac`](/docs/packages/plugin-rbac). Resolves group inheritance, validates permission node syntax, and supports hot-reload in development.
+
+<Callout type="info">
+  This package is **Node.js only** — it uses `fs` and `path`. It does not run in edge runtimes. Call `loadRbacYaml` at server startup and pass the snapshot to the plugin.
+</Callout>
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/rbac-yaml
+```
+</Tab>
+</Tabs>
+
+## YAML file format
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  guest:
+    default: true
+    displayName: Guest
+    permissions:
+      - posts.read
+
+  member:
+    displayName: Member
+    inherits:
+      - guest
+    permissions:
+      - posts.create
+      - posts.update
+
+  editor:
+    displayName: Editor
+    inherits:
+      - member
+    permissions:
+      - posts.publish
+      - posts.delete
+
+  admin:
+    displayName: Admin
+    permissions:
+      - "*"
+```
+
+**Rules:**
+- Exactly one group must have `default: true`. It is assigned to new users.
+- `inherits` is resolved transitively (A → B → C merges all permissions).
+- Permission nodes use dot-separated paths; `*` is a full wildcard; `!node` is a negation.
+- Inheritance cycles throw at load time.
+
+## `loadRbacYaml(filePath, options?)`
+
+Load and parse a YAML file. Returns a `LoadedRbacYaml` handle with the parsed snapshot and reload support.
+
+```ts title="lib/auth.ts"
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+import { rbac } from '@holeauth/plugin-rbac';
+
+const yaml = loadRbacYaml('./holeauth.rbac.yml', {
+  watch: process.env.NODE_ENV !== 'production',
+});
+
+const plugin = rbac({
+  groups: yaml.snapshot.groups,
+  adapter: rbacAdapter,
+});
+
+yaml.onReload((snapshot) => plugin.reload(snapshot.groups));
+```
+
+### Parameters
+
+<TypeTable
+  type={{
+    filePath: {
+      description: 'Path to the YAML file. Resolved relative to `process.cwd()`.',
+      type: 'string',
+      required: true,
+    },
+    watch: {
+      description: 'Watch the file for changes and trigger reload callbacks. Do not enable in production.',
+      type: 'boolean',
+      default: 'false',
+    },
+    multipleDefaults: {
+      description: 'Behaviour when multiple groups declare default: true.',
+      type: '"warn" | "throw"',
+      default: '"warn"',
+    },
+    logger: {
+      description: 'Custom logger for warnings. Defaults to console.warn.',
+      type: '{ warn: (msg: string) => void }',
+    },
+  }}
+/>
+
+### Returns `LoadedRbacYaml`
+
+<TypeTable
+  type={{
+    snapshot: {
+      description: 'The parsed and inheritance-resolved config.',
+      type: 'RbacConfigSnapshot',
+      required: true,
+    },
+    onReload: {
+      description: 'Register a callback that fires when the file changes. Only called if watch: true.',
+      type: '(cb: (snapshot: RbacConfigSnapshot) => void) => void',
+      required: true,
+    },
+    reload: {
+      description: 'Manually trigger a re-read of the file.',
+      type: '() => void',
+      required: true,
+    },
+    stop: {
+      description: 'Stop watching the file (clean up the FSWatcher).',
+      type: '() => void',
+      required: true,
+    },
+  }}
+/>
+
+## `RbacConfigSnapshot`
+
+<TypeTable
+  type={{
+    raw: {
+      description: 'The raw parsed YAML object before inheritance resolution.',
+      type: 'RbacFile',
+      required: true,
+    },
+    groups: {
+      description: 'Ordered array of resolved groups (YAML insertion order). Pass directly to rbac({ groups }).',
+      type: 'ResolvedGroup[]',
+      required: true,
+    },
+    defaultGroupId: {
+      description: 'The ID of the group marked default: true.',
+      type: 'string',
+      required: true,
+    },
+  }}
+/>
+
+## `ResolvedGroup`
+
+<TypeTable
+  type={{
+    id: { description: 'Group ID (the YAML key).', type: 'string', required: true },
+    effective: { description: 'Full list of effective permission nodes after inheritance resolution.', type: 'string[]', required: true },
+    permissions: { description: 'Raw own permissions before inheritance.', type: 'string[]' },
+    default: { description: 'Whether this is the default group.', type: 'boolean' },
+    displayName: { description: 'Human-readable name.', type: 'string' },
+    description: { description: 'Group description.', type: 'string' },
+    priority: { description: 'Display ordering hint.', type: 'number' },
+  }}
+/>
+
+## Low-level utilities
+
+### `buildSnapshot(raw, opts?)`
+
+Build a `RbacConfigSnapshot` from a raw `RbacFile` object (already parsed YAML). Useful for testing or building custom loaders.
+
+```ts
+import { buildSnapshot } from '@holeauth/rbac-yaml';
+
+const snapshot = buildSnapshot({ groups: { admin: { default: true, permissions: ['*'] } } });
+```
+
+### `resolveInheritance(raw)`
+
+Resolve the transitive permission sets for all groups. Returns a `Map<string, string[]>` of group ID → effective permissions.
+
+```ts
+import { resolveInheritance } from '@holeauth/rbac-yaml';
+
+const effective = resolveInheritance(rawFile);
+// effective.get('editor') → ['posts.read', 'posts.create', 'posts.publish']
+```
+
+### `validateRbacDefinition(raw)`
+
+Parse and validate a raw YAML object against the `RbacFileSchema` (Zod). Throws a `ZodError` if invalid.
+
+```ts
+import { RbacFileSchema } from '@holeauth/rbac-yaml';
+
+const result = RbacFileSchema.safeParse(data);
+if (!result.success) console.error(result.error.issues);
+```
+
+## Hot-reload in development
+
+```ts title="lib/auth.ts"
+const yaml = loadRbacYaml('./holeauth.rbac.yml', { watch: true });
+
+yaml.onReload((snapshot) => {
+  auth.plugins.rbac.reload(snapshot.groups);
+  console.log(`[rbac] reloaded ${snapshot.groups.length} groups`);
+});
+
+// Clean up on process exit
+process.on('SIGTERM', () => yaml.stop());
+```
+
+<Cards>
+  <Card title="plugin-rbac" href="/docs/packages/plugin-rbac" description="RBAC plugin — uses groups from this snapshot." />
+  <Card title="rbac-drizzle" href="/docs/packages/rbac-drizzle" description="Drizzle adapter for per-user group assignments." />
+</Cards>

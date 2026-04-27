@@ -1,15 +1,43 @@
 ---
 title: '@holeauth/core'
-description: Framework-agnostic primitives — JWT, sessions, password, TOTP/OTP, passkey, SSO, cookies, events.
+description: Framework-agnostic primitives — JWT, sessions, password, OTP, passkey, SSO, cookies, events.
 ---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # @holeauth/core
 
 The foundation package. Every other holeauth package depends on it.
 
+<Callout type="info">
+  TOTP / 2FA functions (`generateSecret`, `verifyTotp`, `buildOtpauthUrl`, `generateRecoveryCodes`) are **not** in `@holeauth/core`. They live in [`@holeauth/plugin-2fa`](/docs/packages/plugin-2fa).
+</Callout>
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
 ```bash
 pnpm add @holeauth/core
 ```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/core
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/core
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/core
+```
+</Tab>
+</Tabs>
 
 ## Barrel exports
 
@@ -28,18 +56,18 @@ import {
   SessionExpiredError,
 } from '@holeauth/core';
 
-// namespaced modules
+// namespaced subpath modules
 import * as jwt from '@holeauth/core/jwt';
 import * as session from '@holeauth/core/session';
 import * as password from '@holeauth/core/password';
-import * as totp from '@holeauth/core/totp';
 import * as otp from '@holeauth/core/otp';
 import * as cookies from '@holeauth/core/cookies';
 import * as events from '@holeauth/core/events';
 import * as flows from '@holeauth/core/flows';
-import * as passkey from '@holeauth/core/passkey';
 import * as sso from '@holeauth/core/sso';
 import * as adapters from '@holeauth/core/adapters';
+import * as plugins from '@holeauth/core/plugins';
+import * as errors from '@holeauth/core/errors';
 ```
 
 ## `defineHoleauth(config)`
@@ -114,14 +142,7 @@ await session.revokeByRefresh(cfg, refreshToken);
 await session.revokeAllForUser(cfg, userId);
 ```
 
-## `totp`
-
-```ts
-const secret = totp.generateSecret();
-const url = totp.otpauthUrl(secret, { issuer: 'My App', label: 'ada@example.com' });
-totp.verifyToken('123456', secret, /* window */ 1);
-const recovery = totp.generateRecoveryCodes(10);
-```
+> **Note:** TOTP functions (`generateSecret`, `verifyTotp`, `buildOtpauthUrl`, `generateRecoveryCodes`) are exported from [`@holeauth/plugin-2fa`](/docs/packages/plugin-2fa), not from `@holeauth/core`. `@holeauth/core` does not have a `totp` namespace.
 
 ## `otp`
 
@@ -171,3 +192,12 @@ Low-level WebAuthn functions that power the Next.js handlers. See the [Passkeys 
 ## `adapters`
 
 Type definitions only — for implementing your own adapter. See the [Adapters reference](/docs/api/adapters).
+
+<Cards>
+  <Card title="Configuration" href="/docs/configuration" description="Every option for defineHoleauth." />
+  <Card title="@holeauth/nextjs" href="/docs/packages/nextjs" description="App Router handler and middleware." />
+  <Card title="@holeauth/plugin-2fa" href="/docs/packages/plugin-2fa" description="TOTP and recovery codes." />
+  <Card title="@holeauth/plugin-passkey" href="/docs/packages/plugin-passkey" description="WebAuthn passkeys." />
+  <Card title="@holeauth/plugin-rbac" href="/docs/packages/plugin-rbac" description="Role-based access control." />
+  <Card title="@holeauth/plugin-idp" href="/docs/packages/plugin-idp" description="OIDC/OAuth2 identity provider." />
+</Cards>

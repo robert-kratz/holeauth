@@ -1,0 +1,210 @@
+---
+title: idp-drizzle
+description: Drizzle ORM tables and adapter for @holeauth/plugin-idp — PostgreSQL only.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/idp-drizzle
+
+Drizzle ORM tables and adapter for [`@holeauth/plugin-idp`](/docs/packages/plugin-idp). **PostgreSQL only** (pg dialect).
+
+Covers: teams + members, OAuth apps, authorization codes, refresh tokens (with family IDs), user × app consents, and signing keys (JWKs).
+
+<Callout type="info">
+  MySQL and SQLite dialects are not currently available for the IdP adapter. If you need them, open an issue or implement the `IdpAdapter` interface directly.
+</Callout>
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/idp-drizzle @holeauth/plugin-idp drizzle-orm
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/idp-drizzle @holeauth/plugin-idp drizzle-orm
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/idp-drizzle @holeauth/plugin-idp drizzle-orm
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/idp-drizzle @holeauth/plugin-idp drizzle-orm
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { idp, ensureSigningKey } from '@holeauth/plugin-idp';
+import { createHoleauthTables, createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { createIdpTables, createIdpAdapter } from '@holeauth/idp-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+
+const { tables: idpTables } = createIdpTables({ usersTable: users });
+const idpAdapter = createIdpAdapter({ db, tables: idpTables });
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    idp({
+      adapter: idpAdapter,
+      issuer: 'https://auth.example.com',
+    }),
+  ],
+});
+
+// Bootstrap signing key once at startup
+await auth.plugins.idp.keys.bootstrap();
+```
+
+## `createIdpTables(options)`
+
+Generate all IdP tables linked to your users table.
+
+### Options
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table with a string `id` column.',
+      type: 'PgUsersTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Table name prefix.',
+      type: 'string',
+      default: '"holeauth_idp_"',
+    },
+  }}
+/>
+
+### Returns
+
+```ts
+{
+  tables: {
+    teams: PgTable;       // holeauth_idp_team
+    teamMembers: PgTable; // holeauth_idp_team_member
+    apps: PgTable;        // holeauth_idp_app
+    codes: PgTable;       // holeauth_idp_code
+    refreshTokens: PgTable; // holeauth_idp_refresh_token
+    consents: PgTable;    // holeauth_idp_consent
+    signingKeys: PgTable; // holeauth_idp_signing_key
+  };
+  relations: { ... };
+}
+```
+
+## `createIdpAdapter(options)`
+
+Build an `IdpAdapter` from the generated tables.
+
+### Options
+
+<TypeTable
+  type={{
+    db: { description: 'Drizzle postgres database instance.', type: 'PgDb', required: true },
+    tables: { description: 'Tables returned by createIdpTables.', type: 'Tables', required: true },
+  }}
+/>
+
+## Generated table schema
+
+### `holeauth_idp_team`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `name` | text NOT NULL | |
+| `created_at` | timestamp | |
+
+### `holeauth_idp_team_member`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `team_id` | text (PK) | FK → teams (cascade) |
+| `user_id` | text (PK) | FK → users (cascade) |
+| `role` | text | `"owner"` or `"developer"` |
+| `added_at` | timestamp | |
+
+### `holeauth_idp_app`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | Client ID |
+| `team_id` | text FK → teams | |
+| `name` / `description` | text | |
+| `type` | text | `"public"` or `"confidential"` |
+| `client_secret_hash` | text | SHA-256 of the secret (confidential only) |
+| `redirect_uris` | text[] | |
+| `allowed_scopes` | text[] | |
+| `require_pkce` | boolean | |
+| `disabled` | boolean | |
+| `logo_url` | text | |
+| `created_at` | timestamp | |
+
+### `holeauth_idp_code`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `code_hash` | text PK | SHA-256 of the authorization code |
+| `app_id` / `user_id` | text | |
+| `redirect_uri` | text | |
+| `scope` | text | Space-separated |
+| `code_challenge` / `code_challenge_method` | text | PKCE |
+| `consumed` | boolean | Set true on first use |
+| `expires_at` | timestamp | |
+
+### `holeauth_idp_refresh_token`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `token_hash` | text UNIQUE | |
+| `family_id` | text | Family-revoke on reuse detection |
+| `app_id` / `user_id` | text FK | |
+| `scope` | text | |
+| `revoked` | boolean | |
+| `expires_at` | timestamp | |
+
+### `holeauth_idp_consent`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `user_id` + `app_id` | text (composite PK) | |
+| `scopes_granted` | text[] | |
+| `granted_at` | timestamp | |
+
+### `holeauth_idp_signing_key`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `kid` | text PK | Key ID |
+| `alg` | text | `"RS256"` or `"ES256"` |
+| `private_key_jwk` | jsonb | Private key (stored encrypted at rest) |
+| `public_key_jwk` | jsonb | Public key for JWKS endpoint |
+| `rotated_at` | timestamp | Null if currently active |
+| `created_at` | timestamp | |
+
+<Callout type="warn">
+  The `private_key_jwk` column stores the signing key in plaintext. Enable at-rest encryption for this column in production (e.g. PostgreSQL column encryption or Transparent Data Encryption).
+</Callout>
+
+<Cards>
+  <Card title="plugin-idp" href="/docs/packages/plugin-idp" description="OpenID Connect / OAuth 2.0 IdP plugin." />
+</Cards>

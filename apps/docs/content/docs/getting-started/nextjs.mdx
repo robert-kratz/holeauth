@@ -1,0 +1,89 @@
+---
+title: Getting started with @holeauth/nextjs
+description: Mount the holeauth route handler and middleware in a Next.js 15 App Router project.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Getting started with @holeauth/nextjs
+
+`@holeauth/nextjs` wraps `@holeauth/core` and adds a catch-all App Router route handler, cookie utilities, and server-side session helpers.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/nextjs @holeauth/core
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/nextjs @holeauth/core
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/nextjs @holeauth/core
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/nextjs @holeauth/core
+```
+</Tab>
+</Tabs>
+
+<Steps>
+<Step>
+
+## Create the auth instance
+
+```ts title="lib/auth.ts"
+import { createAuthHandler } from '@holeauth/nextjs';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+
+export const auth = createAuthHandler({
+  adapter: drizzleAdapter(db),
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+});
+```
+
+</Step>
+<Step>
+
+## Mount the route handler
+
+```ts title="app/api/auth/[...holeauth]/route.ts"
+import { auth } from '@/lib/auth';
+
+export const { GET, POST } = auth.handler;
+```
+
+</Step>
+<Step>
+
+## Protect routes with middleware
+
+```ts title="middleware.ts"
+import { createMiddleware } from '@holeauth/nextjs';
+import { auth } from '@/lib/auth';
+
+export const middleware = createMiddleware(auth, {
+  redirectTo: '/login',
+});
+
+export const config = {
+  matcher: ['/dashboard/:path*'],
+};
+```
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  See the [full API reference](/docs/packages/nextjs) for all exported helpers including `getServerSession` and cookie utilities.
+</Callout>

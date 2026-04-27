@@ -2,10 +2,26 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@holeauth/core",
+      "@holeauth/adapter-drizzle",
+      "@holeauth/nextjs",
+      "@holeauth/react",
+      "@holeauth/plugin-2fa",
+      "@holeauth/plugin-rbac",
+      "@holeauth/plugin-passkey",
+      "@holeauth/plugin-idp",
+      "@holeauth/2fa-drizzle",
+      "@holeauth/rbac-drizzle",
+      "@holeauth/passkey-drizzle",
+      "@holeauth/idp-drizzle",
+      "@holeauth/rbac-yaml"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["docs", "playground"]
+  "ignore": ["docs", "playground", "client-playground"]
 }

@@ -8,21 +8,45 @@
   "sideEffects": false,
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs" },
-    "./pg": { "types": "./dist/pg/index.d.ts", "import": "./dist/pg/index.js", "require": "./dist/pg/index.cjs" },
-    "./mysql": { "types": "./dist/mysql/index.d.ts", "import": "./dist/mysql/index.js", "require": "./dist/mysql/index.cjs" },
-    "./sqlite": { "types": "./dist/sqlite/index.d.ts", "import": "./dist/sqlite/index.js", "require": "./dist/sqlite/index.cjs" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./pg": {
+      "types": "./dist/pg/index.d.ts",
+      "import": "./dist/pg/index.js",
+      "require": "./dist/pg/index.cjs"
+    },
+    "./mysql": {
+      "types": "./dist/mysql/index.d.ts",
+      "import": "./dist/mysql/index.js",
+      "require": "./dist/mysql/index.cjs"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite/index.d.ts",
+      "import": "./dist/sqlite/index.js",
+      "require": "./dist/sqlite/index.cjs"
+    },
     "./package.json": "./package.json"
   },
-  "files": ["dist", "README.md", "LICENSE"],
-  "publishConfig": { "access": "public", "provenance": true },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "clean": "rm -rf dist .turbo",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage"
   },
   "peerDependencies": {
     "@holeauth/plugin-2fa": "workspace:*",
@@ -32,8 +56,17 @@
     "@holeauth/eslint-config": "workspace:*",
     "@holeauth/plugin-2fa": "workspace:*",
     "@holeauth/tsconfig": "workspace:*",
+    "@testcontainers/mysql": "^11.14.0",
+    "@testcontainers/postgresql": "^11.14.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.16.10",
+    "@types/pg": "^8.11.10",
+    "@vitest/coverage-v8": "^2.1.9",
+    "better-sqlite3": "^12.9.0",
     "drizzle-orm": "^0.36.0",
+    "mysql2": "^3.22.2",
+    "pg": "^8.13.0",
+    "testcontainers": "^11.14.0",
     "tsup": "^8.3.0",
     "typescript": "^5.6.2",
     "vitest": "^2.1.2"

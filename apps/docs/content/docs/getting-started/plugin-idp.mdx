@@ -1,0 +1,92 @@
+---
+title: Getting started with plugin-idp
+description: Turn your holeauth instance into an OpenID Connect identity provider using @holeauth/plugin-idp.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Getting started with @holeauth/plugin-idp
+
+`@holeauth/plugin-idp` turns your holeauth instance into a first-party OpenID Connect + OAuth 2.0 identity provider. It implements the Authorization Code flow with PKCE, refresh token rotation, OIDC discovery, and token revocation.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-idp @holeauth/idp-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-idp @holeauth/idp-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-idp @holeauth/idp-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-idp @holeauth/idp-drizzle
+```
+</Tab>
+</Tabs>
+
+<Steps>
+<Step>
+
+## Register the plugin
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { idp } from '@holeauth/plugin-idp';
+import { createIdpAdapter } from '@holeauth/idp-drizzle/pg';
+import { createHoleauthAdapters, createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+const idpAdapter = createIdpAdapter({ db });
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    idp({
+      adapter: idpAdapter,
+      issuer: process.env.NEXT_PUBLIC_APP_URL!,
+    }),
+  ],
+});
+```
+
+</Step>
+<Step>
+
+## Mount the IdP routes
+
+The IdP exposes `/oauth2/authorize`, `/oauth2/token`, `/oauth2/userinfo`, `.well-known/openid-configuration`, and more — all served through your existing `@holeauth/nextjs` route handler automatically.
+
+</Step>
+<Step>
+
+## Register a client application
+
+```ts
+const app = await auth.idp.createApp({
+  name: 'My Client App',
+  redirectUris: ['https://client.example.com/callback'],
+  scopes: ['openid', 'profile', 'email'],
+});
+// app.clientId and app.clientSecret are returned once
+```
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  See the [full API reference](/docs/packages/plugin-idp) and the [Single Sign-On guide](/docs/guides/single-sign-on) for an end-to-end walkthrough.
+</Callout>

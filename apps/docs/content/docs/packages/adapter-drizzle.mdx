@@ -1,134 +1,223 @@
 ---
-title: '@holeauth/adapter-drizzle'
-description: Reference adapter for persisting users, sessions, and accounts with Drizzle ORM.
+title: adapter-drizzle
+description: Drizzle ORM adapter for holeauth core — creates tables and adapters for users, sessions, accounts, and audit logs across pg, mysql, and sqlite.
 ---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # @holeauth/adapter-drizzle
 
+Drizzle ORM reference adapter for holeauth core. Generates all required holeauth tables (sessions, accounts, verification tokens, audit log) and returns a fully typed `HoleauthAdapterBundle` that plugs directly into `defineHoleauth`.
+
+Supports **PostgreSQL**, **MySQL**, and **SQLite**.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
 ```bash
-pnpm add @holeauth/adapter-drizzle
+pnpm add @holeauth/adapter-drizzle drizzle-orm
 ```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/adapter-drizzle drizzle-orm
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/adapter-drizzle drizzle-orm
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/adapter-drizzle drizzle-orm
+```
+</Tab>
+</Tabs>
 
-> This package is a **reference adapter**. The current release exposes the expected schema and factory surface; the runtime is still being finalized. For production use today, implement the adapter interfaces directly against your Drizzle queries.
+## Quick example (PostgreSQL)
 
-## Recommended schema (Postgres)
-
-```ts
-import {
-  pgTable, text, timestamp, boolean, integer, jsonb, uniqueIndex, index,
-} from 'drizzle-orm/pg-core';
+```ts title="db/schema.ts"
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
-  emailVerified: timestamp('email_verified'),
+  emailVerified: timestamp('email_verified', { withTimezone: true }),
   name: text('name'),
   image: text('image'),
   passwordHash: text('password_hash'),
-  twoFactorSecret: text('two_factor_secret'),
-  twoFactorEnabled: boolean('two_factor_enabled').notNull().default(false),
-  twoFactorRecoveryCodes: text('two_factor_recovery_codes').array(),
-});
-
-export const sessions = pgTable('sessions', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  familyId: text('family_id').notNull(),
-  refreshTokenHash: text('refresh_token_hash').notNull().unique(),
-  expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  revokedAt: timestamp('revoked_at'),
-  userAgent: text('user_agent'),
-  ip: text('ip'),
-}, (t) => ({
-  familyIdx: index('sessions_family_idx').on(t.familyId),
-  userIdx: index('sessions_user_idx').on(t.userId),
-}));
-
-export const accounts = pgTable('accounts', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  provider: text('provider').notNull(),
-  providerAccountId: text('provider_account_id').notNull(),
-  email: text('email'),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  expiresAt: timestamp('expires_at'),
-  tokenType: text('token_type'),
-  scope: text('scope'),
-  idToken: text('id_token'),
-}, (t) => ({
-  providerUnique: uniqueIndex('accounts_provider_unique').on(t.provider, t.providerAccountId),
-}));
-
-export const passkeys = pgTable('passkeys', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  credentialId: text('credential_id').notNull().unique(),
-  publicKey: text('public_key').notNull(),
-  counter: integer('counter').notNull().default(0),
-  transports: text('transports').array(),
-  deviceName: text('device_name'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
-
-export const auditLogs = pgTable('audit_logs', {
-  id: text('id').primaryKey(),
-  type: text('type').notNull(),
-  userId: text('user_id'),
-  sessionId: text('session_id'),
-  at: timestamp('at').notNull().defaultNow(),
-  ip: text('ip'),
-  userAgent: text('user_agent'),
-  data: jsonb('data'),
 });
 ```
 
-## Usage (future / manual)
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { createHoleauthTables, createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+});
+```
+
+<Callout type="info">
+  You own the `users` table. holeauth generates companion tables (sessions, accounts, verification tokens, audit log) prefixed with `holeauth_` and linked to your `users` table via foreign keys.
+</Callout>
+
+## `createHoleauthTables(options)`
+
+Generate all holeauth companion table definitions. Call once and pass the result to `createHoleauthAdapters`.
+
+### Options
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table. Must have a string-compatible `id` column.',
+      type: 'PgUsersTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Prefix prepended to every generated table name.',
+      type: 'string',
+      default: '"holeauth_"',
+    },
+  }}
+/>
+
+### Returns
 
 ```ts
-import { drizzleAdapter } from '@holeauth/adapter-drizzle';
-import { db } from './db';
-import * as schema from './schema';
-
-const { user, session } = drizzleAdapter(db, {
-  users: schema.users,
-  sessions: schema.sessions,
-  accounts: schema.accounts,
-});
+{
+  tables: {
+    users: U;
+    sessions: PgTable;            // holeauth_session
+    accounts: PgTable;            // holeauth_account
+    verificationTokens: PgTable;  // holeauth_verification_token
+    auditLog: PgTable;            // holeauth_audit_log
+  };
+  relations: {
+    sessionsRelations: Relations;
+    accountsRelations: Relations;
+    auditLogRelations: Relations;
+  };
+}
 ```
 
-## Manual implementation sketch
+## `createHoleauthAdapters(options)`
 
-Minimal `SessionAdapter`:
+Build the `HoleauthAdapterBundle` from the generated tables.
 
-```ts
-import { eq, and } from 'drizzle-orm';
+### Options
 
-const sessionAdapter: SessionAdapter = {
-  createSession: async (data) => {
-    const [row] = await db.insert(sessions).values(data).returning();
-    return row;
-  },
-  getSession: (id) => db.query.sessions.findFirst({ where: eq(sessions.id, id) }),
-  getByRefreshHash: (hash) =>
-    db.query.sessions.findFirst({ where: eq(sessions.refreshTokenHash, hash) }),
-  findByFamily: (familyId) =>
-    db.select().from(sessions).where(eq(sessions.familyId, familyId)),
-  deleteSession: async (id) => { await db.delete(sessions).where(eq(sessions.id, id)); },
-  rotateRefresh: async (id, newHash, expiresAt) => {
-    const [row] = await db.update(sessions)
-      .set({ refreshTokenHash: newHash, expiresAt })
-      .where(eq(sessions.id, id))
-      .returning();
-    return row;
-  },
-  revokeFamily: async (familyId) => {
-    await db.update(sessions)
-      .set({ revokedAt: new Date() })
-      .where(eq(sessions.familyId, familyId));
-  },
-};
-```
+<TypeTable
+  type={{
+    db: {
+      description: 'Drizzle database instance (postgres-js, node-postgres, or compatible).',
+      type: 'PgDb',
+      required: true,
+    },
+    tables: {
+      description: 'Tables returned by createHoleauthTables.',
+      type: 'HoleauthTables',
+      required: true,
+    },
+    userEmailColumn: {
+      description: 'Name of the email column on your users table.',
+      type: 'string',
+      default: '"email"',
+    },
+    generateId: {
+      description: 'Custom ID generator for new records.',
+      type: '() => string',
+      default: 'crypto.randomUUID()',
+    },
+  }}
+/>
 
-See the full interface in the [Adapters reference](/docs/api/adapters).
+### Returns `HoleauthAdapterBundle`
+
+<TypeTable
+  type={{
+    user: { description: 'UserAdapter — CRUD operations for your users table.', type: 'UserAdapter', required: true },
+    session: { description: 'SessionAdapter — session lifecycle (create, rotate, revoke, family queries).', type: 'SessionAdapter', required: true },
+    account: { description: 'AccountAdapter — OAuth provider account links.', type: 'AccountAdapter', required: true },
+    verificationToken: { description: 'VerificationTokenAdapter — email OTP / magic-link tokens.', type: 'VerificationTokenAdapter', required: true },
+    auditLog: { description: 'AuditLogAdapter — append-only event log.', type: 'AuditLogAdapter', required: true },
+    transaction: { description: 'TransactionAdapter — wraps mutations in a DB transaction.', type: 'TransactionAdapter', required: true },
+  }}
+/>
+
+## Dialects
+
+| Import path | Dialect |
+|-------------|---------|
+| `@holeauth/adapter-drizzle/pg` | PostgreSQL |
+| `@holeauth/adapter-drizzle/mysql` | MySQL / PlanetScale |
+| `@holeauth/adapter-drizzle/sqlite` | SQLite / Turso / Cloudflare D1 |
+
+All three subpaths export identical `createHoleauthTables` and `createHoleauthAdapters` APIs with dialect-specific column types.
+
+## Generated table schema
+
+### `holeauth_session`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | Session ID |
+| `user_id` | text FK → users | Cascade delete |
+| `family_id` | text | Refresh token family for reuse detection |
+| `refresh_token_hash` | text UNIQUE | SHA-256 of the refresh token |
+| `expires_at` | timestamp | When the refresh token expires |
+| `created_at` | timestamp | Defaulted to now |
+| `revoked_at` | timestamp | Null if active |
+| `user_agent` | text | |
+| `ip` | text | |
+
+### `holeauth_account`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `user_id` | text FK → users | Cascade delete |
+| `provider` | text | e.g. `"google"`, `"github"` |
+| `provider_account_id` | text | UNIQUE with provider |
+| `email` | text | |
+| `access_token` / `refresh_token` | text | |
+| `expires_at` | timestamp | |
+| `id_token` | text | |
+
+### `holeauth_verification_token`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `identifier` | text | Email address (composite PK) |
+| `token` | text | Hashed token (composite PK) |
+| `expires_at` | timestamp | |
+
+### `holeauth_audit_log`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `type` | text | [`HoleauthEventType`](/docs/api/events) |
+| `user_id` | text FK → users | Set null on delete |
+| `session_id` | text | |
+| `at` | timestamp | Event time |
+| `ip` / `user_agent` | text | |
+| `data` | jsonb | Structured event payload |
+
+<Cards>
+  <Card title="2fa-drizzle" href="/docs/packages/2fa-drizzle" description="Drizzle tables and adapter for @holeauth/plugin-2fa." />
+  <Card title="passkey-drizzle" href="/docs/packages/passkey-drizzle" description="Drizzle tables and adapter for @holeauth/plugin-passkey." />
+  <Card title="rbac-drizzle" href="/docs/packages/rbac-drizzle" description="Drizzle tables and adapter for @holeauth/plugin-rbac." />
+  <Card title="idp-drizzle" href="/docs/packages/idp-drizzle" description="Drizzle tables and adapter for @holeauth/plugin-idp." />
+</Cards>

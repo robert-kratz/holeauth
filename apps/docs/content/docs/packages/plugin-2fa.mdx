@@ -1,0 +1,325 @@
+---
+title: plugin-2fa
+description: TOTP two-factor authentication plugin for holeauth with recovery codes, QR rendering, and pluggable rate limiting.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/plugin-2fa
+
+TOTP two-factor authentication as a holeauth plugin. Ships with secret generation, QR code rendering, recovery codes, a `pending2fa` sign-in step, and an in-memory rate limiter.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-2fa
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-2fa
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-2fa
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-2fa
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createHoleauthAdapters, createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createTwofaTables, createTwofaAdapter } from '@holeauth/2fa-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+const { twofaTables } = createTwofaTables({ usersTable: users });
+const twofaAdapter = createTwofaAdapter({ db, tables: twofaTables });
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    twofa({
+      adapter: twofaAdapter,
+      issuer: 'My App',
+    }),
+  ],
+});
+```
+
+## `twofa(options)`
+
+Factory function that creates a `TwoFactorPlugin` and registers it with `defineHoleauth`.
+
+### Options
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Storage adapter for 2FA records. Required. Use @holeauth/2fa-drizzle or implement TwoFactorAdapter.',
+      type: 'TwoFactorAdapter',
+      required: true,
+    },
+    issuer: {
+      description: 'Issuer name shown in authenticator apps (e.g. Google Authenticator).',
+      type: 'string',
+      default: '"holeauth"',
+    },
+    recoveryCodeCount: {
+      description: 'Number of recovery codes to generate on activate.',
+      type: 'number',
+      default: '10',
+    },
+    pendingTtlSeconds: {
+      description: 'Lifetime of a pending 2FA token (seconds). Defaults to the core pendingTtl setting.',
+      type: 'number',
+      default: '300',
+    },
+    rateLimiter: {
+      description: 'Rate limiter applied to every verify attempt. Defaults to an in-memory limiter (10/5 min). Use a distributed adapter in production.',
+      type: 'TwoFactorRateLimiter',
+      default: 'createMemoryRateLimiter()',
+    },
+  }}
+/>
+
+## `TwoFactorApi` methods
+
+Accessible as `auth.twofa.*` after setup.
+
+### `setup(userId)`
+
+Generate a TOTP secret for a user and return the QR code URL. Does **not** activate 2FA yet.
+
+```ts
+const { secret, otpauthUrl, qrCodeDataUrl } = await auth.twofa.setup(userId);
+// qrCodeDataUrl is a base64-encoded PNG data URL ready for <img src={...} />
+```
+
+**Returns:**
+
+<TypeTable
+  type={{
+    secret: { description: 'Raw TOTP secret (base32).', type: 'string', required: true },
+    otpauthUrl: { description: 'otpauth:// URI for manual entry.', type: 'string', required: true },
+    qrCodeDataUrl: { description: 'Base64 PNG data URL of the QR code.', type: 'string', required: true },
+  }}
+/>
+
+### `renderQrDataUrl(payload)`
+
+Render any string as a QR code data URL. Useful for custom payloads.
+
+```ts
+const dataUrl = await auth.twofa.renderQrDataUrl('otpauth://totp/...');
+```
+
+### `renderQrBuffer(payload)`
+
+Same as `renderQrDataUrl` but returns a `Buffer` (for use in API responses or image pipelines).
+
+```ts
+const buf = await auth.twofa.renderQrBuffer(otpauthUrl);
+res.setHeader('Content-Type', 'image/png');
+res.send(buf);
+```
+
+### `activate(userId, code)`
+
+Confirm that the user has scanned and entered a valid TOTP code, then enable 2FA and issue recovery codes.
+
+```ts
+const { recoveryCodes } = await auth.twofa.activate(userId, '123456');
+// Show recoveryCodes to the user ONCE. They are hashed before storage.
+```
+
+<Callout type="warn">
+  Recovery codes are shown **once**. They are hashed before being stored and cannot be retrieved later. Prompt the user to save them immediately.
+</Callout>
+
+**Returns:**
+
+<TypeTable
+  type={{
+    recoveryCodes: { description: 'Array of plaintext recovery codes. Show to user once.', type: 'string[]', required: true },
+  }}
+/>
+
+### `verify(input)`
+
+Complete a pending 2FA challenge. Called after the core `signIn` flow has issued a `pendingToken`.
+
+```ts
+const { user, tokens } = await auth.twofa.verify({
+  pendingToken: req.body.pendingToken,
+  code: req.body.code, // 6-digit TOTP or 8-char recovery code
+  ip: req.ip,
+  userAgent: req.headers['user-agent'],
+});
+```
+
+**Parameters:**
+
+<TypeTable
+  type={{
+    pendingToken: { description: 'Short-lived token issued by the signIn.challenge hook.', type: 'string', required: true },
+    code: { description: '6-digit TOTP token or an 8-character recovery code.', type: 'string', required: true },
+    ip: { description: 'Client IP for audit log and rate limiting.', type: 'string' },
+    userAgent: { description: 'Client User-Agent string for audit log.', type: 'string' },
+  }}
+/>
+
+**Returns:** `{ user: AdapterUser; tokens: IssuedTokens }`
+
+### `disable(userId, code)`
+
+Disable 2FA for a user after verifying their current TOTP code.
+
+```ts
+await auth.twofa.disable(userId, '123456');
+```
+
+### `isEnabled(userId)`
+
+Check whether 2FA is currently active for a user.
+
+```ts
+const enabled = await auth.twofa.isEnabled(userId);
+```
+
+## Routes
+
+The plugin mounts four routes under the `basePath` (default `/api/auth`):
+
+| Method | Path | Auth required | CSRF required |
+|--------|------|---------------|---------------|
+| POST | `/2fa/setup` | ✓ | ✓ |
+| POST | `/2fa/activate` | ✓ | ✓ |
+| POST | `/2fa/verify` | ✗ (uses pendingToken) | ✗ |
+| POST | `/2fa/disable` | ✓ | ✓ |
+
+## TOTP utility functions
+
+These are low-level helpers re-exported from `@holeauth/plugin-2fa`:
+
+```ts
+import {
+  generateSecret,
+  buildOtpauthUrl,
+  verifyTotp,
+} from '@holeauth/plugin-2fa';
+
+const secret = generateSecret(); // base32 string
+const url = buildOtpauthUrl({ secret, issuer: 'My App', label: 'ada@example.com' });
+const valid = verifyTotp(secret, '123456'); // boolean
+```
+
+## Recovery code helpers
+
+```ts
+import {
+  generateRecoveryCodes,
+  consumeRecoveryCode,
+  normalizeRecoveryCode,
+  constantTimeEquals,
+} from '@holeauth/plugin-2fa';
+
+const codes = generateRecoveryCodes(10); // string[]
+const { matched, remaining } = consumeRecoveryCode(storedHashedCodes, providedCode);
+```
+
+## `TwoFactorAdapter` interface
+
+Implement this to use a custom storage backend:
+
+<TypeTable
+  type={{
+    getByUserId: { description: 'Fetch the 2FA record for a user.', type: '(userId: string) => Promise<TwoFactorRecord | null>', required: true },
+    upsert: { description: 'Create or replace the 2FA record.', type: '(data: TwoFactorRecord) => Promise<void>', required: true },
+    update: { description: 'Partially update an existing 2FA record.', type: '(userId: string, patch: Partial<TwoFactorRecord>) => Promise<void>', required: true },
+    delete: { description: 'Remove the 2FA record (called on disable).', type: '(userId: string) => Promise<void>', required: true },
+  }}
+/>
+
+## `TwoFactorRecord` shape
+
+<TypeTable
+  type={{
+    userId: { description: 'User ID (foreign key to your users table).', type: 'string', required: true },
+    secret: { description: 'Base32 TOTP secret.', type: 'string', required: true },
+    enabled: { description: 'Whether 2FA is fully activated.', type: 'boolean', required: true },
+    recoveryCodes: { description: 'Array of hashed recovery code strings.', type: 'string[]', required: true },
+    createdAt: { description: 'When the record was created.', type: 'Date' },
+    updatedAt: { description: 'When the record was last updated.', type: 'Date' },
+  }}
+/>
+
+## Rate limiting
+
+The built-in limiter uses an in-memory map. For multi-process deployments replace it with a Redis-backed adapter:
+
+```ts
+import { twofa, type TwoFactorRateLimiter } from '@holeauth/plugin-2fa';
+
+const redisLimiter: TwoFactorRateLimiter = {
+  async check(key) {
+    // return { ok: true } or { ok: false, retryAfterSeconds: 60 }
+  },
+};
+
+twofa({ adapter, rateLimiter: redisLimiter });
+```
+
+<TypeTable
+  type={{
+    check: { description: 'Check if the key (userId + IP) has exceeded the limit.', type: '(key: string) => Promise<{ ok: true } | { ok: false; retryAfterSeconds?: number }>', required: true },
+  }}
+/>
+
+### `createMemoryRateLimiter(opts?)`
+
+```ts
+import { createMemoryRateLimiter } from '@holeauth/plugin-2fa';
+
+const limiter = createMemoryRateLimiter({
+  maxAttempts: 10,   // default
+  windowMs: 300_000, // 5 min default
+});
+```
+
+<TypeTable
+  type={{
+    maxAttempts: { description: 'Maximum allowed attempts per window.', type: 'number', default: '10' },
+    windowMs: { description: 'Rolling window size in milliseconds.', type: 'number', default: '300_000' },
+  }}
+/>
+
+## Error codes
+
+| Code | HTTP | When |
+|------|------|------|
+| `TWOFA_RATE_LIMITED` | 429 | Too many verify attempts |
+| `TWOFA_INVALID_CODE` | 400 | Wrong TOTP or recovery code |
+| `TWOFA_NOT_ENABLED` | 400 | Verify/disable called but 2FA is off |
+| `TWOFA_ALREADY_ENABLED` | 409 | Activate called but 2FA already on |
+
+<Cards>
+  <Card title="2fa-drizzle" href="/docs/packages/2fa-drizzle" description="Drizzle ORM tables and adapter for this plugin." />
+  <Card title="Guides: Two-Factor" href="/docs/guides/two-factor" description="End-to-end walkthrough for adding TOTP 2FA to your app." />
+</Cards>

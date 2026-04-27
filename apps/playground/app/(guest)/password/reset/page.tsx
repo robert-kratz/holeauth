@@ -1,10 +1,10 @@
 'use client';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { usePasswordReset } from '@holeauth/react';
 import Link from 'next/link';
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const params = useSearchParams();
   const initialToken = params?.get('token') ?? '';
   const initialEmail = params?.get('email') ?? '';
@@ -46,5 +46,19 @@ export default function ResetPasswordPage() {
         {error && <p className="text-sm text-red-600">{error.message}</p>}
       </form>
     </main>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="space-y-6">
+          <h1 className="text-2xl font-semibold">Set a new password</h1>
+        </main>
+      }
+    >
+      <ResetPasswordForm />
+    </Suspense>
   );
 }

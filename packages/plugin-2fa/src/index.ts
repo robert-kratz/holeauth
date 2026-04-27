@@ -10,8 +10,16 @@ import { HoleauthError, CredentialsError } from '@holeauth/core/errors';
 import { issuePendingToken, verifyPendingToken } from '@holeauth/core/flows';
 import type { TwoFactorAdapter, TwoFactorRecord } from './adapter.js';
 import { buildOtpauthUrl, generateSecret, verifyTotp } from './totp.js';
-import { consumeRecoveryCode, generateRecoveryCodes } from './recovery.js';
+import {
+  consumeRecoveryCode,
+  generateRecoveryCodes,
+  normalizeRecoveryCode,
+} from './recovery.js';
 import { renderQrBuffer, renderQrDataUrl } from './qrcode.js';
+import {
+  createMemoryRateLimiter,
+  type TwoFactorRateLimiter,
+} from './rate-limit.js';
 
 export type { TwoFactorAdapter, TwoFactorRecord } from './adapter.js';
 export {
@@ -19,13 +27,42 @@ export {
   formatRecoveryCodesAsText,
   recoveryCodesToBlob,
   downloadRecoveryCodesAsTxt,
+  constantTimeEquals,
+  consumeRecoveryCode,
+  normalizeRecoveryCode,
   type RecoveryCodesTxtOptions,
   type DownloadRecoveryCodesOptions,
 } from './recovery.js';
 export { verifyTotp, buildOtpauthUrl, generateSecret } from './totp.js';
 export { renderQrBuffer, renderQrDataUrl } from './qrcode.js';
+export {
+  createMemoryRateLimiter,
+  type TwoFactorRateLimiter,
+  type MemoryRateLimiterOptions,
+} from './rate-limit.js';
 
 const PLUGIN_ID = 'twofa' as const;
+
+/** Max accepted code length (TOTP 6 digits + optional whitespace or 14-char
+ *  recovery formatted as `XXXX-XXXX-XXXX`). Anything longer is rejected
+ *  unconditionally to avoid DoS via pathological input. */
+const MAX_CODE_LENGTH = 64;
+
+/** Re-thrown by `verify()` / `activate()` / `disable()` when the rate limiter bucket is exhausted. */
+export function twoFactorRateLimitedError(retryAfterSeconds?: number): HoleauthError {
+  const err = new HoleauthError(
+    'TWOFA_RATE_LIMITED',
+    'too many 2FA attempts, try again later',
+    429,
+  );
+  if (retryAfterSeconds) {
+    Object.defineProperty(err, 'retryAfterSeconds', {
+      value: retryAfterSeconds,
+      enumerable: true,
+    });
+  }
+  return err;
+}
 
 export interface TwoFactorOptions {
   adapter: TwoFactorAdapter;
@@ -35,6 +72,12 @@ export interface TwoFactorOptions {
   recoveryCodeCount?: number;
   /** Pending challenge TTL (seconds). Default: config.tokens.pendingTtl or 300. */
   pendingTtlSeconds?: number;
+  /**
+   * Rate limiter consulted before `verify`, `activate` and `disable`.
+   * Defaults to an in-process memory limiter (5 attempts / 5 min).
+   * Supply a distributed implementation in production.
+   */
+  rateLimiter?: TwoFactorRateLimiter;
 }
 
 export interface TwoFactorApi {
@@ -74,10 +117,42 @@ async function requireRecord(
   return r;
 }
 
+/** Validate + narrow a string code coming from untrusted input. Throws a
+ *  typed error if the shape is obviously wrong — callers do not have to
+ *  duplicate this check. */
+function sanitizeCode(raw: unknown): string {
+  if (typeof raw !== 'string') {
+    throw new HoleauthError('TWOFA_INVALID_INPUT', '2FA code must be a string', 400);
+  }
+  if (raw.length === 0 || raw.length > MAX_CODE_LENGTH) {
+    throw new HoleauthError('TWOFA_INVALID_INPUT', '2FA code has invalid length', 400);
+  }
+  return raw;
+}
+
+async function guardRate(
+  limiter: TwoFactorRateLimiter | undefined,
+  key: string,
+): Promise<void> {
+  if (!limiter) return;
+  const res = await limiter.check(key);
+  if (!res.ok) {
+    throw twoFactorRateLimitedError(res.retryAfterSeconds);
+  }
+}
+
+function jsonError(code: string, status: number, extra?: Record<string, unknown>): Response {
+  return new Response(JSON.stringify({ error: { code, ...(extra ?? {}) } }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
   const issuer = options.issuer ?? 'holeauth';
   const adapter = options.adapter;
   const recoveryCount = options.recoveryCodeCount ?? 10;
+  const rateLimiter = options.rateLimiter ?? createMemoryRateLimiter();
 
   return definePlugin({
     id: PLUGIN_ID,
@@ -102,8 +177,12 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
         },
       },
       userDelete: {
-        async after({ userId }) {
-          await adapter.delete(userId).catch(() => {});
+        async after({ userId }, ctx) {
+          try {
+            await adapter.delete(userId);
+          } catch (err) {
+            ctx.logger.error('twofa: failed to purge 2FA record on user delete', err);
+          }
         },
       },
     },
@@ -116,11 +195,7 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
         requireCsrf: true,
         async handler(rctx) {
           const session = await rctx.getSession();
-          if (!session) {
-            return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED' } }), {
-              status: 401, headers: { 'content-type': 'application/json' },
-            });
-          }
+          if (!session) return jsonError('UNAUTHENTICATED', 401);
           const api = rctx.plugin.getPlugin<TwoFactorApi>(PLUGIN_ID);
           const out = await api.setup(session.userId);
           return new Response(JSON.stringify({ ok: true, ...out }), {
@@ -135,13 +210,9 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
         requireCsrf: true,
         async handler(rctx) {
           const session = await rctx.getSession();
-          if (!session) {
-            return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED' } }), {
-              status: 401, headers: { 'content-type': 'application/json' },
-            });
-          }
+          if (!session) return jsonError('UNAUTHENTICATED', 401);
           const api = rctx.plugin.getPlugin<TwoFactorApi>(PLUGIN_ID);
-          const out = await api.activate(session.userId, String(rctx.body.code ?? ''));
+          const out = await api.activate(session.userId, sanitizeCode(rctx.body.code));
           return new Response(JSON.stringify({ ok: true, ...out }), {
             status: 200, headers: { 'content-type': 'application/json' },
           });
@@ -154,20 +225,14 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
           const pending = rctx.cookies.get(
             `${rctx.plugin.config.tokens?.cookiePrefix ?? 'holeauth'}.pending`,
           );
-          if (!pending) {
-            return new Response(JSON.stringify({ error: { code: 'NO_PENDING' } }), {
-              status: 400, headers: { 'content-type': 'application/json' },
-            });
-          }
+          if (!pending) return jsonError('NO_PENDING', 400);
           const api = rctx.plugin.getPlugin<TwoFactorApi>(PLUGIN_ID);
           const { user, tokens } = await api.verify({
             pendingToken: pending,
-            code: String(rctx.body.code ?? ''),
+            code: sanitizeCode(rctx.body.code),
             ip: rctx.meta.ip,
             userAgent: rctx.meta.userAgent,
           });
-          // Cookies (access/refresh/csrf + clear pending) are produced by the
-          // framework binding based on the returned tokens.
           const prefix = rctx.plugin.config.tokens?.cookiePrefix ?? 'holeauth';
           const accessTtl = rctx.plugin.config.tokens?.accessTtl ?? 900;
           const refreshTtl = rctx.plugin.config.tokens?.refreshTtl ?? 2592000;
@@ -192,13 +257,9 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
         requireCsrf: true,
         async handler(rctx) {
           const session = await rctx.getSession();
-          if (!session) {
-            return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED' } }), {
-              status: 401, headers: { 'content-type': 'application/json' },
-            });
-          }
+          if (!session) return jsonError('UNAUTHENTICATED', 401);
           const api = rctx.plugin.getPlugin<TwoFactorApi>(PLUGIN_ID);
-          await api.disable(session.userId, String(rctx.body.code ?? ''));
+          await api.disable(session.userId, sanitizeCode(rctx.body.code));
           return new Response(JSON.stringify({ ok: true }), {
             status: 200, headers: { 'content-type': 'application/json' },
           });
@@ -249,7 +310,9 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
           if (r.enabled) {
             throw new HoleauthError('TWOFA_ALREADY_ENABLED', '2FA already enabled', 409);
           }
+          await guardRate(rateLimiter, `activate:${userId}`);
           if (!verifyTotp(r.secret, code)) throw new CredentialsError('invalid 2FA code');
+          await rateLimiter.reset(`activate:${userId}`);
           const recoveryCodes = generateRecoveryCodes(recoveryCount);
           await adapter.update(userId, {
             enabled: true,
@@ -263,10 +326,11 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
           const { userId } = await verifyPendingToken(ctx.config, input.pendingToken, PLUGIN_ID);
           const r = await requireRecord(adapter, userId);
           if (!r.enabled) throw new CredentialsError('2FA not enabled');
+          await guardRate(rateLimiter, `verify:${userId}`);
 
           let ok = verifyTotp(r.secret, input.code);
           if (!ok) {
-            const cleaned = input.code.trim().toUpperCase();
+            const cleaned = normalizeRecoveryCode(input.code);
             const next = consumeRecoveryCode(r.recoveryCodes, cleaned);
             if (next) {
               await adapter.update(userId, { recoveryCodes: next, updatedAt: new Date() });
@@ -274,6 +338,7 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
             }
           }
           if (!ok) throw new CredentialsError('invalid 2FA code');
+          await rateLimiter.reset(`verify:${userId}`);
 
           return ctx.core.completeSignIn(userId, {
             method: 'totp',
@@ -284,7 +349,9 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
 
         async disable(userId, code) {
           const r = await requireRecord(adapter, userId);
+          await guardRate(rateLimiter, `disable:${userId}`);
           if (!verifyTotp(r.secret, code)) throw new CredentialsError('invalid 2FA code');
+          await rateLimiter.reset(`disable:${userId}`);
           await adapter.delete(userId);
         },
       };

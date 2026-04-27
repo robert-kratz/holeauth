@@ -1,0 +1,88 @@
+---
+title: Getting started with @holeauth/react
+description: Wrap your React app with HoleauthProvider and access session state via hooks.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Getting started with @holeauth/react
+
+`@holeauth/react` provides a context provider and typed hooks for accessing session state and triggering auth actions from client components.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/react
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/react
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/react
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/react
+```
+</Tab>
+</Tabs>
+
+<Steps>
+<Step>
+
+## Add the provider
+
+```tsx title="app/layout.tsx"
+import { HoleauthProvider } from '@holeauth/react';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html>
+      <body>
+        <HoleauthProvider basePath="/api/auth">
+          {children}
+        </HoleauthProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+</Step>
+<Step>
+
+## Use hooks in client components
+
+```tsx title="components/user-menu.tsx"
+'use client';
+import { useSession, useSignOut } from '@holeauth/react';
+
+export function UserMenu() {
+  const { session, status } = useSession();
+  const signOut = useSignOut();
+
+  if (status === 'loading') return null;
+  if (!session) return <a href="/login">Sign in</a>;
+
+  return (
+    <div>
+      <span>{session.user.email}</span>
+      <button onClick={() => signOut()}>Sign out</button>
+    </div>
+  );
+}
+```
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  See the [full API reference](/docs/packages/react) for all hooks: `useSession`, `useSignIn`, `useSignUp`, `useSignOut`, `use2FA`, `usePasskey`, and more.
+</Callout>

@@ -1,0 +1,76 @@
+---
+title: Getting started with @holeauth/core
+description: Install and configure the holeauth core package in any framework-agnostic environment.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Getting started with @holeauth/core
+
+`@holeauth/core` is the foundation every other holeauth package builds on. It ships JWT signing, session management, password hashing, OTP generation, and the plugin registry — all framework-agnostic.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/core
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/core
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/core
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/core
+```
+</Tab>
+</Tabs>
+
+<Steps>
+<Step>
+
+## Define your auth instance
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+});
+```
+
+</Step>
+<Step>
+
+## Use the instance in your server
+
+The `auth` instance exposes typed methods for all auth operations. Pass it to your framework adapter (e.g. `@holeauth/nextjs`) or call its methods directly.
+
+```ts title="server/register.ts"
+import { auth } from '@/lib/auth';
+
+const result = await auth.signUp({
+  email: 'user@example.com',
+  password: 'supersecret',
+});
+```
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  For Next.js App Router projects use [`@holeauth/nextjs`](/docs/getting-started/nextjs) on top of `@holeauth/core`. See the [full API reference](/docs/packages/core) for all exported symbols.
+</Callout>

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { DocsPage, DocsBody } from 'fumadocs-ui/page';
+import defaultMdxComponents from 'fumadocs-ui/mdx';
 import { source } from '@/lib/source';
 
 export default async function Page({ params }: { params: Promise<{ slug?: string[] }> }) {
@@ -11,8 +12,7 @@ export default async function Page({ params }: { params: Promise<{ slug?: string
   return (
     <DocsPage toc={page.data.toc}>
       <DocsBody>
-        <h1>{page.data.title}</h1>
-        <MDX />
+        <MDX components={defaultMdxComponents} />
       </DocsBody>
     </DocsPage>
   );

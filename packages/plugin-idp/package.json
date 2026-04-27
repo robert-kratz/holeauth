@@ -43,7 +43,8 @@
     "clean": "rm -rf dist .turbo",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage"
   },
   "peerDependencies": {
     "@holeauth/core": "workspace:*",
@@ -54,6 +55,7 @@
     "@holeauth/eslint-config": "workspace:*",
     "@holeauth/tsconfig": "workspace:*",
     "@types/node": "^20.16.10",
+    "@vitest/coverage-v8": "^2.1.9",
     "jose": "^5.9.3",
     "tsup": "^8.3.0",
     "typescript": "^5.6.2",

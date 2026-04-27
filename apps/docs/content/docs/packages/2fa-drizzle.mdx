@@ -1,0 +1,129 @@
+---
+title: 2fa-drizzle
+description: Drizzle ORM tables and adapter for @holeauth/plugin-2fa — PostgreSQL, MySQL, and SQLite.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/2fa-drizzle
+
+Drizzle ORM tables and adapter for [`@holeauth/plugin-2fa`](/docs/packages/plugin-2fa). Supports PostgreSQL, MySQL, and SQLite.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/2fa-drizzle @holeauth/plugin-2fa drizzle-orm
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/2fa-drizzle @holeauth/plugin-2fa drizzle-orm
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/2fa-drizzle @holeauth/plugin-2fa drizzle-orm
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/2fa-drizzle @holeauth/plugin-2fa drizzle-orm
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createHoleauthTables, createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { createTwoFactorTables, createTwoFactorAdapter } from '@holeauth/2fa-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+
+const { tables: twofaTables } = createTwoFactorTables({ usersTable: users });
+const twofaAdapter = createTwoFactorAdapter({ db, tables: twofaTables });
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    twofa({ adapter: twofaAdapter, issuer: 'My App' }),
+  ],
+});
+```
+
+## `createTwoFactorTables(options)`
+
+Generate the 2FA credential table linked to your users table.
+
+### Options
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table with a string `id` column.',
+      type: 'PgUsersTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Table name prefix.',
+      type: 'string',
+      default: '"holeauth_2fa_"',
+    },
+  }}
+/>
+
+### Returns
+
+```ts
+{
+  tables: { twoFactor: PgTable }; // holeauth_2fa_credential
+  relations: { twoFactorRelations: Relations };
+}
+```
+
+## `createTwoFactorAdapter(options)`
+
+Build a `TwoFactorAdapter` from the generated tables.
+
+### Options
+
+<TypeTable
+  type={{
+    db: { description: 'Drizzle database instance.', type: 'PgDb', required: true },
+    tables: { description: 'Tables returned by createTwoFactorTables.', type: 'Tables', required: true },
+  }}
+/>
+
+## Generated table schema
+
+### `holeauth_2fa_credential`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `user_id` | text PK | FK → users.id (cascade delete) |
+| `secret` | text NOT NULL | Base32 TOTP secret |
+| `enabled` | boolean | Default false |
+| `recovery_codes` | text[] | Hashed recovery codes |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
+
+## Dialects
+
+| Import path | Dialect |
+|-------------|---------|
+| `@holeauth/2fa-drizzle/pg` | PostgreSQL |
+| `@holeauth/2fa-drizzle/mysql` | MySQL |
+| `@holeauth/2fa-drizzle/sqlite` | SQLite |
+
+<Cards>
+  <Card title="plugin-2fa" href="/docs/packages/plugin-2fa" description="TOTP two-factor authentication plugin." />
+</Cards>

@@ -6,10 +6,6 @@
  * Uses @simplewebauthn/server under the hood. The consumer application
  * is responsible for the browser-side ceremony (via @simplewebauthn/browser)
  * and posting the response JSON to the plugin-mounted routes.
- *
- * NOTE: this is a first-pass implementation of the plugin; the original
- * core passkey module has moved here verbatim in spirit — the public HTTP
- * surface is compatible with the prior core endpoints, just relocated.
  */
 import {
   definePlugin,
@@ -20,10 +16,38 @@ import type { AdapterUser } from '@holeauth/core/adapters';
 import type { IssuedTokens } from '@holeauth/core';
 import { HoleauthError } from '@holeauth/core/errors';
 import type { PasskeyAdapter, PasskeyRecord } from './adapter.js';
+import {
+  createMemoryRateLimiter,
+  type PasskeyRateLimiter,
+} from './rate-limit.js';
 
 export type { PasskeyAdapter, PasskeyRecord } from './adapter.js';
+export {
+  createMemoryRateLimiter,
+  type PasskeyRateLimiter,
+  type MemoryRateLimiterOptions,
+} from './rate-limit.js';
 
 const PLUGIN_ID = 'passkey' as const;
+
+/** Hard upper bound on any untrusted string field (device name, credential id). */
+const MAX_STRING_LENGTH = 512;
+
+/** Raised when an attacker burns through the login verify limiter. */
+export function passkeyRateLimitedError(retryAfterSeconds?: number): HoleauthError {
+  const err = new HoleauthError(
+    'PASSKEY_RATE_LIMITED',
+    'too many passkey attempts, try again later',
+    429,
+  );
+  if (retryAfterSeconds) {
+    Object.defineProperty(err, 'retryAfterSeconds', {
+      value: retryAfterSeconds,
+      enumerable: true,
+    });
+  }
+  return err;
+}
 
 type WebAuthnModule = typeof import('@simplewebauthn/server');
 
@@ -55,6 +79,41 @@ function bufferToB64url(b: Uint8Array | ArrayBuffer): string {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
+/** Narrow an untrusted string input and cap its length. */
+function sanitizeString(raw: unknown, field: string, { optional = false } = {}): string {
+  if (raw === undefined || raw === null) {
+    if (optional) return '';
+    throw new HoleauthError('PASSKEY_INVALID_INPUT', `${field} is required`, 400);
+  }
+  if (typeof raw !== 'string') {
+    throw new HoleauthError('PASSKEY_INVALID_INPUT', `${field} must be a string`, 400);
+  }
+  if (raw.length === 0) {
+    if (optional) return '';
+    throw new HoleauthError('PASSKEY_INVALID_INPUT', `${field} cannot be empty`, 400);
+  }
+  if (raw.length > MAX_STRING_LENGTH) {
+    throw new HoleauthError('PASSKEY_INVALID_INPUT', `${field} exceeds maximum length`, 400);
+  }
+  return raw;
+}
+
+async function guardRate(
+  limiter: PasskeyRateLimiter | undefined,
+  key: string,
+): Promise<void> {
+  if (!limiter) return;
+  const res = await limiter.check(key);
+  if (!res.ok) throw passkeyRateLimitedError(res.retryAfterSeconds);
+}
+
+function jsonError(code: string, status: number, extra?: Record<string, unknown>): Response {
+  return new Response(JSON.stringify({ error: { code, ...(extra ?? {}) } }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 export interface PasskeyOptions {
   adapter: PasskeyAdapter;
   /** Relying party id (domain, no protocol). */
@@ -65,6 +124,12 @@ export interface PasskeyOptions {
   rpName?: string;
   /** Pending challenge TTL (seconds). Default: config.tokens.pendingTtl or 300. */
   pendingTtlSeconds?: number;
+  /**
+   * Rate limiter consulted before every `loginVerify` attempt. Defaults to
+   * an in-process memory limiter (10 attempts per 5 min). Supply a
+   * distributed implementation in production.
+   */
+  rateLimiter?: PasskeyRateLimiter;
 }
 
 export interface PasskeyApi {
@@ -88,6 +153,7 @@ export interface PasskeyPlugin extends HoleauthPlugin<typeof PLUGIN_ID, PasskeyA
 
 export function passkey(options: PasskeyOptions): PasskeyPlugin {
   const { adapter, rpID, rpOrigin, rpName = 'holeauth' } = options;
+  const rateLimiter = options.rateLimiter ?? createMemoryRateLimiter();
 
   return definePlugin({
     id: PLUGIN_ID,
@@ -96,9 +162,25 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
 
     hooks: {
       userDelete: {
-        async after({ userId }) {
-          const creds = await adapter.list(userId).catch(() => []);
-          for (const c of creds) await adapter.delete(c.id).catch(() => {});
+        async after({ userId }, ctx) {
+          try {
+            const creds = await adapter.list(userId);
+            for (const c of creds) {
+              try {
+                await adapter.delete(c.id);
+              } catch (err) {
+                ctx.logger.error(
+                  'passkey: failed to delete credential during userDelete cleanup',
+                  { err, userId, credentialId: c.id },
+                );
+              }
+            }
+          } catch (err) {
+            ctx.logger.error(
+              'passkey: failed to list credentials during userDelete cleanup',
+              { err, userId },
+            );
+          }
         },
       },
     },
@@ -109,7 +191,7 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
         requireAuth: true, requireCsrf: true,
         async handler(rctx) {
           const s = await rctx.getSession();
-          if (!s) return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED' } }), { status: 401 });
+          if (!s) return jsonError('UNAUTHENTICATED', 401);
           const api = rctx.plugin.getPlugin<PasskeyApi>(PLUGIN_ID);
           const { options, challenge } = await api.registerOptions(s.userId);
           const prefix = rctx.plugin.config.tokens?.cookiePrefix ?? 'holeauth';
@@ -124,15 +206,15 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
         requireAuth: true, requireCsrf: true,
         async handler(rctx) {
           const s = await rctx.getSession();
-          if (!s) return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED' } }), { status: 401 });
+          if (!s) return jsonError('UNAUTHENTICATED', 401);
           const prefix = rctx.plugin.config.tokens?.cookiePrefix ?? 'holeauth';
           const challenge = rctx.cookies.get(`${prefix}.passkey.challenge`);
-          if (!challenge) return new Response(JSON.stringify({ error: { code: 'NO_CHALLENGE' } }), { status: 400 });
+          if (!challenge) return jsonError('NO_CHALLENGE', 400);
           const api = rctx.plugin.getPlugin<PasskeyApi>(PLUGIN_ID);
           const out = await api.registerVerify(s.userId, {
             response: rctx.body.response,
             expectedChallenge: challenge,
-            deviceName: rctx.body.deviceName ? String(rctx.body.deviceName) : undefined,
+            deviceName: rctx.body.deviceName ? sanitizeString(rctx.body.deviceName, 'deviceName', { optional: true }) : undefined,
           });
           rctx.setCookie({ name: `${prefix}.passkey.challenge`, value: '', maxAge: 0, httpOnly: true, path: '/' });
           return new Response(JSON.stringify({ ok: true, ...out }), {
@@ -144,8 +226,11 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
         method: 'POST', path: '/passkey/login/options',
         async handler(rctx) {
           const api = rctx.plugin.getPlugin<PasskeyApi>(PLUGIN_ID);
-          const userId = rctx.body.userId ? String(rctx.body.userId) : undefined;
-          const { options, challenge } = await api.loginOptions(userId);
+          // Do NOT forward an explicit userId to the API — this prevents a
+          // trivial user-enumeration oracle based on whether `allowCredentials`
+          // is empty vs populated. Discoverable credentials (passkey UI) pick
+          // the right credential at ceremony time.
+          const { options, challenge } = await api.loginOptions();
           const prefix = rctx.plugin.config.tokens?.cookiePrefix ?? 'holeauth';
           rctx.setCookie({ name: `${prefix}.passkey.challenge`, value: challenge, maxAge: 300, httpOnly: true, path: '/' });
           return new Response(JSON.stringify({ options }), {
@@ -158,7 +243,7 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
         async handler(rctx) {
           const prefix = rctx.plugin.config.tokens?.cookiePrefix ?? 'holeauth';
           const challenge = rctx.cookies.get(`${prefix}.passkey.challenge`);
-          if (!challenge) return new Response(JSON.stringify({ error: { code: 'NO_CHALLENGE' } }), { status: 400 });
+          if (!challenge) return jsonError('NO_CHALLENGE', 400);
           const api = rctx.plugin.getPlugin<PasskeyApi>(PLUGIN_ID);
           const { user, tokens } = await api.loginVerify({
             response: rctx.body.response,
@@ -187,14 +272,15 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
     api(ctx: PluginContext): PasskeyApi {
       return {
         async registerOptions(userId) {
-          const user = await ctx.config.adapters.user.getUserById(userId);
+          const id = sanitizeString(userId, 'userId');
+          const user = await ctx.config.adapters.user.getUserById(id);
           if (!user) throw new HoleauthError('NOT_FOUND', 'user not found', 404);
           const webauthn = await loadWebAuthn();
-          const existing = await adapter.list(userId);
+          const existing = await adapter.list(id);
           const options = await webauthn.generateRegistrationOptions({
             rpID,
             rpName,
-            userID: new TextEncoder().encode(userId),
+            userID: new TextEncoder().encode(id),
             userName: user.email,
             userDisplayName: user.name ?? user.email,
             attestationType: 'none',
@@ -207,10 +293,12 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
         },
 
         async registerVerify(userId, input) {
+          const id = sanitizeString(userId, 'userId');
+          const expectedChallenge = sanitizeString(input.expectedChallenge, 'expectedChallenge');
           const webauthn = await loadWebAuthn();
           const verification = await webauthn.verifyRegistrationResponse({
             response: input.response as Parameters<typeof webauthn.verifyRegistrationResponse>[0]['response'],
-            expectedChallenge: input.expectedChallenge,
+            expectedChallenge,
             expectedOrigin: rpOrigin,
             expectedRPID: rpID,
           });
@@ -218,27 +306,34 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
             throw new HoleauthError('PASSKEY_VERIFY_FAILED', 'passkey registration failed', 400);
           }
           const reg = verification.registrationInfo;
-          // simplewebauthn v11 nests the credential under `credential`
           const credential = (reg as unknown as { credential?: { id: string; publicKey: Uint8Array; counter: number } }).credential;
-          const credentialId = credential?.id ?? (reg as unknown as { credentialID: string }).credentialID;
+          const rawCredentialId = credential?.id ?? (reg as unknown as { credentialID: string }).credentialID;
           const publicKey = credential?.publicKey ?? (reg as unknown as { credentialPublicKey: Uint8Array }).credentialPublicKey;
           const counter = credential?.counter ?? (reg as unknown as { counter: number }).counter;
+          const credentialId = typeof rawCredentialId === 'string' ? rawCredentialId : bufferToB64url(rawCredentialId);
           await adapter.create({
-            userId,
-            credentialId: typeof credentialId === 'string' ? credentialId : bufferToB64url(credentialId),
+            userId: id,
+            credentialId,
             publicKey: bufferToB64url(publicKey),
             counter,
             transports: null,
-            deviceName: input.deviceName ?? null,
+            deviceName: input.deviceName ? sanitizeString(input.deviceName, 'deviceName', { optional: true }) || null : null,
           });
-          return { credentialId: typeof credentialId === 'string' ? credentialId : bufferToB64url(credentialId) };
+          return { credentialId };
         },
 
         async loginOptions(userId) {
           const webauthn = await loadWebAuthn();
-          const allow = userId
-            ? (await adapter.list(userId)).map((c) => ({ id: c.credentialId, transports: (c.transports as ['usb'] | undefined) ?? undefined }))
-            : undefined;
+          let allow: { id: string; transports?: ['usb'] }[] | undefined;
+          if (userId) {
+            const id = sanitizeString(userId, 'userId');
+            const creds = await adapter.list(id);
+            // Treat "no credentials" identically to "no userId" so that a
+            // caller cannot probe user existence via the response shape.
+            allow = creds.length
+              ? creds.map((c) => ({ id: c.credentialId, transports: (c.transports as ['usb'] | undefined) ?? undefined }))
+              : undefined;
+          }
           const options = await webauthn.generateAuthenticationOptions({
             rpID,
             allowCredentials: allow,
@@ -248,14 +343,20 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
         },
 
         async loginVerify(input) {
-          const webauthn = await loadWebAuthn();
-          const raw = input.response as { id?: string; rawId?: string };
-          const credentialId = raw.id ?? raw.rawId ?? '';
+          const expectedChallenge = sanitizeString(input.expectedChallenge, 'expectedChallenge');
+          const raw = (input.response ?? {}) as { id?: string; rawId?: string };
+          const credentialId = raw.id ?? raw.rawId;
+          if (!credentialId || typeof credentialId !== 'string' || credentialId.length > MAX_STRING_LENGTH) {
+            throw new HoleauthError('PASSKEY_INVALID_INPUT', 'response.id is required', 400);
+          }
+          const rateKey = `${credentialId}:${input.ip ?? 'unknown'}`;
+          await guardRate(rateLimiter, rateKey);
           const record = await adapter.getByCredentialId(credentialId);
           if (!record) throw new HoleauthError('PASSKEY_UNKNOWN', 'unknown credential', 400);
+          const webauthn = await loadWebAuthn();
           const verification = await webauthn.verifyAuthenticationResponse({
             response: input.response as Parameters<typeof webauthn.verifyAuthenticationResponse>[0]['response'],
-            expectedChallenge: input.expectedChallenge,
+            expectedChallenge,
             expectedOrigin: rpOrigin,
             expectedRPID: rpID,
             credential: {
@@ -267,7 +368,15 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
           if (!verification.verified) {
             throw new HoleauthError('PASSKEY_VERIFY_FAILED', 'passkey login failed', 400);
           }
-          await adapter.updateCounter(record.credentialId, verification.authenticationInfo.newCounter);
+          // Counter regression is a strong cloned-authenticator signal.
+          // simplewebauthn-v11 already throws when newCounter <= counter for
+          // counter-using authenticators, but we double-check defensively.
+          const newCounter = verification.authenticationInfo.newCounter;
+          if (record.counter > 0 && newCounter <= record.counter) {
+            throw new HoleauthError('PASSKEY_COUNTER_REGRESSION', 'authenticator counter regression', 400);
+          }
+          await adapter.updateCounter(record.credentialId, newCounter);
+          await rateLimiter.reset(rateKey);
           return ctx.core.completeSignIn(record.userId, {
             method: 'passkey',
             ip: input.ip,
@@ -275,10 +384,15 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
           });
         },
 
-        list(userId) { return adapter.list(userId); },
+        async list(userId) {
+          const id = sanitizeString(userId, 'userId');
+          return adapter.list(id);
+        },
         async delete(userId, credentialId) {
-          const rec = await adapter.getByCredentialId(credentialId);
-          if (!rec || rec.userId !== userId) throw new HoleauthError('NOT_FOUND', 'credential not found', 404);
+          const uid = sanitizeString(userId, 'userId');
+          const cid = sanitizeString(credentialId, 'credentialId');
+          const rec = await adapter.getByCredentialId(cid);
+          if (!rec || rec.userId !== uid) throw new HoleauthError('NOT_FOUND', 'credential not found', 404);
           await adapter.delete(rec.id);
         },
       };

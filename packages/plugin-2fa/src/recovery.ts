@@ -30,6 +30,17 @@ export function constantTimeEquals(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * Normalise user-supplied recovery input: strip whitespace, upper-case,
+ * and insert canonical dashes every 4 chars if the user omitted them.
+ * This lets users paste codes with or without formatting.
+ */
+export function normalizeRecoveryCode(raw: string): string {
+  const cleaned = raw.replace(/\s+/g, '').replace(/-/g, '').toUpperCase();
+  if (cleaned.length !== 12) return cleaned;
+  return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 8)}-${cleaned.slice(8, 12)}`;
+}
+
 /** Returns the array with the first matching code removed. */
 export function consumeRecoveryCode(codes: string[], provided: string): string[] | null {
   const idx = codes.findIndex((c) => constantTimeEquals(c, provided));

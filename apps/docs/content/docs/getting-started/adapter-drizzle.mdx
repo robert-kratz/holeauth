@@ -1,0 +1,88 @@
+---
+title: Getting started with @holeauth/adapter-drizzle
+description: Generate holeauth tables and wire the Drizzle ORM adapter for PostgreSQL, MySQL, or SQLite.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Getting started with @holeauth/adapter-drizzle
+
+`@holeauth/adapter-drizzle` generates all required holeauth database tables and returns a fully typed adapter bundle for `defineHoleauth`. Supports PostgreSQL, MySQL, and SQLite.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/adapter-drizzle drizzle-orm
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/adapter-drizzle drizzle-orm
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/adapter-drizzle drizzle-orm
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/adapter-drizzle drizzle-orm
+```
+</Tab>
+</Tabs>
+
+<Steps>
+<Step>
+
+## Create the tables and adapter
+
+```ts title="db/auth.ts"
+import { pgTable } from 'drizzle-orm/pg-core';
+import {
+  createHoleauthTables,
+  createHoleauthAdapters,
+} from '@holeauth/adapter-drizzle/pg';
+import { users } from './schema';
+import { db } from './index';
+
+export const { tables } = createHoleauthTables({ usersTable: users });
+export const adapters = createHoleauthAdapters({ db, tables });
+```
+
+</Step>
+<Step>
+
+## Pass adapters to defineHoleauth
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { adapters } from '@/db/auth';
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+});
+```
+
+</Step>
+<Step>
+
+## Run migrations
+
+Push the generated tables to your database:
+
+```bash
+pnpm drizzle-kit push
+```
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  For MySQL use `@holeauth/adapter-drizzle/mysql`, for SQLite use `@holeauth/adapter-drizzle/sqlite`. See the [full reference](/docs/packages/adapter-drizzle) for all exported helpers.
+</Callout>

@@ -52,13 +52,72 @@ import {
   parseScope,
 } from './scopes.js';
 import { renderConsentPage } from './consent-page.js';
+import {
+  createMemoryRateLimiter,
+  type IdpRateLimiter,
+} from './rate-limit.js';
 
 export type { IdpAdapter } from './adapter.js';
 export * from './types.js';
 export { rotateSigningKey, ensureSigningKey } from './keys.js';
 export { renderConsentPage } from './consent-page.js';
+export {
+  createMemoryRateLimiter,
+  type IdpRateLimiter,
+  type MemoryRateLimiterOptions,
+} from './rate-limit.js';
 
 const PLUGIN_ID = 'idp' as const;
+
+/**
+ * Max input length for client-supplied strings. Anything over this is
+ * rejected outright — OAuth values are bounded (UUIDs, URLs, scope lists).
+ */
+const MAX_STRING_LENGTH = 2048;
+
+/** Sanitize a client-supplied string. Throws an OAuth `invalid_request`. */
+function sanitizeString(
+  raw: unknown,
+  field: string,
+  opts: { optional?: boolean; maxLength?: number } = {},
+): string | undefined {
+  if (raw == null || raw === '') {
+    if (opts.optional) return undefined;
+    throw httpError('invalid_request', `${field} required`, 400);
+  }
+  if (typeof raw !== 'string') {
+    throw httpError('invalid_request', `${field} must be a string`, 400);
+  }
+  const max = opts.maxLength ?? MAX_STRING_LENGTH;
+  if (raw.length > max) {
+    throw httpError('invalid_request', `${field} too long`, 400);
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(raw)) {
+    throw httpError('invalid_request', `${field} contains control chars`, 400);
+  }
+  return raw;
+}
+
+/**
+ * Constant-time string comparison. Inputs must be the same length for the
+ * comparison to return true; callers should use pre-hashed values.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) {
+    r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return r === 0;
+}
+
+function getClientIp(req: Request): string {
+  const h = req.headers;
+  const xff = h.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0]!.trim();
+  return h.get('x-real-ip') ?? 'unknown';
+}
 
 /* ──────────────────────────── options ──────────────────────────── */
 
@@ -89,6 +148,13 @@ export interface IdpOptions {
    * apps the caller does not own). Default `idp.apps.admin`.
    */
   adminAppPermission?: string;
+  /**
+   * Rate limiter applied to the token endpoint. Protects against brute
+   * force on client_secret / refresh_token values. Pass `false` to
+   * disable (not recommended). Defaults to an in-memory limiter with
+   * 20 attempts / 60s / key.
+   */
+  tokenRateLimiter?: IdpRateLimiter | false;
 }
 
 /* ──────────────────────────── api ──────────────────────────── */
@@ -295,7 +361,27 @@ export function idp(options: IdpOptions): IdpPlugin {
     signingAlg = 'RS256',
     createAppPermission = 'idp.apps.create',
     adminAppPermission = 'idp.apps.admin',
+    tokenRateLimiter,
   } = options;
+
+  const rateLimiter: IdpRateLimiter | null =
+    tokenRateLimiter === false
+      ? null
+      : tokenRateLimiter ?? createMemoryRateLimiter();
+
+  async function guardRate(
+    key: string,
+  ): Promise<Response | null> {
+    if (!rateLimiter) return null;
+    const r = await rateLimiter.check(key);
+    if (r.ok) return null;
+    return oauthError(
+      'rate_limited',
+      'too many requests — slow down',
+      429,
+      { retry_after: r.retryAfterSeconds },
+    );
+  }
 
   /* ────────── helpers needing `options` closure ────────── */
 
@@ -354,13 +440,24 @@ export function idp(options: IdpOptions): IdpPlugin {
       clientId = body.client_id;
       clientSecret = body.client_secret;
     }
+    clientId = sanitizeString(clientId, 'client_id', { maxLength: 256 });
+    if (clientSecret != null) {
+      clientSecret = sanitizeString(clientSecret, 'client_secret', {
+        optional: true,
+        maxLength: 512,
+      });
+    }
     if (!clientId) throw httpError('invalid_client', 'missing client_id', 401);
     const app = await adapter.apps.getById(clientId);
     if (!app || app.disabledAt) throw httpError('invalid_client', 'unknown client', 401);
     if (app.type === 'confidential') {
       if (!clientSecret) throw httpError('invalid_client', 'missing client_secret', 401);
+      if (!app.clientSecretHash) {
+        throw httpError('invalid_client', 'client has no secret configured', 401);
+      }
       const hash = await sha256Hex(clientSecret);
-      if (hash !== app.clientSecretHash) {
+      // Constant-time compare to avoid timing oracle on the hex digest.
+      if (!timingSafeEqual(hash, app.clientSecretHash)) {
         throw httpError('invalid_client', 'invalid client_secret', 401);
       }
       return { app, isPublic: false };
@@ -574,6 +671,8 @@ export function idp(options: IdpOptions): IdpPlugin {
           const html = renderConsentPage({
             appName: app.name,
             appLogoUrl: app.logoUrl,
+            appDescription: app.description,
+            redirectUri: redirect_uri,
             scopes: granted,
             userEmail: user?.email ?? session.userId,
             params: {
@@ -667,153 +766,163 @@ export function idp(options: IdpOptions): IdpPlugin {
         async handler(rctx: PluginRouteContext): Promise<Response> {
           const body = await readForm(rctx.req);
           const grant = body.grant_type;
+          const clientIdHint = (body.client_id ?? '').slice(0, 128);
+          const ip = getClientIp(rctx.req);
+          const rateKey = `token:${clientIdHint}:${ip}`;
+          const limited = await guardRate(rateKey);
+          if (limited) return limited;
 
-          if (grant === 'authorization_code') {
-            let clientAuth: { app: IdpApp; isPublic: boolean };
-            try {
-              clientAuth = await authenticateClient(rctx.req, body);
-            } catch (e) {
-              if (e instanceof HoleauthError) {
-                return oauthError(e.code, e.message, e.status);
-              }
-              throw e;
-            }
-            const { app } = clientAuth;
+          try {
+            if (grant === 'authorization_code') {
+              const clientAuth = await authenticateClient(rctx.req, body);
+              const { app } = clientAuth;
 
-            const code = body.code;
-            const redirectUri = body.redirect_uri;
-            const codeVerifier = body.code_verifier;
-            if (!code || !redirectUri) {
-              return oauthError('invalid_request', 'code + redirect_uri required');
-            }
-            const hash = await sha256Hex(code);
-            const consumed = await adapter.codes.consume(hash);
-            if (!consumed) return oauthError('invalid_grant', 'code invalid or reused');
-            if (consumed.appId !== app.id) {
-              return oauthError('invalid_grant', 'code issued to a different client');
-            }
-            if (consumed.redirectUri !== redirectUri) {
-              return oauthError('invalid_grant', 'redirect_uri mismatch');
-            }
-            if (consumed.codeChallenge) {
-              if (!codeVerifier) {
-                return oauthError('invalid_request', 'code_verifier required');
-              }
-              const ok = await verifyPkce({
-                verifier: codeVerifier,
-                challenge: consumed.codeChallenge,
-                method: consumed.codeChallengeMethod ?? 'S256',
+              const code = sanitizeString(body.code, 'code', { maxLength: 512 })!;
+              const redirectUri = sanitizeString(body.redirect_uri, 'redirect_uri', {
+                maxLength: 2048,
+              })!;
+              const codeVerifier = sanitizeString(body.code_verifier, 'code_verifier', {
+                optional: true,
+                maxLength: 512,
               });
-              if (!ok) return oauthError('invalid_grant', 'PKCE verification failed');
-            }
-
-            const tokens = await issueTokensFor({
-              ctx: rctx.plugin,
-              app,
-              userId: consumed.userId,
-              scope: consumed.scope,
-              nonce: consumed.nonce,
-              authTime: Math.floor(Date.now() / 1000),
-            });
-
-            return tokenResponse(tokens);
-          }
-
-          if (grant === 'refresh_token') {
-            let clientAuth: { app: IdpApp; isPublic: boolean };
-            try {
-              clientAuth = await authenticateClient(rctx.req, body);
-            } catch (e) {
-              if (e instanceof HoleauthError) {
-                return oauthError(e.code, e.message, e.status);
+              const hash = await sha256Hex(code);
+              const consumed = await adapter.codes.consume(hash);
+              if (!consumed) return oauthError('invalid_grant', 'code invalid or reused');
+              if (consumed.appId !== app.id) {
+                return oauthError('invalid_grant', 'code issued to a different client');
               }
-              throw e;
-            }
-            const { app } = clientAuth;
-            const refreshToken = body.refresh_token;
-            if (!refreshToken) return oauthError('invalid_request', 'refresh_token required');
-            const hash = await sha256Hex(refreshToken);
-            const row = await adapter.refresh.getByHash(hash);
-            if (!row) return oauthError('invalid_grant', 'unknown refresh_token');
-            if (row.appId !== app.id) {
-              // cross-client use — revoke family for safety
-              await adapter.refresh.revokeFamily(row.familyId);
-              return oauthError('invalid_grant', 'wrong client for refresh_token');
-            }
-            if (row.revokedAt) {
-              // REUSE DETECTION — revoke entire family.
-              await adapter.refresh.revokeFamily(row.familyId);
-              return oauthError('invalid_grant', 'refresh_token reused — family revoked');
-            }
-            if (row.expiresAt.getTime() < Date.now()) {
-              return oauthError('invalid_grant', 'refresh_token expired');
-            }
-
-            // Rotate: mark current revoked, mint new row under same family.
-            const requestedScope = body.scope ? body.scope : row.scope;
-            // Cannot widen scope on refresh.
-            const requested = parseScope(requestedScope);
-            const original = parseScope(row.scope);
-            const narrowed = requested.filter((s) => original.includes(s));
-            const effectiveScope = formatScope(narrowed.length ? narrowed : original);
-
-            const key = await ensureSigningKey(adapter, signingAlg);
-            const { token: accessToken, exp: accessExp } = await signAccessToken(key, {
-              issuer,
-              audience: app.id,
-              subject: row.userId,
-              scope: effectiveScope,
-              ttlSeconds: accessTokenTtl,
-              extra: { client_id: app.id },
-            });
-
-            let idToken: string | null = null;
-            let idExp: number | null = null;
-            if (parseScope(effectiveScope).includes('openid')) {
-              const user = await rctx.plugin.core.getUserById(row.userId);
-              if (user) {
-                const claims = claimsForUser(user, parseScope(effectiveScope));
-                const signed = await signIdToken(key, {
-                  issuer,
-                  audience: app.id,
-                  subject: row.userId,
-                  nonce: null,
-                  authTime: Math.floor(row.createdAt.getTime() / 1000),
-                  claims,
-                  ttlSeconds: idTokenTtl,
+              if (consumed.redirectUri !== redirectUri) {
+                return oauthError('invalid_grant', 'redirect_uri mismatch');
+              }
+              // Defensive: even if the adapter's consume() checks expiry, verify
+              // here too so bugs in storage cannot issue tokens for stale codes.
+              if (consumed.expiresAt.getTime() < Date.now()) {
+                return oauthError('invalid_grant', 'code expired');
+              }
+              if (consumed.codeChallenge) {
+                if (!codeVerifier) {
+                  return oauthError('invalid_request', 'code_verifier required');
+                }
+                const ok = await verifyPkce({
+                  verifier: codeVerifier,
+                  challenge: consumed.codeChallenge,
+                  method: consumed.codeChallengeMethod ?? 'S256',
                 });
-                idToken = signed.token;
-                idExp = signed.exp;
+                if (!ok) return oauthError('invalid_grant', 'PKCE verification failed');
+              } else if (app.requirePkce || app.type === 'public') {
+                // Defense in depth — the authorize endpoint rejects missing PKCE
+                // for these client classes, but never trust that alone.
+                return oauthError('invalid_grant', 'PKCE required but missing from code');
               }
+
+              const tokens = await issueTokensFor({
+                ctx: rctx.plugin,
+                app,
+                userId: consumed.userId,
+                scope: consumed.scope,
+                nonce: consumed.nonce,
+                authTime: Math.floor(Date.now() / 1000),
+              });
+
+              if (rateLimiter) await rateLimiter.reset(rateKey);
+              return tokenResponse(tokens);
             }
 
-            // Rotate refresh token.
-            await adapter.refresh.markRevoked(row.id);
-            const newRaw = randomToken(48);
-            const newHash = await sha256Hex(newRaw);
-            const newExpires = new Date(Date.now() + refreshTokenTtl * 1000);
-            await adapter.refresh.create({
-              id: crypto.randomUUID(),
-              tokenHash: newHash,
-              appId: app.id,
-              userId: row.userId,
-              familyId: row.familyId,
-              scope: effectiveScope,
-              expiresAt: newExpires,
-            });
+            if (grant === 'refresh_token') {
+              const clientAuth = await authenticateClient(rctx.req, body);
+              const { app } = clientAuth;
+              const refreshToken = sanitizeString(body.refresh_token, 'refresh_token', {
+                maxLength: 512,
+              })!;
+              const hash = await sha256Hex(refreshToken);
+              const row = await adapter.refresh.getByHash(hash);
+              if (!row) return oauthError('invalid_grant', 'unknown refresh_token');
+              if (row.appId !== app.id) {
+                // cross-client use — revoke family for safety
+                await adapter.refresh.revokeFamily(row.familyId);
+                return oauthError('invalid_grant', 'wrong client for refresh_token');
+              }
+              if (row.revokedAt) {
+                // REUSE DETECTION — revoke entire family.
+                await adapter.refresh.revokeFamily(row.familyId);
+                return oauthError('invalid_grant', 'refresh_token reused — family revoked');
+              }
+              if (row.expiresAt.getTime() < Date.now()) {
+                return oauthError('invalid_grant', 'refresh_token expired');
+              }
 
-            return tokenResponse({
-              accessToken,
-              accessExp,
-              idToken,
-              idExp,
-              refreshToken: newRaw,
-              refreshExp: Math.floor(newExpires.getTime() / 1000),
-              scope: effectiveScope,
-            });
+              // Rotate: mark current revoked, mint new row under same family.
+              const requestedScope = body.scope ? body.scope : row.scope;
+              // Cannot widen scope on refresh.
+              const requested = parseScope(requestedScope);
+              const original = parseScope(row.scope);
+              const narrowed = requested.filter((s) => original.includes(s));
+              const effectiveScope = formatScope(narrowed.length ? narrowed : original);
+
+              const key = await ensureSigningKey(adapter, signingAlg);
+              const { token: accessToken, exp: accessExp } = await signAccessToken(key, {
+                issuer,
+                audience: app.id,
+                subject: row.userId,
+                scope: effectiveScope,
+                ttlSeconds: accessTokenTtl,
+                extra: { client_id: app.id },
+              });
+
+              let idToken: string | null = null;
+              let idExp: number | null = null;
+              if (parseScope(effectiveScope).includes('openid')) {
+                const user = await rctx.plugin.core.getUserById(row.userId);
+                if (user) {
+                  const claims = claimsForUser(user, parseScope(effectiveScope));
+                  const signed = await signIdToken(key, {
+                    issuer,
+                    audience: app.id,
+                    subject: row.userId,
+                    nonce: null,
+                    authTime: Math.floor(row.createdAt.getTime() / 1000),
+                    claims,
+                    ttlSeconds: idTokenTtl,
+                  });
+                  idToken = signed.token;
+                  idExp = signed.exp;
+                }
+              }
+
+              // Rotate refresh token.
+              await adapter.refresh.markRevoked(row.id);
+              const newRaw = randomToken(48);
+              const newHash = await sha256Hex(newRaw);
+              const newExpires = new Date(Date.now() + refreshTokenTtl * 1000);
+              await adapter.refresh.create({
+                id: crypto.randomUUID(),
+                tokenHash: newHash,
+                appId: app.id,
+                userId: row.userId,
+                familyId: row.familyId,
+                scope: effectiveScope,
+                expiresAt: newExpires,
+              });
+
+              if (rateLimiter) await rateLimiter.reset(rateKey);
+              return tokenResponse({
+                accessToken,
+                accessExp,
+                idToken,
+                idExp,
+                refreshToken: newRaw,
+                refreshExp: Math.floor(newExpires.getTime() / 1000),
+                scope: effectiveScope,
+              });
+            }
+
+            return oauthError('unsupported_grant_type', `grant ${grant} not supported`);
+          } catch (e) {
+            if (e instanceof HoleauthError) {
+              return oauthError(e.code, e.message, e.status);
+            }
+            throw e;
           }
-
-          return oauthError('unsupported_grant_type', `grant ${grant} not supported`);
         },
       },
 
@@ -942,8 +1051,15 @@ export function idp(options: IdpOptions): IdpPlugin {
 
     hooks: {
       userDelete: {
-        async after({ userId }) {
-          await adapter.refresh.revokeAllForUser(userId).catch(() => {});
+        async after({ userId }, ctx) {
+          try {
+            await adapter.refresh.revokeAllForUser(userId);
+          } catch (err) {
+            ctx.logger.error(
+              'idp: failed to revoke refresh tokens on user delete',
+              { plugin: PLUGIN_ID, userId, err },
+            );
+          }
           // Team/app cleanup is owner-dependent — keep it simple: if
           // user was sole owner, apps remain but consumers should handle.
         },

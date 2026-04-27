@@ -15,6 +15,10 @@ function escapeHtml(s: string): string {
 export interface ConsentPageInput {
   appName: string;
   appLogoUrl: string | null;
+  /** Optional app description shown to the user. */
+  appDescription?: string | null;
+  /** Redirect URI the user will be sent back to — shown for transparency. */
+  redirectUri?: string | null;
   scopes: string[];
   userEmail: string;
   /** All authorize params to echo back in the form. */
@@ -51,6 +55,12 @@ export function renderConsentPage(input: ConsentPageInput): string {
   const logo = input.appLogoUrl
     ? `<img src="${escapeHtml(input.appLogoUrl)}" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover;" />`
     : '';
+  const description = input.appDescription
+    ? `<p style="margin:0 0 12px;opacity:0.8;font-size:0.9rem;">${escapeHtml(input.appDescription)}</p>`
+    : '';
+  const redirectInfo = input.redirectUri
+    ? `<p style="margin:12px 0 0;font-size:0.8rem;opacity:0.6;">After approval you will be redirected to <code>${escapeHtml(input.redirectUri)}</code>.</p>`
+    : '';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -79,6 +89,7 @@ export function renderConsentPage(input: ConsentPageInput): string {
       </div>
     </div>
     <p>Signed in as <strong>${escapeHtml(input.userEmail)}</strong>. This app is requesting:</p>
+    ${description}
     <ul>${scopeItems}</ul>
     <form method="POST" action="${escapeHtml(input.actionPath)}">
       ${hidden}
@@ -88,6 +99,7 @@ export function renderConsentPage(input: ConsentPageInput): string {
         <button class="primary" type="submit" name="decision" value="approve">Allow</button>
       </div>
     </form>
+    ${redirectInfo}
   </div>
 </body>
 </html>`;

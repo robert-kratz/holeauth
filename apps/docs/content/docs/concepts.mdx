@@ -20,7 +20,7 @@ holeauth never talks to your database. Instead, `defineHoleauth` receives an `ad
 | `verificationToken` | Email verification / magic links. | optional |
 | `passkey` | WebAuthn credentials. | only for passkeys |
 
-This design means holeauth works with any ORM or database. The reference [`@holeauth/adapter-prisma`](/docs/packages/adapter-prisma) and [`@holeauth/adapter-drizzle`](/docs/packages/adapter-drizzle) packages are thin wrappers; you can implement your own in ~100 lines.
+This design means holeauth works with any ORM or database. The reference [`@holeauth/adapter-drizzle`](/docs/packages/adapter-drizzle) package is a thin wrapper; you can implement your own in ~100 lines.
 
 Full interface reference: [Adapters](/docs/api/adapters).
 

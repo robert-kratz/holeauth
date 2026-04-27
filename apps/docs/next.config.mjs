@@ -14,7 +14,6 @@ const config = {
   // affecting runtime. The docs app is a static-export site; we skip its type
   // check during `next build` and rely on `pnpm typecheck` at the package level.
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
 };
 
 export default withMDX(config);

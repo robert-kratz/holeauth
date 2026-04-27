@@ -21,6 +21,10 @@ export default holeauthMiddleware({
     '/sso',
     '/2fa/verify',
     '/api/auth',
+    // tRPC handles its own auth + transparent refresh in createTrpcContext —
+    // letting the Next middleware redirect would hide the 401 from clients and
+    // skip the getSessionOrRefresh rotation flow.
+    '/api/trpc',
     '/_next',
     '/favicon.ico',
   ],

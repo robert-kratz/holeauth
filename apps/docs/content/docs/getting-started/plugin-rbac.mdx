@@ -1,0 +1,105 @@
+---
+title: Getting started with plugin-rbac
+description: Add role-based access control to your holeauth project using @holeauth/plugin-rbac.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Getting started with @holeauth/plugin-rbac
+
+`@holeauth/plugin-rbac` adds headless role-based access control to holeauth. Group definitions are supplied as an array (or loaded from YAML via `@holeauth/rbac-yaml`) and can be hot-reloaded at runtime.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+</Tabs>
+
+<Steps>
+<Step>
+
+## Define groups in YAML
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  - id: admin
+    name: Admin
+    permissions:
+      - users:read
+      - users:write
+      - settings:read
+      - settings:write
+  - id: member
+    name: Member
+    permissions:
+      - users:read
+```
+
+</Step>
+<Step>
+
+## Register the plugin
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { rbac } from '@holeauth/plugin-rbac';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { createHoleauthAdapters, createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+const rbacAdapter = createRbacAdapter({ db });
+
+const yaml = loadRbacYaml('./holeauth.rbac.yml', {
+  watch: process.env.NODE_ENV !== 'production',
+});
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    rbac({ adapter: rbacAdapter, groups: yaml }),
+  ],
+});
+```
+
+</Step>
+<Step>
+
+## Check permissions on the server
+
+```ts
+import { auth } from '@/lib/auth';
+
+const can = await auth.rbac.hasPermission(userId, 'users:write');
+if (!can) throw new Error('Forbidden');
+```
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  See the [full API reference](/docs/packages/plugin-rbac) and the [`@holeauth/rbac-yaml` reference](/docs/packages/rbac-yaml) for all configuration options.
+</Callout>

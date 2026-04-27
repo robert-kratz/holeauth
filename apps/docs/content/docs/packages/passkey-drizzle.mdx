@@ -1,0 +1,135 @@
+---
+title: passkey-drizzle
+description: Drizzle ORM tables and adapter for @holeauth/plugin-passkey — PostgreSQL, MySQL, and SQLite.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/passkey-drizzle
+
+Drizzle ORM tables and adapter for [`@holeauth/plugin-passkey`](/docs/packages/plugin-passkey). Supports PostgreSQL, MySQL, and SQLite.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/passkey-drizzle @holeauth/plugin-passkey drizzle-orm
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/passkey-drizzle @holeauth/plugin-passkey drizzle-orm
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/passkey-drizzle @holeauth/plugin-passkey drizzle-orm
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/passkey-drizzle @holeauth/plugin-passkey drizzle-orm
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createHoleauthTables, createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { createPasskeyTables, createPasskeyAdapter } from '@holeauth/passkey-drizzle/pg';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+
+const { tables } = createHoleauthTables({ usersTable: users });
+const adapters = createHoleauthAdapters({ db, tables });
+
+const { tables: passkeyTables } = createPasskeyTables({ usersTable: users });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeyTables });
+
+export const auth = defineHoleauth({
+  adapter: adapters,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpID: 'app.example.com',
+      rpOrigin: 'https://app.example.com',
+    }),
+  ],
+});
+```
+
+## `createPasskeyTables(options)`
+
+Generate the passkey credential table linked to your users table.
+
+### Options
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table with a string `id` column.',
+      type: 'PgUsersTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Table name prefix.',
+      type: 'string',
+      default: '"holeauth_passkey_"',
+    },
+  }}
+/>
+
+### Returns
+
+```ts
+{
+  tables: { passkeys: PgTable }; // holeauth_passkey_credential
+  relations: { passkeysRelations: Relations };
+}
+```
+
+## `createPasskeyAdapter(options)`
+
+Build a `PasskeyAdapter` from the generated tables.
+
+### Options
+
+<TypeTable
+  type={{
+    db: { description: 'Drizzle database instance.', type: 'PgDb', required: true },
+    tables: { description: 'Tables returned by createPasskeyTables.', type: 'Tables', required: true },
+  }}
+/>
+
+## Generated table schema
+
+### `holeauth_passkey_credential`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | Internal record ID |
+| `user_id` | text FK → users | Cascade delete |
+| `credential_id` | text UNIQUE | WebAuthn credential ID (base64url) |
+| `public_key` | text NOT NULL | COSE public key (base64url) |
+| `counter` | integer | Signature counter, default 0 |
+| `transports` | text[] | Authenticator transport hints |
+| `device_name` | text | Human-readable label |
+| `created_at` | timestamp | |
+
+## Dialects
+
+| Import path | Dialect |
+|-------------|---------|
+| `@holeauth/passkey-drizzle/pg` | PostgreSQL |
+| `@holeauth/passkey-drizzle/mysql` | MySQL |
+| `@holeauth/passkey-drizzle/sqlite` | SQLite |
+
+<Cards>
+  <Card title="plugin-passkey" href="/docs/packages/plugin-passkey" description="WebAuthn passkey authentication plugin." />
+</Cards>

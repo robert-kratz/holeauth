@@ -5,6 +5,18 @@
     "core",
     "nextjs",
     "react",
-    "adapter-drizzle"
+    "---Drizzle Adapters---",
+    "adapter-drizzle",
+    "2fa-drizzle",
+    "passkey-drizzle",
+    "rbac-drizzle",
+    "idp-drizzle",
+    "---Plugins---",
+    "plugin-2fa",
+    "plugin-passkey",
+    "plugin-rbac",
+    "plugin-idp",
+    "---Utilities---",
+    "rbac-yaml"
   ]
 }
