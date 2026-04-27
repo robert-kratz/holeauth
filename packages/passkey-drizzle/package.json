@@ -1,6 +1,11 @@
 {
   "name": "@holeauth/passkey-drizzle",
   "version": "0.0.1-alpha.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/passkey-drizzle"
+  },
   "description": "Drizzle adapter for @holeauth/plugin-passkey (WebAuthn credentials).",
   "license": "MIT",
   "author": "Robert Kratz",

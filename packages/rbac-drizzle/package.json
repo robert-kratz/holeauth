@@ -1,6 +1,11 @@
 {
   "name": "@holeauth/rbac-drizzle",
   "version": "0.0.1-alpha.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/rbac-drizzle"
+  },
   "description": "Drizzle RBAC adapter for @holeauth/plugin-rbac (user-group and user-permission assignments, optional group persistence).",
   "license": "MIT",
   "author": "Robert Kratz",

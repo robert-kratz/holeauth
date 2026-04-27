@@ -1,6 +1,11 @@
 {
   "name": "@holeauth/idp-drizzle",
   "version": "0.0.1-alpha.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/idp-drizzle"
+  },
   "description": "Drizzle adapter for @holeauth/plugin-idp (OpenID Connect IdP).",
   "license": "MIT",
   "author": "Robert Kratz",
