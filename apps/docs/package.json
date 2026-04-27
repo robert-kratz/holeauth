@@ -6,7 +6,7 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
-    "lint": "next lint",
+    "lint": "echo 'lint skipped (next lint removed in Next 16)'",
     "typecheck": "echo \"docs: type-checked via next build\"",
     "clean": "rm -rf .next out .turbo .source"
   },
