@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="branding/logo.svg" alt="holeauth logo" width="120" height="120" />
+</p>
+
 # holeauth
 
 > Modular, edge-native authentication ecosystem for modern TypeScript apps.
