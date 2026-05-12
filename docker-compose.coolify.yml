@@ -37,12 +37,13 @@ services:
       HOSTNAME: "0.0.0.0"
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.rule=Host(`${SERVICE_FQDN_LANDING}`)"
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.entrypoints=https"
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.tls=true"
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.priority=1"
-      - "traefik.http.services.${COOLIFY_CONTAINER_NAME:-landing}.loadbalancer.server.port=3000"
+      - "traefik.http.routers.holeauth-landing.rule=Host(`holeauth.dev`)"
+      - "traefik.http.routers.holeauth-landing.entrypoints=https"
+      - "traefik.http.routers.holeauth-landing.tls=true"
+      - "traefik.http.routers.holeauth-landing.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.holeauth-landing.priority=1"
+      - "traefik.http.routers.holeauth-landing.service=holeauth-landing"
+      - "traefik.http.services.holeauth-landing.loadbalancer.server.port=3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
       interval: 30s
@@ -56,7 +57,7 @@ services:
       context: .
       dockerfile: apps/docs/Dockerfile
       args:
-        NEXT_PUBLIC_LANDING_URL: "https://${SERVICE_FQDN_LANDING}"
+        NEXT_PUBLIC_LANDING_URL: "https://holeauth.dev"
     restart: unless-stopped
     expose:
       - "3001"
@@ -70,12 +71,13 @@ services:
       # PathPrefix(/docs) is more specific → Traefik gives it higher priority
       # than the Coolify-managed landing router. Next.js basePath ensures
       # /docs/_next/static/... assets also match this rule.
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.rule=Host(`${SERVICE_FQDN_LANDING}`) && PathPrefix(`/docs`)"
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.entrypoints=https"
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.tls=true"
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.priority=10"
-      - "traefik.http.services.${COOLIFY_CONTAINER_NAME:-landing}-docs.loadbalancer.server.port=3001"
+      - "traefik.http.routers.holeauth-docs.rule=Host(`holeauth.dev`) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.holeauth-docs.entrypoints=https"
+      - "traefik.http.routers.holeauth-docs.tls=true"
+      - "traefik.http.routers.holeauth-docs.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.holeauth-docs.priority=10"
+      - "traefik.http.routers.holeauth-docs.service=holeauth-docs"
+      - "traefik.http.services.holeauth-docs.loadbalancer.server.port=3001"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/docs/"]
       interval: 30s
