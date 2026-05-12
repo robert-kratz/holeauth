@@ -438,6 +438,107 @@ matchPattern('posts.*', 'comments.create'); // false
 matchPattern('*', 'anything'); // true
 ```
 
+### Custom Permission Matching
+
+`matchNodes` is the same function used internally by `can()`. Use it to evaluate permission decisions in pure code paths — middleware, schema layers, server actions — without round-tripping through the plugin API:
+
+```ts
+import { matchNodes } from '@holeauth/plugin-rbac';
+
+const effective = ['posts.*', '!posts.delete', 'comments.create'];
+
+matchNodes(effective, 'posts.create');     // true
+matchNodes(effective, 'posts.delete');     // false (negation wins)
+matchNodes(effective, 'comments.create');  // true
+```
+
+Pair it with `auth.rbac.getEffectiveNodes(userId)` (also exposed by `useRbacSnapshot()` on the client) to perform offline checks against a cached snapshot — for example, to filter a navigation menu without an extra request per item.
+
+## Cache Adapter
+
+Per-user permission lookups go through a `RbacCacheAdapter`. The default implementation is an in-memory TTL map; pass a custom adapter via `rbac({ cache, ... })` to share the cache across multiple instances.
+
+```ts
+interface RbacCacheAdapter {
+  get(userId: string): string[] | undefined | Promise<string[] | undefined>;
+  set(userId: string, nodes: string[]): void | Promise<void>;
+  invalidate(userId: string): void | Promise<void>;
+  clear(): void | Promise<void>;
+}
+```
+
+<TypeTable
+  type={{
+    get: {
+      description: 'Return the cached effective nodes for a user, or `undefined` on miss. May be async.',
+      type: '(userId) => string[] | undefined | Promise<string[] | undefined>',
+    },
+    set: {
+      description: 'Store the effective nodes for a user. The plugin calls `set` after every cache miss.',
+      type: '(userId, nodes) => void | Promise<void>',
+    },
+    invalidate: {
+      description: 'Drop a single user from the cache. Called automatically by `assignGroup`, `removeGroup`, `grant`, and `revoke`.',
+      type: '(userId) => void | Promise<void>',
+    },
+    clear: {
+      description: 'Drop every entry. Called by `reload()` so that group-definition changes take effect immediately.',
+      type: '() => void | Promise<void>',
+    },
+  }}
+/>
+
+### defaultRbacCache()
+
+Build the in-memory TTL cache that ships with the plugin. Exposed as an export so you can wrap it (e.g. to add metrics).
+
+```ts
+function defaultRbacCache(ttlMs: number): RbacCacheAdapter
+```
+
+### Redis-backed cache
+
+For multi-instance deployments, back the cache with Redis so that an `invalidate(userId)` call on one node clears the cached snapshot everywhere. The example below uses `ioredis`, but any client with `get` / `set` / `del` works.
+
+```ts title="lib/rbac-cache.ts"
+import type { RbacCacheAdapter } from '@holeauth/plugin-rbac';
+import { redis } from './redis';
+
+export function redisRbacCache(ttlSeconds = 60): RbacCacheAdapter {
+  const key = (userId: string) => `rbac:nodes:${userId}`;
+  return {
+    async get(userId) {
+      const raw = await redis.get(key(userId));
+      return raw ? (JSON.parse(raw) as string[]) : undefined;
+    },
+    async set(userId, nodes) {
+      await redis.set(key(userId), JSON.stringify(nodes), 'EX', ttlSeconds);
+    },
+    async invalidate(userId) {
+      await redis.del(key(userId));
+    },
+    async clear() {
+      // Optional — replace with a SCAN over the `rbac:nodes:*` prefix in production.
+    },
+  };
+}
+```
+
+```ts title="lib/auth.ts"
+import { rbac } from '@holeauth/plugin-rbac';
+import { redisRbacCache } from './rbac-cache';
+
+const plugin = rbac({
+  groups,
+  adapter: rbacAdapter,
+  cache: redisRbacCache(60),
+});
+```
+
+<Callout type="warn">
+  `clear()` runs on every `reload()` call. A no-op implementation is acceptable when TTLs are short; otherwise scan the key prefix and delete to avoid serving stale snapshots after a group-definition change.
+</Callout>
+
 ## See Also
 
 <Cards>

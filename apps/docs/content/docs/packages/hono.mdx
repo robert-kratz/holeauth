@@ -173,6 +173,84 @@ export const handler = async (c: Context) => {
   Hono is edge-ready and works on Cloudflare Workers, Deno Deploy, Bun, Vercel Edge Functions, and Node.js. Ensure your database adapter supports the target runtime.
 </Callout>
 
+## HoleauthHonoVariables
+
+`holeauthHonoMiddleware` writes the resolved session to `c.var.holeauthSession`. Type the Hono app with `HoleauthHonoVariables` so that `c.get('holeauthSession')` is fully typed throughout the request graph.
+
+```ts
+type HoleauthHonoVariables = {
+  holeauthSession: SessionData | null;
+};
+```
+
+```ts title="server.ts"
+import { Hono } from 'hono';
+import {
+  holeauthHonoMiddleware,
+  type HoleauthHonoVariables,
+} from '@holeauth/hono';
+import { auth } from './lib/auth';
+
+const app = new Hono<{ Variables: HoleauthHonoVariables }>();
+
+app.use('*', holeauthHonoMiddleware(auth));
+
+app.get('/me', (c) => {
+  const session = c.get('holeauthSession'); // SessionData | null — fully typed
+  if (!session) return c.json({ error: 'unauthorized' }, 401);
+  return c.json({ userId: session.userId });
+});
+```
+
+When composing typed sub-apps, propagate the variable shape via Hono's generic so types do not collapse to `unknown`:
+
+```ts
+import { Hono } from 'hono';
+import type { HoleauthHonoVariables } from '@holeauth/hono';
+
+export function buildApi() {
+  const api = new Hono<{ Variables: HoleauthHonoVariables }>();
+  api.get('/billing', (c) => {
+    const session = c.get('holeauthSession');
+    // ...
+  });
+  return api;
+}
+```
+
+## Middleware Ordering
+
+The order in which middleware runs matters — the dispatcher and the session middleware both inspect cookies, and a third-party middleware that mutates the response body before they finish can swallow `Set-Cookie` headers issued during refresh rotation.
+
+```ts title="server.ts"
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { holeauthHonoMiddleware } from '@holeauth/hono';
+import { auth } from './lib/auth';
+
+const app = new Hono();
+
+// 1. Cross-cutting concerns that do not depend on the user.
+app.use('*', logger());
+app.use('*', cors({ origin: 'https://app.example.com', credentials: true }));
+
+// 2. Mount the auth sub-app BEFORE the session middleware. The dispatcher
+//    owns its own refresh rotation; the session middleware would otherwise
+//    read a stale access cookie.
+app.route('/api/auth', auth.app);
+
+// 3. Session middleware for the rest of the app.
+app.use('*', holeauthHonoMiddleware(auth));
+
+// 4. Application routes.
+app.get('/me', (c) => c.json({ session: c.get('holeauthSession') }));
+```
+
+<Callout type="warn">
+  When using `cors()`, set `credentials: true` and an explicit origin — cookies are not sent on cross-origin requests with `Access-Control-Allow-Origin: *`.
+</Callout>
+
 ## See also
 
 <Cards>

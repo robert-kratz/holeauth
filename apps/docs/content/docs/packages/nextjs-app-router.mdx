@@ -225,6 +225,120 @@ export default async function AdminPage() {
 }
 ```
 
+## DispatchOptions
+
+`createAuthHandler` accepts a second argument that tunes how the App Router route handler dispatches incoming requests. The same options object is re-exported from `@holeauth/nextjs-app-router` for use in custom integrations.
+
+```ts
+interface DispatchOptions {
+  basePath?: string;
+  defaultRedirect?: string;
+}
+```
+
+<TypeTable
+  type={{
+    basePath: {
+      description: 'Mount prefix stripped from the URL before dispatching. Must match the location of the catch-all route file.',
+      type: 'string',
+      default: '"/api/auth"',
+    },
+    defaultRedirect: {
+      description: 'Destination used after a successful SSO callback when no explicit `redirect` query parameter is supplied.',
+      type: 'string',
+    },
+  }}
+/>
+
+```ts title="app/api/auth/[...holeauth]/route.ts"
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { auth } from '@/lib/auth';
+
+const handlers = createAuthHandler(auth, {
+  basePath: '/api/auth',
+  defaultRedirect: '/dashboard',
+});
+
+export const GET = handlers.GET;
+export const POST = handlers.POST;
+```
+
+<Callout type="warn">
+  Changing `basePath` requires updating both the file path of the catch-all route and the `basePath` field on `defineHoleauth` — the cookie domain and CSRF binding are derived from the same value.
+</Callout>
+
+## Middleware Patterns
+
+The middleware helper composes with any other Next.js middleware. The patterns below cover the most common production setups.
+
+### Restricting to authenticated paths
+
+```ts title="middleware.ts"
+import { createMiddleware } from '@holeauth/nextjs-app-router/middleware';
+import { auth } from '@/lib/auth';
+
+export default createMiddleware(auth, {
+  protectedPaths: ['/dashboard', '/settings'],
+  publicPaths: ['/', '/login', '/register'],
+  redirectTo: '/login',
+});
+
+export const config = {
+  // Exclude static assets and the auth API itself so the middleware never
+  // intercepts its own refresh roundtrip.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
+};
+```
+
+### Combining with RBAC
+
+The middleware only validates the session; route-level permission checks belong in the page or route handler. Use `getFullSession` in a Server Component to short-circuit a request when a permission is missing:
+
+```ts title="app/admin/layout.tsx"
+import { redirect } from 'next/navigation';
+import { getFullSession } from '@holeauth/nextjs-app-router';
+import { auth } from '@/lib/auth';
+
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const result = await getFullSession(auth);
+  if (!result) redirect('/login');
+  if (!result.permissions?.includes('admin.access')) redirect('/');
+  return <>{children}</>;
+}
+```
+
+### Chaining with other middleware
+
+Wrap the holeauth middleware to add i18n redirection, feature flags, or A/B test cookies before authentication runs.
+
+```ts title="middleware.ts"
+import { NextRequest, NextResponse } from 'next/server';
+import { createMiddleware } from '@holeauth/nextjs-app-router/middleware';
+import { auth } from '@/lib/auth';
+
+const authMiddleware = createMiddleware(auth, {
+  protectedPaths: ['/dashboard'],
+  redirectTo: '/login',
+});
+
+export default async function middleware(req: NextRequest) {
+  // Locale rewrite first — keeps cookies on the right URL.
+  const locale = req.cookies.get('locale')?.value ?? 'en';
+  if (!req.nextUrl.pathname.startsWith(`/${locale}`)) {
+    return NextResponse.redirect(new URL(`/${locale}${req.nextUrl.pathname}`, req.url));
+  }
+  return authMiddleware(req);
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
+};
+```
+
+<Callout type="info">
+  Keep `api/auth` excluded from the matcher. The auth route handler manages its own cookies; running middleware on top of it can drop `Set-Cookie` headers during refresh rotation.
+</Callout>
+
 ## See also
 
 <Cards>

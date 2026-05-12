@@ -505,6 +505,56 @@ function renderConsentPage(data: {
 
 Renders a default HTML consent page. Override this by providing your own `/oauth2/authorize/consent` route handler.
 
+## OIDC Scopes
+
+The plugin enforces the standard OIDC scopes during the authorization code, refresh, and userinfo flows. Requested scopes are intersected with the registered `allowedScopes` on each `IdpApp`; the intersection is what gets written into the access token, refresh token, and persisted consent.
+
+### BUILTIN_SCOPES
+
+```ts
+const BUILTIN_SCOPES = ['openid', 'profile', 'email', 'offline_access'] as const;
+```
+
+| Scope | Effect |
+| --- | --- |
+| `openid` | Required for any OIDC flow. Triggers issuance of an `id_token`. |
+| `profile` | Adds `name`, `preferred_username`, and `picture` to the ID token and `userinfo` response. |
+| `email` | Adds `email` and `email_verified`. |
+| `offline_access` | Authorises issuance of a refresh token. |
+
+Custom scopes are passed through unchanged — they appear in the access token's `scope` claim and in the consent record, but do not contribute extra ID-token claims unless your resource server reads them.
+
+### Scope Helpers
+
+The plugin exports four pure helpers for inspecting and combining scopes outside the standard flows — useful in custom routes, audit dashboards, or admin tooling.
+
+```ts
+import {
+  parseScope,
+  formatScope,
+  intersectScopes,
+  claimsForUser,
+} from '@holeauth/plugin-idp';
+```
+
+| Function | Signature | Use |
+| --- | --- | --- |
+| `parseScope` | `(s: string \| null) => string[]` | Split a space-separated scope string into an array. |
+| `formatScope` | `(scopes: string[]) => string` | Join an array into a space-separated string, de-duplicating. |
+| `intersectScopes` | `(requested: string[], allowed: string[]) => string[]` | Intersect requested scopes with an app's `allowedScopes`, preserving request order. |
+| `claimsForUser` | `(user: AdapterUser, scopes: string[]) => Record<string, unknown>` | Compute the OIDC profile/email claims that the plugin emits for a given user and scope set. |
+
+```ts title="app/admin/apps/[id]/route.ts"
+import { intersectScopes, parseScope, formatScope } from '@holeauth/plugin-idp';
+
+const granted = intersectScopes(parseScope(req.query.scope), app.allowedScopes);
+return Response.json({ granted: formatScope(granted) });
+```
+
+<Callout type="info">
+  `claimsForUser` is the same helper the plugin uses internally for the ID token and the `userinfo` response. Calling it directly is the supported way to mirror ID-token contents inside a custom route — for example, when exposing a `/me` endpoint that does not run through `userinfo`.
+</Callout>
+
 ## See Also
 
 <Cards>

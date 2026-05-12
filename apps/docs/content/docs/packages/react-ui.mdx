@@ -257,6 +257,90 @@ function CustomSignInForm() {
 }
 ```
 
+## Styling and Theming
+
+`@holeauth/react-ui` ships unstyled. Every primitive renders a semantic element with a stable `data-holeauth-*` attribute, leaving visual decisions to your design system. Three layered approaches cover the common cases.
+
+### 1. Per-component `className`
+
+Pass `className` to any compound primitive or atomic button. The class is forwarded to the rendered element verbatim.
+
+```tsx
+<SignInForm.Root className="space-y-4 rounded-2xl border p-6">
+  <SignInForm.Email className="w-full rounded-md border px-3 py-2" />
+  <SignInForm.Password className="w-full rounded-md border px-3 py-2" />
+  <SignInForm.Submit className="w-full rounded-md bg-black px-4 py-2 text-white">
+    Sign in
+  </SignInForm.Submit>
+</SignInForm.Root>
+```
+
+### 2. Global CSS via `data-*` selectors
+
+Each primitive emits a deterministic data attribute. Target those attributes from global CSS, Tailwind plugins, or design-token files to theme every form at once.
+
+| Component | Root attribute | State attributes |
+| --- | --- | --- |
+| `SignInForm.Root` | `data-holeauth-signin-form` | \u2014 |
+| `SignInForm.Email` | `data-holeauth-signin-email` | \u2014 |
+| `SignInForm.Password` | `data-holeauth-signin-password` | \u2014 |
+| `SignInForm.Submit` | `data-holeauth-signin-submit` | `data-loading` |
+| `SignInForm.Error` | `data-holeauth-signin-error` | \u2014 |
+| `PasskeyLoginButton` | `data-holeauth-signin-passkey` | `data-loading` |
+| `SignInForm.Pending` | `data-holeauth-signin-pending` | \u2014 |
+
+```css title="app/globals.css"
+[data-holeauth-signin-form] {\n  display: grid;\n  gap: 0.75rem;\n}\n[data-holeauth-signin-submit][data-loading] {\n  opacity: 0.6;\n  pointer-events: none;\n}
+```
+
+### 3. Headless escape hatch
+
+When the compound API does not match a particular design (multi-step wizard, modal layout, custom validation), drop down to the underlying hook. `useSignInForm`, `useSignUpForm`, and friends expose the same state machine that powers the compound primitives.
+
+```tsx
+import { useSignInForm } from '@holeauth/react-ui';
+
+function CustomSignIn() {
+  const form = useSignInForm();
+  return (
+    <form onSubmit={form.handleSubmit} className="my-custom-form">
+      <MyTextField {...form.emailProps} label="Email" />
+      <MyTextField {...form.passwordProps} label="Password" type="password" />
+      <MyButton type="submit" loading={form.loading}>Continue</MyButton>
+      {form.error && <MyAlert>{form.error.message}</MyAlert>}
+    </form>
+  );
+}
+```
+
+## Accessibility
+
+The primitives are built to pass WCAG 2.1 AA out of the box.
+
+### ARIA wiring
+
+- Each form root creates a stable `id` namespace; inputs reference the error region via `aria-describedby`.
+- `*.Error` renders inside `role="alert"` (compound forms) so screen readers announce validation failures without focus loss.
+- `*.Submit` and atomic buttons expose `aria-busy` while `data-loading` is set, mirroring async state.
+- Compound forms set `noValidate` on the underlying `<form>` and surface field errors through the hook \u2014 the browser's native bubble UI never appears, so screen-reader output stays consistent across browsers.
+
+### Keyboard navigation
+
+| Key | Behaviour |
+| --- | --- |
+| `Tab` / `Shift+Tab` | Moves between fields and buttons in document order. The forms never use `tabindex` overrides. |
+| `Enter` | Submits the form from any input. The same handler runs as clicking `*.Submit`. |
+| `Space` / `Enter` on buttons | Activates atomic buttons (`PasskeyLoginButton`, `SignOutButton`, `SsoButton`). |
+| `Escape` | No-op by default. Wrap a primitive in your own modal/dismiss logic to handle it. |
+
+<Callout type="info">
+  `PasskeyLoginButton` triggers the WebAuthn prompt on click, which the browser itself manages with full keyboard and assistive-technology support. The component only owns the trigger affordance.
+</Callout>
+
+### Focus management
+
+The primitives never move focus implicitly. After a successful sign-in or sign-up, focus stays on the submit control until your `onSuccess` handler navigates away. Custom flows that need post-submit focus restoration should call `ref.focus()` from inside `onSuccess`.
+
 ## See also
 
 <Cards>

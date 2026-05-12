@@ -359,6 +359,139 @@ Creates an in-memory rate limiter for development. Not recommended for productio
   }}
 />
 
+#### Distributed rate limiting
+
+The plugin accepts any `TwoFactorRateLimiter` implementation. For multi-instance deployments back the limiter with a shared store such as Redis.
+
+```ts title="lib/rate-limit.ts"
+import type { TwoFactorRateLimiter } from '@holeauth/plugin-2fa';
+import { redis } from './redis';
+
+export function createRedisRateLimiter(
+  maxAttempts = 5,
+  windowSeconds = 300,
+): TwoFactorRateLimiter {
+  return {
+    async hit(key) {
+      const k = `2fa:${key}`;
+      const count = await redis.incr(k);
+      if (count === 1) await redis.expire(k, windowSeconds);
+      return { allowed: count <= maxAttempts, remaining: Math.max(0, maxAttempts - count) };
+    },
+    async reset(key) {
+      await redis.del(`2fa:${key}`);
+    },
+  };
+}
+```
+
+Pass the limiter to the plugin via `twofa({ rateLimiter: createRedisRateLimiter() })`.
+
+## Recovery Codes
+
+Recovery codes are issued once during `activate()` and persisted on the user account. The plugin exposes three pure helpers — independent of the auth instance — that take a code array and prepare it for delivery to the user.
+
+### formatRecoveryCodesAsText()
+
+Format codes as a human-friendly text document with a heading, metadata block, and one code per line. Pure and runtime-agnostic.
+
+```ts
+function formatRecoveryCodesAsText(
+  codes: readonly string[],
+  options?: RecoveryCodesTxtOptions,
+): string
+```
+
+<TypeTable
+  type={{
+    heading: {
+      description: 'First line of the file.',
+      type: 'string',
+      default: '"Holeauth 2FA Recovery Codes"',
+    },
+    issuer: {
+      description: 'Optional issuer line. Use the same string as `buildOtpauthUrl({ issuer })`.',
+      type: 'string',
+    },
+    accountLabel: {
+      description: 'Identifier shown in the header — typically the user email.',
+      type: 'string',
+    },
+    generatedAt: {
+      description: 'ISO timestamp included in the header.',
+      type: 'string',
+      default: 'new Date().toISOString()',
+    },
+    lineEnding: {
+      description: 'Line terminator. Use `\\r\\n` for Windows-friendly files.',
+      type: '"\\n" | "\\r\\n"',
+      default: '"\\n"',
+    },
+  }}
+/>
+
+### recoveryCodesToBlob()
+
+Wrap `formatRecoveryCodesAsText()` output in a `Blob` (`text/plain;charset=utf-8`). Works in browsers and Node ≥ 18.
+
+```ts
+function recoveryCodesToBlob(
+  codes: readonly string[],
+  options?: RecoveryCodesTxtOptions,
+): Blob
+```
+
+### downloadRecoveryCodesAsTxt()
+
+Browser-only helper that triggers a file download. Call it from a click handler immediately after the server returns freshly-generated recovery codes — the user should never see them twice.
+
+```ts
+function downloadRecoveryCodesAsTxt(
+  codes: readonly string[],
+  options?: DownloadRecoveryCodesOptions,
+): void
+```
+
+<TypeTable
+  type={{
+    fileName: {
+      description: 'Filename presented to the user.',
+      type: 'string',
+      default: '"recovery-codes.txt"',
+    },
+  }}
+/>
+
+Inherits all `RecoveryCodesTxtOptions` fields. Throws when called outside a browser context.
+
+```tsx title="app/account/2fa/RecoveryCodes.tsx"
+'use client';
+import { downloadRecoveryCodesAsTxt } from '@holeauth/plugin-2fa';
+
+export function RecoveryCodes({ codes, email }: { codes: string[]; email: string }) {
+  return (
+    <>
+      <ul>{codes.map((c) => <li key={c}><code>{c}</code></li>)}</ul>
+      <button
+        onClick={() =>
+          downloadRecoveryCodesAsTxt(codes, {
+            accountLabel: email,
+            issuer: 'My App',
+            fileName: 'my-app-recovery-codes.txt',
+          })
+        }
+      >
+        Download as .txt
+      </button>
+    </>
+  );
+}
+```
+
+<Callout type="warn">
+  Recovery codes are shown exactly once. The server stores only their hashes — if the user loses the file they must rotate 2FA via `disable` + `setup`.
+</Callout>
+
 ## See Also
 
 <Cards>

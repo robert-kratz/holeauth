@@ -1,4 +1,4 @@
 {
   "title": "@holeauth/plugin-rbac",
-  "pages": ["index", "drizzle", "yaml"]
+  "pages": ["index", "drizzle", "yaml", "codegen"]
 }

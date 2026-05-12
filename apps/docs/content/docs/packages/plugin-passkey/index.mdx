@@ -431,6 +431,42 @@ Creates an in-memory rate limiter for development. Not recommended for productio
   }}
 />
 
+## Credential Options
+
+The plugin builds WebAuthn requests with a fixed set of defaults that match the most permissive cross-platform behaviour. The values below are emitted by `registerOptions()` and `loginOptions()`; they are not configurable today, but understanding them is important when debugging browser or authenticator compatibility.
+
+### Registration defaults
+
+| Option | Value | Notes |
+| --- | --- | --- |
+| `attestationType` | `'none'` | The plugin never asks for an attestation statement. Add a custom route if you need enterprise attestation. |
+| `excludeCredentials` | Existing credentials for the user | Prevents the user from registering the same authenticator twice. Each entry includes its known `transports`. |
+| `userVerification` | Browser default (`'preferred'`) | Inherited from `@simplewebauthn/server`. |
+| `residentKey` | Browser default | Cross-platform authenticators decide; most produce a discoverable credential. |
+
+### Authentication defaults
+
+| Option | Value | Notes |
+| --- | --- | --- |
+| `allowCredentials` | Existing credentials for the user, when known | Omitted when the request is anonymous (discoverable credential / username-less flow). |
+| `userVerification` | `'preferred'` | Matches the registration default; biometrics are encouraged but not required. |
+
+### Credential transports
+
+Each stored credential carries the `transports` hint reported by the authenticator at registration time. The plugin echoes that list back into `allowCredentials` so the browser can pick the right authenticator without prompting.
+
+| Transport | Description |
+| --- | --- |
+| `usb` | Hardware keys connected via USB. |
+| `nfc` | Hardware keys tapped via NFC. |
+| `ble` | Bluetooth-paired authenticators. |
+| `internal` | Platform authenticators (Touch ID, Windows Hello, Android). |
+| `hybrid` | Cross-device flows (QR-code phone-as-authenticator). |
+
+<Callout type="info">
+  Transports come straight from the browser via `getTransports()`. The adapter stores them on the credential row; when a transport is unknown the browser will try every option in order, which is harmless but slower.
+</Callout>
+
 ## See Also
 
 <Cards>

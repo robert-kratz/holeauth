@@ -643,6 +643,215 @@ export const auth = defineHoleauth({
   SSO consumer functionality is built into `@holeauth/core/sso`. No separate `plugin-idp-consumer` package is required. The framework adapters (Next.js, Express, Hono) automatically register the `/authorize/:provider` and `/callback/:provider` routes.
 </Callout>
 
+## Invites
+
+Holeauth ships a complete invite flow on top of the `verificationToken` adapter. The flow issues a short-lived signed JWT, stores its hash for one-time consumption, and creates the user account when the invitee finishes registration. Invites continue to work even when `registration.selfServe` is `false`.
+
+The methods below are exposed on the `HoleauthInstance` returned by `defineHoleauth`. Framework bindings route them under `/api/auth/invite/*` by default.
+
+### createInvite
+
+Issue a new invite token for an email address.
+
+```ts
+function createInvite(input: InviteInput): Promise<CreateInviteResult>;
+```
+
+<TypeTable
+  type={{
+    email: {
+      description: 'Target email address. Must not match an existing user.',
+      type: 'string',
+      required: true,
+    },
+    name: {
+      description: 'Pre-fill name for the invitee (used as default in `consumeInvite`).',
+      type: 'string | null',
+    },
+    groupIds: {
+      description: 'RBAC group IDs to assign on consume. Plugin hooks perform the assignment.',
+      type: 'string[]',
+    },
+    invitedBy: {
+      description: 'User ID of the admin creating the invite (for audit logging).',
+      type: 'string | null',
+    },
+    metadata: {
+      description: 'Opaque metadata embedded in the JWT `meta` claim.',
+      type: 'Record<string, unknown> | null',
+    },
+    ttlSeconds: {
+      description: 'Override the default TTL. Falls back to `registration.inviteTtlSeconds`. Required if no default is configured.',
+      type: 'number',
+    },
+  }}
+/>
+
+**Returns: CreateInviteResult**
+
+<TypeTable
+  type={{
+    token: {
+      description: 'Signed invite JWT to deliver to the invitee.',
+      type: 'string',
+    },
+    url: {
+      description: 'Acceptance URL, built via `registration.inviteUrl`. Omitted when no builder is configured.',
+      type: 'string',
+    },
+    identifier: {
+      description: 'Stable verification-token identifier (also the JWT `jti`).',
+      type: 'string',
+    },
+    expiresAt: {
+      description: 'Expiry timestamp in milliseconds since the epoch.',
+      type: 'number',
+    },
+  }}
+/>
+
+```ts title="app/api/admin/invite/route.ts"
+import { auth } from '@/lib/auth';
+
+const { token, url, expiresAt } = await auth.createInvite({
+  email: 'jane@example.com',
+  name: 'Jane Doe',
+  groupIds: ['editor'],
+  invitedBy: currentUser.id,
+  ttlSeconds: 60 * 60 * 24 * 3,
+});
+
+await sendEmail(token, url);
+```
+
+Throws `AccountConflictError` (409) when the email is already registered, and `HoleauthError(TTL_REQUIRED)` (400) when no TTL is provided and `registration.inviteTtlSeconds` is not set.
+
+### getInviteInfo
+
+Decode an invite token without consuming it. Useful for pre-filling a registration form.
+
+```ts
+function getInviteInfo(input: { token: string }): Promise<InviteClaims>;
+```
+
+Returns the embedded `email`, `name`, `groupIds`, `invitedBy`, `metadata`, `expiresAt`, and `identifier`. Throws `CredentialsError` (401) when the token is malformed, expired, or not an invite token.
+
+```ts title="app/invite/[token]/page.tsx"
+import { auth } from '@/lib/auth';
+
+const claims = await auth.getInviteInfo({ token: params.token });
+// claims.email, claims.name, claims.groupIds, ...
+```
+
+### consumeInvite
+
+Atomically consume the invite token, create the user, and optionally issue a session.
+
+```ts
+function consumeInvite(input: ConsumeInviteInput): Promise<ConsumeInviteResult>;
+```
+
+<TypeTable
+  type={{
+    token: {
+      description: 'Invite JWT delivered to the invitee.',
+      type: 'string',
+      required: true,
+    },
+    password: {
+      description: 'Password for the new account.',
+      type: 'string',
+      required: true,
+    },
+    name: {
+      description: 'Optional name override. Falls back to the invite-claim name.',
+      type: 'string',
+    },
+    autoSignIn: {
+      description: 'Issue a session immediately. Result includes `tokens` when `true`.',
+      type: 'boolean',
+      default: 'false',
+    },
+    ip: {
+      description: 'Client IP for the auto-issued session.',
+      type: 'string',
+    },
+    userAgent: {
+      description: 'Client user agent for the auto-issued session.',
+      type: 'string',
+    },
+  }}
+/>
+
+```ts title="app/api/auth/accept-invite/route.ts"
+import { auth } from '@/lib/auth';
+
+const { user, tokens, groupIds } = await auth.consumeInvite({
+  token: body.token,
+  password: body.password,
+  autoSignIn: true,
+  ip: req.headers.get('x-forwarded-for') ?? undefined,
+  userAgent: req.headers.get('user-agent') ?? undefined,
+});
+```
+
+The verification token is single-use: a second call with the same token throws `CredentialsError('invite invalid or already used')`. Emits `user.registered`, `user.invite_consumed`, and (when `autoSignIn: true`) `user.signed_in` events.
+
+### listInvites
+
+List all outstanding invite identifiers.
+
+```ts
+function listInvites(): Promise<InviteListEntry[]>;
+```
+
+Returns `{ identifier, email, expiresAt }` entries. Useful for an admin dashboard.
+
+### revokeInvite
+
+Invalidate an invite by its identifier.
+
+```ts
+function revokeInvite(input: { identifier: string }): Promise<void>;
+```
+
+The identifier is the `identifier` field returned from `createInvite` (also the JWT `jti`). After revocation, `consumeInvite` rejects with `CredentialsError`.
+
+## @holeauth/core/errors
+
+All thrown errors extend `HoleauthError`, which carries a stable `code` and an HTTP `status`. Framework bindings translate these directly into JSON responses.
+
+```ts
+import { HoleauthError, InvalidTokenError } from '@holeauth/core';
+
+try {
+  await auth.refresh({ refreshToken });
+} catch (err) {
+  if (err instanceof InvalidTokenError) {
+    // 401 — clear cookies, redirect to /login
+  }
+}
+```
+
+| Class | Code | Status | Thrown when |
+| --- | --- | --- | --- |
+| `HoleauthError` | `*` | configurable | Base class; thrown directly for adapter-specific cases. |
+| `InvalidTokenError` | `INVALID_TOKEN` | `401` | JWT signature invalid, token malformed, or refresh token unknown. |
+| `SessionExpiredError` | `SESSION_EXPIRED` | `401` | Access token is past its `exp`. |
+| `RefreshReuseError` | `REFRESH_REUSE` | `401` | A refresh token was presented after it was already rotated — the entire session family is revoked. |
+| `CredentialsError` | `INVALID_CREDENTIALS` | `401` | Password mismatch, invite consumed, or pending challenge token invalid. |
+| `CsrfError` | `CSRF_FAILED` | `403` | Double-submit cookie mismatch on a mutating request. |
+| `RegistrationDisabledError` | `REGISTRATION_DISABLED` | `403` | `register` flow called while `registration.selfServe === false`. |
+| `AccountConflictError` | `ACCOUNT_CONFLICT` | `409` | Email already registered (sign-up, invite, or SSO link). |
+| `PendingChallengeError` | `PENDING_CHALLENGE` | `401` | A plugin halted sign-in and requires follow-up verification (2FA, etc.). |
+| `ProviderError` | `PROVIDER_ERROR` | `502` | Upstream SSO provider responded with an error. |
+| `AdapterError` | `ADAPTER_ERROR` | `500` | Adapter implementation raised an unexpected error. |
+| `NotSupportedError` | `NOT_SUPPORTED` | `501` | Adapter is missing a required optional method. |
+
+<Callout type="info">
+  Framework bindings catch every `HoleauthError` and serialise it as `{ error: { code, message } }` with the matching HTTP status. You normally do not need to handle these manually unless you call core functions directly.
+</Callout>
+
 ## See also
 
 <Cards>

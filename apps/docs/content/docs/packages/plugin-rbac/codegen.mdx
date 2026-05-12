@@ -1,0 +1,261 @@
+---
+title: RBAC Codegen CLI
+description: Generate a typed RBAC snapshot from a YAML file at build time so the bundle has zero dependency on node:fs.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+# RBAC Codegen CLI
+
+`holeauth-rbac-codegen` reads a YAML RBAC definition and emits a TypeScript module that exports a fully-resolved snapshot. Importing the generated module instead of calling `loadRbacYaml()` at runtime removes the dependency on Node.js `fs` and `path`, which makes the bundle compatible with the Next.js Edge runtime, Cloudflare Workers, Deno Deploy, and any other environment without filesystem access.
+
+The CLI is shipped as the `holeauth-rbac-codegen` binary inside `@holeauth/rbac-yaml`.
+
+## When to use this
+
+Use the codegen CLI when **all** of the following apply:
+
+- You want to keep RBAC configuration in a YAML file (single source of truth).
+- Your auth handler runs in an environment where `loadRbacYaml()` is not available — for example, the Next.js Edge runtime, a Cloudflare Worker, or a Deno Deploy function.
+- You do not need hot-reload at runtime (the snapshot is fixed at build time).
+
+For Node-only runtimes, prefer `loadRbacYaml()` with `watch: true` in development.
+
+## Installation
+
+`@holeauth/rbac-yaml` already ships the binary; no extra package is required.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add -D @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install -D @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add -D @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add -d @holeauth/rbac-yaml
+```
+</Tab>
+</Tabs>
+
+## Step-by-step
+
+<Steps>
+
+<Step>
+
+### Author your YAML
+
+Define groups and permissions in a YAML file at the root of your project.
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  user:
+    default: true
+    displayName: User
+    permissions:
+      - posts.read
+      - comments.create
+
+  admin:
+    displayName: Administrator
+    permissions:
+      - '*'
+```
+
+</Step>
+
+<Step>
+
+### Add a build script
+
+Run the codegen CLI before your application build. The generated file should not be checked into version control.
+
+```json title="package.json"
+{
+  "scripts": {
+    "rbac:codegen": "holeauth-rbac-codegen --input ./holeauth.rbac.yml --output ./lib/rbac.generated.ts",
+    "build": "pnpm rbac:codegen && next build",
+    "dev": "pnpm rbac:codegen && next dev"
+  }
+}
+```
+
+```text title=".gitignore"
+lib/rbac.generated.ts
+```
+
+</Step>
+
+<Step>
+
+### Import the generated snapshot
+
+Use `rbacFromSnapshot()` to plug the build-time snapshot directly into the RBAC plugin. The resulting plugin has no `fs`, `path`, or YAML parser dependency at runtime.
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { rbacFromSnapshot } from '@holeauth/rbac-yaml';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { db } from './db';
+import { tables } from './schema';
+
+import { snapshot } from './rbac.generated';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    rbacFromSnapshot(snapshot, {
+      adapter: createRbacAdapter({ db, tables }),
+    }),
+  ],
+});
+```
+
+</Step>
+
+</Steps>
+
+What you now have:
+
+- A `lib/rbac.generated.ts` file containing the resolved snapshot as a `const`.
+- An auth bundle with no `node:fs` imports — safe for the Edge runtime.
+- A single YAML source of truth that ships into TypeScript on every build.
+
+## CLI Reference
+
+```bash
+holeauth-rbac-codegen --input <path.yml> --output <path.ts> [--export <name>]
+```
+
+<TypeTable
+  type={{
+    '--input, -i': {
+      description: 'YAML source file to read. Path is resolved relative to the working directory.',
+      type: 'string',
+      required: true,
+    },
+    '--output, -o': {
+      description: 'TypeScript output file to write. Intermediate directories are created automatically.',
+      type: 'string',
+      required: true,
+    },
+    '--export': {
+      description: 'Named export for the snapshot constant.',
+      type: 'string',
+      default: '"snapshot"',
+    },
+    '--help, -h': {
+      description: 'Print usage information and exit.',
+      type: 'flag',
+    },
+  }}
+/>
+
+**Exit codes**
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Codegen completed successfully. |
+| `2` | Missing required arguments or unknown flag. |
+| `1` | YAML parsing or validation failed (see stderr for details). |
+
+## Generated Output
+
+The emitted module exports three constants. The example below corresponds to the YAML in the Step-by-step section above.
+
+```ts title="lib/rbac.generated.ts"
+// AUTO-GENERATED by @holeauth/rbac-yaml — DO NOT EDIT.
+// Source: ./holeauth.rbac.yml
+// Re-run holeauth-rbac-codegen to update.
+
+export const snapshot = {
+  raw: { groups: { user: { /* ... */ }, admin: { /* ... */ } } },
+  groups: [
+    {
+      id: 'user',
+      default: true,
+      displayName: 'User',
+      permissions: ['posts.read', 'comments.create'],
+      effective: ['posts.read', 'comments.create'],
+    },
+    {
+      id: 'admin',
+      displayName: 'Administrator',
+      permissions: ['*'],
+      effective: ['*'],
+    },
+  ],
+  defaultGroupId: 'user',
+} as const;
+
+export const groups = snapshot.groups;
+export const defaultGroupId = snapshot.defaultGroupId;
+```
+
+<Callout type="info">
+  The generated file is typed via `as const`. Importing `snapshot` directly preserves literal types, which lets TypeScript narrow group IDs in your application code.
+</Callout>
+
+## Using a Custom Export Name
+
+Pass `--export` to rename the top-level constant. This is useful when multiple snapshots coexist in the same module — for example, in a multi-tenant codebase.
+
+```bash
+holeauth-rbac-codegen \
+  --input ./rbac.tenant-a.yml \
+  --output ./lib/rbac.tenant-a.ts \
+  --export tenantA
+```
+
+```ts title="lib/auth.ts"
+import { tenantA } from './lib/rbac.tenant-a';
+import { tenantB } from './lib/rbac.tenant-b';
+import { rbacFromSnapshot } from '@holeauth/rbac-yaml';
+
+const pluginA = rbacFromSnapshot(tenantA, { adapter: adapterA });
+const pluginB = rbacFromSnapshot(tenantB, { adapter: adapterB });
+```
+
+## CI / Build Integration
+
+The CLI is deterministic: identical YAML input produces byte-identical TypeScript output. This makes the generated file safe to either commit (and validate with a CI check) or regenerate on every build.
+
+**Pre-commit hook**
+
+```bash title=".husky/pre-commit"
+pnpm rbac:codegen
+git add lib/rbac.generated.ts
+```
+
+**CI validation**
+
+```bash
+pnpm rbac:codegen
+git diff --exit-code lib/rbac.generated.ts
+```
+
+If the diff is non-empty, the YAML and the committed snapshot are out of sync.
+
+## See Also
+
+<Cards>
+  <Card title="@holeauth/rbac-yaml" href="yaml" description="Runtime loader, hot-reload, and YAML schema reference" />
+  <Card title="@holeauth/plugin-rbac" href="index" description="Core RBAC plugin documentation" />
+  <Card title="@holeauth/rbac-drizzle" href="drizzle" description="Database adapter for user-group assignments" />
+</Cards>
