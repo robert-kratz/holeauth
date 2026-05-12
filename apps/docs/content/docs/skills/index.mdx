@@ -1,0 +1,133 @@
+---
+title: Skills for AI Agents
+description: Machine-readable registry of holeauth skills for AI coding agents. Each skill is a SKILL.md file installable via raw URL.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+
+Holeauth ships **skills** — self-contained `SKILL.md` files that teach an AI coding agent (Claude, Copilot, Cursor, etc.) exactly how to integrate or extend holeauth without hallucinating the API.
+
+Each skill is:
+
+- **Trigger-driven** — front-matter description tells the agent when to invoke it
+- **Interactive** — uses `vscode_askQuestions` (or equivalent) to interview the user before generating code
+- **Context-frugal** — embeds only hardcoded gotchas; everything else is fetched on demand from this docs site
+
+## Search API
+
+Skills that need deeper detail call the docs search API rather than ballooning their own context:
+
+```
+GET https://docs.holeauth.dev/api/search?q=<term>
+```
+
+Example queries an agent might issue:
+
+- `?q=rbac+yaml+wildcards`
+- `?q=passkey+rpID+origin`
+- `?q=plugin+definePlugin+hooks`
+- `?q=middleware+protectAllExcept`
+
+The response is a flat list of `{ id, url, content, type }` records covering every page on this site.
+
+## Install a skill
+
+Every skill lives at a stable raw URL on GitHub:
+
+```
+https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/<skill-name>/SKILL.md
+```
+
+<Tabs items={['Claude Code', 'GitHub Copilot', 'Cursor', 'Manual']}>
+  <Tab value="Claude Code">
+    Add to your project's `AGENTS.md`:
+
+    ```md
+    ## Skills
+    - [bootstrap-nextjs-holeauth](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/bootstrap-nextjs-holeauth/SKILL.md)
+    - [integrate-holeauth](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth/SKILL.md)
+    ```
+  </Tab>
+  <Tab value="GitHub Copilot">
+    Drop each `SKILL.md` into `.github/skills/<name>/SKILL.md` in your repo. VS Code Copilot auto-discovers them via the front-matter `description`.
+  </Tab>
+  <Tab value="Cursor">
+    Reference the raw URLs from `.cursorrules` or paste the contents into a project rule.
+  </Tab>
+  <Tab value="Manual">
+    Open the raw URL, copy the contents, and feed it to your agent as a system instruction.
+  </Tab>
+</Tabs>
+
+<Callout type="info">
+  Skills are versioned alongside the rest of holeauth. Pin to a tag (`/tree/v1.2.0/`) for reproducible scaffolds, or track `main` for the latest API surface.
+</Callout>
+
+## Registry
+
+### Setup
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `bootstrap-nextjs-holeauth` | "create a new Next.js app with auth", greenfield projects | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/bootstrap-nextjs-holeauth/SKILL.md) | [Getting Started](/docs/getting-started) |
+| `integrate-holeauth` | "add holeauth to my existing project", dispatcher to per-feature skills | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth/SKILL.md) | [Integrations](/docs/integrations) |
+
+### Core & Framework
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `integrate-holeauth-core` | "set up the auth instance", route handler, adapters, provider | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-core/SKILL.md) | [@holeauth/core](/docs/packages/core) |
+| `integrate-holeauth-trpc` | "add tRPC with holeauth", auth-aware context, RBAC procedures | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-trpc/SKILL.md) | [tRPC integration](/docs/integrations/trpc) |
+
+### Plugins
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `integrate-holeauth-2fa` | "add 2FA", TOTP, authenticator app, recovery codes | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-2fa/SKILL.md) | [plugin-2fa](/docs/packages/plugin-2fa) |
+| `integrate-holeauth-passkey` | "add passkeys", WebAuthn, biometric login, FIDO2 | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-passkey/SKILL.md) | [plugin-passkey](/docs/packages/plugin-passkey) |
+| `integrate-holeauth-rbac` | "add roles and permissions", RBAC, group hierarchy | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-rbac/SKILL.md) | [plugin-rbac](/docs/packages/plugin-rbac) |
+| `integrate-holeauth-idp` | "become an OIDC provider", run an SSO server | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-idp/SKILL.md) | [plugin-idp](/docs/packages/plugin-idp) |
+| `integrate-holeauth-idp-consumer` | "sign in via Google/GitHub/external holeauth", RP, OIDC client | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-idp-consumer/SKILL.md) | [SSO consumer](/docs/sso) |
+
+### Utilities
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `holeauth-compat-matrix` | "audit holeauth support status", KPI snapshot, support matrix | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/holeauth-compat-matrix/SKILL.md) | — |
+
+### Plugin Development
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `holeauth-plugin-design` | "build a custom holeauth plugin", scaffold extension package | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/holeauth-plugin-design/SKILL.md) | [Plugins](/docs/plugins) |
+
+## How a skill is structured
+
+Every `SKILL.md` follows the same shape so agents can parse them deterministically:
+
+```md title=".github/skills/<name>/SKILL.md"
+---
+name: <kebab-case-name>
+description: "<comprehensive trigger phrases — first line that VS Code/Copilot uses>"
+argument-hint: "<optional hint>"
+---
+
+# <Title>
+
+<one-sentence purpose>
+
+## Prerequisites
+## Source of truth
+## Procedure
+### Step 1 — Interview (vscode_askQuestions table)
+### Step 2 — Install
+### Step 3+ — Implementation
+## Hardcoded gotchas
+## Need more detail?
+GET https://docs.holeauth.dev/api/search?q=<topic>
+```
+
+<Callout type="info">
+  Want to contribute a skill? Open a PR adding a folder under `.github/skills/<name>/SKILL.md` and a row in the registry above.
+</Callout>
