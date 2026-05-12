@@ -1,0 +1,212 @@
+---
+name: bootstrap-nextjs-holeauth
+description: "Bootstrap a brand-new Next.js project with TypeScript, Drizzle ORM (or headless), tRPC (optional), and a fully wired holeauth integration covering ALL plugins (2FA, passkey, RBAC, IDP server, IDP consumer). Use when: starting a new Next.js project with auth, scaffolding Next.js + Drizzle + holeauth from scratch, creating a fresh app with login, generating a greenfield holeauth setup, 'create new nextjs holeauth project'. Interviews via vscode_askQuestions, scaffolds the app, then delegates to the per-package skills."
+argument-hint: "Optional: target directory name (default: my-app)"
+---
+
+# Bootstrap Next.js + holeauth
+
+Greenfield orchestrator. Creates a fresh Next.js App Router project and delegates to the integration skills to wire holeauth + chosen plugins end-to-end.
+
+## When NOT to use
+
+- Existing project → use `integrate-holeauth`.
+- Building a custom plugin → use `holeauth-plugin-design`.
+
+## Source of truth
+
+- Reference: `apps/playground/` in the holeauth repo — the playground IS the kitchen-sink example
+- Docs: `https://docs.holeauth.dev/docs/getting-started/nextjs-app-router`
+
+---
+
+## Procedure
+
+### Step 1 — Interview (15 questions)
+
+Use `vscode_askQuestions`. **Never skip any question.** Group them logically; don't ask all 15 in one batch.
+
+| # | Variable | Type | Notes |
+|---|---|---|---|
+| 1 | `projectDir` | text | default `my-app` |
+| 2 | `packageManager` | radio | pnpm (recommended) · npm · yarn · bun |
+| 3 | `framework` | radio | Next.js App Router (recommended) · Next.js Pages Router · Other (bail) |
+| 4 | `persistence` | radio | Drizzle Postgres · Drizzle MySQL · Drizzle SQLite · Headless |
+| 5 | `dbHosting` | radio | Local Docker (compose file) · Existing DATABASE_URL · Skip |
+| 6 | `trpc` | radio | Yes · No |
+| 7 | `plugins` | multi-select | 2FA · Passkeys · RBAC · IDP server · IDP consumer · (none) |
+| 8 | (per-plugin) | inline | Ask each selected plugin's interview inline |
+| 9 | `ssoProviders` | multi-select | Google · GitHub · None |
+| 10 | `registration` | radio | Self-serve · Invite-only · Both |
+| 11 | `superuser` | radio | Seed script · Bootstrap CLI · Env-driven · Manual SQL · None |
+| 12 | `afterAuthPath` | text | default `/` |
+| 13 | `basePath` | text | default `/api/auth` |
+| 14 | `middleware` | radio | protectAllExcept (recommended) · refresh-only · None |
+| 15 | `git` | radio | `git init` Yes · No |
+
+---
+
+### Step 2 — Scaffold Next.js
+
+Read the holeauth playground's `package.json` to find the exact Next.js version pin (**never silently bump Next.js**):
+
+```bash
+cat apps/playground/package.json | grep '"next"'
+# e.g. "next": "^16.2.4"
+```
+
+Then:
+
+```bash
+pnpm create next-app@<pinned-version> <projectDir> \
+  --typescript --app --src-dir false --tailwind --import-alias "@/*" --no-eslint --no-turbopack
+cd <projectDir>
+```
+
+Adjust flags for the chosen `packageManager`.
+
+---
+
+### Step 3 — Drizzle setup (if Drizzle was chosen)
+
+Create:
+
+- `drizzle.config.ts` (driver matching dialect)
+- `db/client.ts`
+- `db/schema.ts` (with the app-owned `users` table — `app_users`)
+- `docker-compose.yml` (if `dbHosting === 'Local Docker'`)
+
+Add scripts to `package.json`:
+
+```json
+{
+  "scripts": {
+    "db:up": "docker compose up -d postgres",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio"
+  }
+}
+```
+
+---
+
+### Step 4 — Constants + env
+
+Create `lib/constants.ts`:
+
+```ts
+export const AFTER_AUTH_PATH = '<afterAuthPath>';
+export const AUTH_BASE_PATH = '<basePath>';
+export const COOKIE_PREFIX = 'holeauth';
+```
+
+Create `.env.local`:
+
+```
+HOLEAUTH_SECRET=<openssl rand -base64 32>
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/myapp
+APP_URL=http://localhost:3000
+```
+
+---
+
+### Step 5 — Delegate to per-package skills
+
+Run in strict order, passing all interview answers as inherited context:
+
+1. `integrate-holeauth-core` (always)
+2. If `2FA` selected: `integrate-holeauth-2fa`
+3. If `Passkeys` selected: `integrate-holeauth-passkey`
+4. If `RBAC` selected: `integrate-holeauth-rbac`
+5. If `IDP server` selected: `integrate-holeauth-idp`
+6. If `IDP consumer` selected: `integrate-holeauth-idp-consumer`
+7. If `trpc === Yes`: `integrate-holeauth-trpc`
+
+**Always emit fully-filled config blocks.** For plugins the user did NOT select, leave commented stubs in `lib/auth.ts` so they can be flipped on later without re-deriving the API surface.
+
+Example stub:
+
+```ts
+// import { twofa } from '@holeauth/plugin-2fa';
+// import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/pg';
+// const twoFactorAdapter = createTwoFactorAdapter({ db, tables: twoFa.tables });
+// // Then add to plugins: twofa({ adapter: twoFactorAdapter, issuer: '...' })
+```
+
+---
+
+### Step 6 — Superuser bootstrap
+
+Based on `superuser`:
+
+- **Seed script** → `scripts/seed.ts` (tsx) creates first user + assigns admin group (RBAC required)
+- **Bootstrap CLI** → `scripts/bootstrap-admin.ts` with interactive prompts
+- **Env-driven** → `scripts/promote-from-env.ts` reads `BOOTSTRAP_ADMIN_EMAIL`
+- **Manual SQL** → `docs/SUPERUSER.md` with the exact SQL
+- **None** → skip
+
+---
+
+### Step 7 — Build validation
+
+Run:
+
+```bash
+pnpm install
+pnpm typecheck       # tsc --noEmit
+pnpm build           # next build
+```
+
+**Fix every error before reporting success.** Most common issues:
+
+- Missing `as const` on the `plugins` array → TS cannot infer `auth.<key>.<method>()`
+- `core.tables` spread duplicated `users` → Drizzle duplicate-table error
+- `cookiePrefix` mismatch between auth instance and middleware → silent session loss
+
+---
+
+### Step 8 — Migration + verification
+
+```bash
+pnpm db:up           # if docker
+pnpm db:push         # apply schema
+# Or generate-and-apply if user prefers migration files:
+pnpm db:generate
+```
+
+Print the final verification checklist (see `integrate-holeauth` skill).
+
+---
+
+### Step 9 — Optional git
+
+If `git === Yes`:
+
+```bash
+git init
+git add -A
+git commit -m "feat: bootstrap with holeauth"
+```
+
+---
+
+## Hardcoded gotchas
+
+1. **Never silently bump Next.js.** Always read the version pin from `apps/playground/package.json` and use it exactly.
+2. **Never write `defineHoleauth` directly** in a Next.js project — always use `createAuthHandler` from `@holeauth/nextjs-app-router`.
+3. **Plugin factory names:** `twofa`, `passkey`, `rbac`, `idp` (NOT `twoFactor`, `webauthn`, `rbacPlugin`).
+4. **Adapter factories all take `{ db, tables }`:** `createHoleauthAdapters`, `createRbacAdapter`, `createTwoFactorAdapter`, `createPasskeyAdapter`, `createIdpAdapter`.
+5. **Skip Step 1 = brittle project.** Always interview. Defaults are NOT safe.
+6. **Disabled plugins → commented stubs**, not omission. The user must be able to enable them later by uncommenting.
+7. **On Next.js 16+: the middleware file is `proxy.ts`** at the project root. On 15 and earlier it is `middleware.ts`.
+
+---
+
+## Need more detail?
+
+```
+GET https://docs.holeauth.dev/api/search?q=<topic>
+```
+
+Useful topics: `bootstrap`, `playground`, `seed`, `superuser`, `drizzle-kit`.
