@@ -147,7 +147,7 @@ export function Footer() {
                 style={{ boxShadow: '0 0 12px rgba(204,75,194,0.50)' }}
               />
             </a>
-            <span className="font-mono text-[11px] text-muted">v0.0.1-alpha.0</span>
+            <span className="font-mono text-[11px] text-muted">v0.0.2-alpha.0</span>
           </div>
         </div>
       </div>
