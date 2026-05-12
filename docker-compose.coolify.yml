@@ -28,20 +28,17 @@ services:
       args:
         NEXT_PUBLIC_DOCS_URL: ""
     restart: unless-stopped
+    expose:
+      - "3000"
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
     labels:
-      - traefik.enable=true
-      # Catch-all for the domain — lower priority than the docs router.
-      - traefik.http.routers.landing.rule=Host(`${SERVICE_FQDN_LANDING}`)
-      - traefik.http.routers.landing.entrypoints=https
-      - traefik.http.routers.landing.tls=true
-      - traefik.http.routers.landing.tls.certresolver=letsencrypt
-      - traefik.http.routers.landing.priority=1
-      - traefik.http.services.landing.loadbalancer.server.port=3000
+      # Let Coolify manage the router for the main domain automatically.
+      # Only declare the backend port so Coolify wires up Traefik correctly.
+      - "traefik.http.services.${COOLIFY_CONTAINER_NAME:-landing}.loadbalancer.server.port=3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
       interval: 30s
@@ -55,11 +52,10 @@ services:
       context: .
       dockerfile: apps/docs/Dockerfile
       args:
-        # Baked into the docs JS bundle so the sidebar "Landing page" link
-        # resolves to the correct origin. Must be an absolute URL so fumadocs
-        # does not pass it through Next.js <Link> (which would prepend basePath).
         NEXT_PUBLIC_LANDING_URL: "https://${SERVICE_FQDN_LANDING}"
     restart: unless-stopped
+    expose:
+      - "3001"
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
@@ -67,16 +63,15 @@ services:
       HOSTNAME: "0.0.0.0"
     labels:
       - traefik.enable=true
-      # PathPrefix(/docs) is more specific than the landing catch-all and
-      # therefore has higher implicit priority. We set it explicitly to 10
-      # to be unambiguous. Next.js basePath ensures /docs/_next/static/...
-      # assets also match this rule and are served by this container.
-      - traefik.http.routers.docs.rule=Host(`${SERVICE_FQDN_LANDING}`) && PathPrefix(`/docs`)
-      - traefik.http.routers.docs.entrypoints=https
-      - traefik.http.routers.docs.tls=true
-      - traefik.http.routers.docs.tls.certresolver=letsencrypt
-      - traefik.http.routers.docs.priority=10
-      - traefik.http.services.docs.loadbalancer.server.port=3001
+      # PathPrefix(/docs) is more specific → Traefik gives it higher priority
+      # than the Coolify-managed landing router. Next.js basePath ensures
+      # /docs/_next/static/... assets also match this rule.
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.rule=Host(`${SERVICE_FQDN_LANDING}`) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.entrypoints=https"
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.tls=true"
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}-docs.priority=10"
+      - "traefik.http.services.${COOLIFY_CONTAINER_NAME:-landing}-docs.loadbalancer.server.port=3001"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/docs/"]
       interval: 30s
