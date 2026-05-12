@@ -11,7 +11,7 @@
 # both pages AND assets for the docs container cleanly.
 #
 # Coolify usage:
-#   - Set SERVICE_FQDN_LANDING_3000 to your domain (e.g. holeauth.dev).
+#   - Set SERVICE_FQDN_LANDING to your domain (e.g. holeauth.dev).
 #     Coolify generates this automatically from the service configuration.
 #   - Both Traefik routers reference the same variable, creating one FQDN.
 #   - NEXT_PUBLIC_LANDING_URL is passed as a Docker build arg so the baked-in
@@ -36,7 +36,7 @@ services:
     labels:
       - traefik.enable=true
       # Catch-all for the domain — lower priority than the docs router.
-      - traefik.http.routers.landing.rule=Host(`${SERVICE_FQDN_LANDING_3000}`)
+      - traefik.http.routers.landing.rule=Host(`${SERVICE_FQDN_LANDING}`)
       - traefik.http.routers.landing.entrypoints=https
       - traefik.http.routers.landing.tls=true
       - traefik.http.routers.landing.tls.certresolver=letsencrypt
@@ -58,7 +58,7 @@ services:
         # Baked into the docs JS bundle so the sidebar "Landing page" link
         # resolves to the correct origin. Must be an absolute URL so fumadocs
         # does not pass it through Next.js <Link> (which would prepend basePath).
-        NEXT_PUBLIC_LANDING_URL: "https://${SERVICE_FQDN_LANDING_3000}"
+        NEXT_PUBLIC_LANDING_URL: "https://${SERVICE_FQDN_LANDING}"
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -71,7 +71,7 @@ services:
       # therefore has higher implicit priority. We set it explicitly to 10
       # to be unambiguous. Next.js basePath ensures /docs/_next/static/...
       # assets also match this rule and are served by this container.
-      - traefik.http.routers.docs.rule=Host(`${SERVICE_FQDN_LANDING_3000}`) && PathPrefix(`/docs`)
+      - traefik.http.routers.docs.rule=Host(`${SERVICE_FQDN_LANDING}`) && PathPrefix(`/docs`)
       - traefik.http.routers.docs.entrypoints=https
       - traefik.http.routers.docs.tls=true
       - traefik.http.routers.docs.tls.certresolver=letsencrypt
