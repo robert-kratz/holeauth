@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { validateCurrentRequest } from '@holeauth/nextjs';
+import { validateCurrentRequest } from '@holeauth/nextjs-app-router';
 import { auth } from '@/lib/auth';
 
 async function requireUser(): Promise<string> {

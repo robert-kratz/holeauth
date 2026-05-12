@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { revalidatePath } from 'next/cache';
-import { validateCurrentRequest } from '@holeauth/nextjs';
+import { validateCurrentRequest } from '@holeauth/nextjs-app-router';
 import { auth } from '@/lib/auth';
 import { getPasskey } from '@/lib/plugins';
 import { Skeleton } from '@/app/skeleton';

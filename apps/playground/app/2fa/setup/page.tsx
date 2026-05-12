@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
-import { validateCurrentRequest } from '@holeauth/nextjs';
+import { validateCurrentRequest } from '@holeauth/nextjs-app-router';
 import { auth } from '@/lib/auth';
 import { getTwofa } from '@/lib/plugins';
 import { Skeleton } from '@/app/skeleton';

@@ -1,4 +1,4 @@
-import { holeauthMiddleware } from '@holeauth/nextjs/middleware';
+import { holeauthMiddleware } from '@holeauth/nextjs-app-router/middleware';
 
 // Playground uses a dev secret; real apps should read from env.
 export default holeauthMiddleware({

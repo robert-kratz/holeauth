@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { validateCurrentRequest } from '@holeauth/nextjs';
+import { validateCurrentRequest } from '@holeauth/nextjs-app-router';
 import { auth } from '@/lib/auth';
 
 export default async function AdminPage() {

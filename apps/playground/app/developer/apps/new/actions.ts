@@ -1,7 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { validateCurrentRequest } from '@holeauth/nextjs';
+import { validateCurrentRequest } from '@holeauth/nextjs-app-router';
 import { auth } from '@/lib/auth';
 
 export async function createAppAction(formData: FormData): Promise<void> {

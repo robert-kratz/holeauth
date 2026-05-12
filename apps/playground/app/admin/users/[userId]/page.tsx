@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import { revalidatePath } from 'next/cache';
 import { notFound, redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
-import { validateCurrentRequest } from '@holeauth/nextjs';
+import { validateCurrentRequest } from '@holeauth/nextjs-app-router';
 import { auth } from '@/lib/auth';
 import { getRbac } from '@/lib/rbac';
 import { db } from '@/db/client';

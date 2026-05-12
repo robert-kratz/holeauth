@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createAuthHandler } from '@holeauth/nextjs';
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
 import { subscribe } from '@holeauth/core/events';
 import { loadRbacYaml } from '@holeauth/rbac-yaml';
 import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';

@@ -18,7 +18,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import superjson from 'superjson';
-import { getSessionOrRefresh } from '@holeauth/nextjs';
+import { getSessionOrRefresh } from '@holeauth/nextjs-app-router';
 import { auth } from '../auth';
 
 /* ───────────────────────── Context ───────────────────────── */

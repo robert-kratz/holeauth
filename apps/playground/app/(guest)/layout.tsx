@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
-import { getFullSession } from '@holeauth/nextjs';
+import { getFullSession } from '@holeauth/nextjs-app-router';
 import { auth } from '@/lib/auth';
 
 /**

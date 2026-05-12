@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { validateCurrentRequest } from '@holeauth/nextjs';
+import { validateCurrentRequest } from '@holeauth/nextjs-app-router';
 import { AuthenticatedProvider } from '@holeauth/react';
 import { auth } from '@/lib/auth';
 import { HomeContent } from './home-content';

@@ -23,5 +23,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["docs", "playground", "client-playground"]
+  "ignore": ["docs", "playground"]
 }
