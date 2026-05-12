@@ -83,6 +83,8 @@ function writeTokens(cfg: HoleauthConfig, result: SignInResult): Response {
       ok: true,
       pending: true,
       pluginId: result.pluginId,
+      pendingType: result.pluginId,
+      pendingToken: result.pendingToken,
       userId: result.userId,
       data: result.data ?? null,
     }),

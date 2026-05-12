@@ -70,22 +70,19 @@ All three expose the same API: `createHoleauthTables` and `createHoleauthAdapter
 
     const holeauth = createHoleauthTables({ usersTable: users });
 
-    export const tables = {
-      ...holeauth.tables,
-    };
-
-    export const relations = {
-      ...holeauth.relations,
-    };
+    // Re-export individual tables so drizzle-kit includes them in migrations.
+    // drizzle-kit only detects top-level named exports — it will not recurse
+    // into holeauth.tables automatically.
+    export const { sessions, accounts, verificationTokens, auditLog } = holeauth.tables;
     ```
 
     ```ts title="lib/auth.ts"
     import { defineHoleauth } from '@holeauth/core';
     import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
     import { db } from '@/db';
-    import { tables } from '@/db/schema';
+    import { holeauth } from '@/db/schema';
 
-    const adapters = createHoleauthAdapters({ db, tables });
+    const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
 
     export const auth = defineHoleauth({
       adapter: adapters,
@@ -109,22 +106,17 @@ All three expose the same API: `createHoleauthTables` and `createHoleauthAdapter
 
     const holeauth = createHoleauthTables({ usersTable: users });
 
-    export const tables = {
-      ...holeauth.tables,
-    };
-
-    export const relations = {
-      ...holeauth.relations,
-    };
+    // Re-export individual tables so drizzle-kit includes them in migrations.
+    export const { sessions, accounts, verificationTokens, auditLog } = holeauth.tables;
     ```
 
     ```ts title="lib/auth.ts"
     import { defineHoleauth } from '@holeauth/core';
     import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
     import { db } from '@/db';
-    import { tables } from '@/db/schema';
+    import { holeauth } from '@/db/schema';
 
-    const adapters = createHoleauthAdapters({ db, tables });
+    const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
 
     export const auth = defineHoleauth({
       adapter: adapters,
@@ -148,22 +140,17 @@ All three expose the same API: `createHoleauthTables` and `createHoleauthAdapter
 
     const holeauth = createHoleauthTables({ usersTable: users });
 
-    export const tables = {
-      ...holeauth.tables,
-    };
-
-    export const relations = {
-      ...holeauth.relations,
-    };
+    // Re-export individual tables so drizzle-kit includes them in migrations.
+    export const { sessions, accounts, verificationTokens, auditLog } = holeauth.tables;
     ```
 
     ```ts title="lib/auth.ts"
     import { defineHoleauth } from '@holeauth/core';
     import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
     import { db } from '@/db';
-    import { tables } from '@/db/schema';
+    import { holeauth } from '@/db/schema';
 
-    const adapters = createHoleauthAdapters({ db, tables });
+    const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
 
     export const auth = defineHoleauth({
       adapter: adapters,
@@ -222,17 +209,21 @@ An object with:
 
 **Example**
 
+<Callout type="warn">
+  drizzle-kit detects tables by scanning top-level named exports from your schema file. `createHoleauthTables()` returns a plain object — spreading it into another object (`export const tables = { ...holeauth.tables }`) does **not** expose the individual table instances to drizzle-kit. You must destructure and re-export each table individually, or drizzle-kit will skip them and the tables will never be created in the database.
+</Callout>
+
 ```ts title="db/schema.ts"
 import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
 import { users } from './users';
 
-const holeauth = createHoleauthTables({
+export const holeauth = createHoleauthTables({
   usersTable: users,
   prefix: 'app_',
 });
 
-export const tables = { ...holeauth.tables };
-export const relations = { ...holeauth.relations };
+// Required: re-export each table as a named export for drizzle-kit.
+export const { sessions, accounts, verificationTokens, auditLog } = holeauth.tables;
 ```
 
 ### createHoleauthAdapters()

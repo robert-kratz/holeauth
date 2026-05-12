@@ -14,8 +14,9 @@ Adds TOTP-based 2FA with recovery codes via `@holeauth/plugin-2fa` and the Drizz
 
 ## Source of truth
 
-- Reference: `apps/playground/lib/auth.ts` (line `twofa({ adapter: twoFactorAdapter, ... })`)
-- Docs: `https://docs.holeauth.dev/docs/packages/plugin-2fa`, `https://docs.holeauth.dev/docs/getting-started/nextjs-app-router/plugin-2fa`
+- Reference plugin wiring: `apps/playground/lib/auth.ts` (line `twofa({ adapter: twoFactorAdapter, ... })`)
+- Docs: `https://docs.holeauth.dev/docs/packages/plugin-2fa`
+- Platform-specific getting-started: `https://docs.holeauth.dev/docs/getting-started/<framework>/plugin-2fa`
 
 ---
 
@@ -112,40 +113,25 @@ auth.twofa.renderQrBuffer(otpauthUrl)
 
 ---
 
-### Step 6 — Sign-in flow
+### Step 6 — Sign-in flow integration
 
-After a normal password sign-in, check whether 2FA is pending:
+After a normal password sign-in, the response may include a `pending` state when 2FA is required. The sign-in result shape:
 
-```tsx
-// app/login/page.tsx (client component)
-'use client';
-import { useSignIn } from '@holeauth/react';
-import { useRouter } from 'next/navigation';
-
-export default function LoginPage() {
-  const { signIn } = useSignIn();
-  const router = useRouter();
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const result = await signIn({
-      email: fd.get('email') as string,
-      password: fd.get('password') as string,
-    });
-
-    if (result?.kind === 'pending' && result.pluginId === 'twofa') {
-      router.push(`/2fa/verify?token=${encodeURIComponent(result.pendingToken)}`);
-      return;
-    }
-    router.push('/');
-  }
-
-  return <form onSubmit={onSubmit}>{/* email + password */}</form>;
+```ts
+// Returned by useSignIn() from @holeauth/react, or by POST <basePath>/signin
+{
+  kind: 'pending',
+  pluginId: 'twofa',
+  pendingToken: string,  // short-lived, single-use
 }
 ```
 
-The `/2fa/verify` page calls `auth.twofa.verify({ pendingToken, code })` (server) or posts to `/api/auth/2fa/verify` (client).
+When this is received, the user must be routed to a verification step (e.g. `/2fa/verify?token=...`) where they enter their TOTP code. That page calls `auth.twofa.verify({ pendingToken, code })` server-side, or posts to `<basePath>/2fa/verify` client-side.
+
+**The AI agent generates the login page and the `/2fa/verify` page in a platform-appropriate way.** Refer to:
+- Platform docs: `https://docs.holeauth.dev/docs/getting-started/<framework>/plugin-2fa`
+- Reference login page: `apps/playground/app/(guest)/login/page.tsx`
+- Reference verify page: `apps/playground/app/2fa/verify/page.tsx`
 
 ---
 
@@ -182,6 +168,21 @@ If `enrollmentPolicy === 'required for specific RBAC group'`, also check `auth.r
 2. **Recovery codes are shown exactly once** — UI must download/copy them at activation time. There is no `getRecoveryCodes()` API.
 3. **`pendingToken` is single-use** — re-submitting an expired token returns `pending_expired`. UI must surface this and restart the sign-in.
 4. **The headless `TwoFactorAdapter` interface** is: `getByUserId(userId)`, `upsert(record)`, `delete(userId)`. Use this only if not using the Drizzle adapter.
+
+---
+
+## Verification checklist
+
+```
+[ ] DB migration applied after schema change: pnpm db:push
+[ ] twofa plugin appears in the plugins array with `as const`
+[ ] POST <basePath>/2fa/setup responds (requires active session)
+[ ] /2fa/verify page exists and is reachable without authentication
+[ ] QR code renders correctly in an authenticator app
+[ ] TOTP code accepted and session fully established after verify
+[ ] Recovery codes displayed after activation
+[ ] pnpm typecheck passes
+```
 
 ---
 

@@ -37,6 +37,8 @@ Use `vscode_askQuestions`. **Never skip any question.** Group them logically; do
 | 7 | `plugins` | multi-select | 2FA · Passkeys · RBAC · IDP server · IDP consumer · (none) |
 | 8 | (per-plugin) | inline | Ask each selected plugin's interview inline |
 | 9 | `ssoProviders` | multi-select | Google · GitHub · None |
+| 9b | `useReactUi` | radio | Yes — use `@holeauth/react-ui` headless components · No — build own UI |
+| 9c | `uiStyle` (only if `useReactUi === Yes`) | radio | Tailwind CSS · CSS Modules · Inline styles (unstyled) |
 | 10 | `registration` | radio | Self-serve · Invite-only · Both |
 | 11 | `superuser` | radio | Seed script · Bootstrap CLI · Env-driven · Manual SQL · None |
 | 12 | `afterAuthPath` | text | default `/` |
@@ -75,6 +77,15 @@ Create:
 - `db/client.ts`
 - `db/schema.ts` (with the app-owned `users` table — `app_users`)
 - `docker-compose.yml` (if `dbHosting === 'Local Docker'`)
+
+> **⚠️ drizzle-kit re-export requirement:** When creating `db/schema.ts`, always destructure and re-export each holeauth table as an individual named export. drizzle-kit scans top-level named exports — it will not detect tables nested inside `holeauth.tables`. Omitting these re-exports means tables like `holeauth_audit_log` are never created in the database, causing `relation does not exist` runtime errors.
+>
+> ```ts
+> export const holeauth = createHoleauthTables({ usersTable: users });
+> export const { sessions, accounts, verificationTokens, auditLog } = holeauth.tables;
+> ```
+>
+> Apply the same pattern for every plugin table factory (`createTwoFactorTables`, `createPasskeyTables`, `createRbacTables`, etc.).
 
 Add scripts to `package.json`:
 
@@ -115,7 +126,7 @@ APP_URL=http://localhost:3000
 
 Run in strict order, passing all interview answers as inherited context:
 
-1. `integrate-holeauth-core` (always)
+1. `integrate-holeauth-core` (always) — **must complete Steps 1–11 including guest UI pages**
 2. If `2FA` selected: `integrate-holeauth-2fa`
 3. If `Passkeys` selected: `integrate-holeauth-passkey`
 4. If `RBAC` selected: `integrate-holeauth-rbac`
@@ -133,6 +144,37 @@ Example stub:
 // const twoFactorAdapter = createTwoFactorAdapter({ db, tables: twoFa.tables });
 // // Then add to plugins: twofa({ adapter: twoFactorAdapter, issuer: '...' })
 ```
+
+---
+
+### Step 5b — Font setup
+
+After the core skill completes, add a web font to `app/layout.tsx`. Use `next/font/google` with Inter (the standard system-like sans-serif for Next.js apps):
+
+```ts
+import { Inter } from 'next/font/google';
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+```
+
+Apply `inter.className` (or `inter.variable` if using CSS variables) to the `<html>` or `<body>` element. This ensures the app has a clean, readable default font without requiring an external CDN request at runtime.
+
+---
+
+### Step 5c — Confirm all MVP pages exist
+
+After all per-package skills complete, verify these routes are implemented (the core skill Step 10 creates them, but confirm they were not skipped):
+
+| Route | Required when | Purpose |
+|---|---|---|
+| `/login` | Always | Email + password sign-in |
+| `/register` | `registration === 'self-serve'` or `'both'` | Sign-up form |
+| `/register/accept` | `registration === 'invite-only'` or `'both'` | Invite token acceptance |
+| `/2fa/verify` | `2FA` plugin selected | TOTP code entry |
+| `/(guest)/layout.tsx` | Always | Redirect already-authed users away from guest routes |
+| `/settings/2fa` or `/2fa/setup` | `2FA` plugin selected | 2FA enrollment UI |
+| `/settings/passkeys` | `Passkeys` plugin selected | Passkey management UI |
+
+If any of these are missing, **create them before proceeding to Step 6.** Reference: `apps/playground/app/(guest)/` and `apps/playground/app/` in the holeauth repo.
 
 ---
 
@@ -163,6 +205,8 @@ pnpm build           # next build
 - Missing `as const` on the `plugins` array → TS cannot infer `auth.<key>.<method>()`
 - `core.tables` spread duplicated `users` → Drizzle duplicate-table error
 - `cookiePrefix` mismatch between auth instance and middleware → silent session loss
+- Missing guest UI pages → visiting `/login` or `/register` returns 404
+- Missing font import in layout.tsx → app uses browser default serif font
 
 ---
 
@@ -175,7 +219,26 @@ pnpm db:push         # apply schema
 pnpm db:generate
 ```
 
-Print the final verification checklist (see `integrate-holeauth` skill).
+Confirm the following MVP checklist before reporting the project as complete:
+
+```
+[ ] pnpm install completed without peer-dep warnings
+[ ] pnpm typecheck passes with 0 errors
+[ ] pnpm build succeeds
+[ ] DB schema pushed successfully
+[ ] .env.local exists with HOLEAUTH_SECRET, DATABASE_URL, APP_URL populated
+[ ] /login page loads (200, no 404)
+[ ] /register page loads (200) or correct registration mode
+[ ] /(guest)/layout.tsx redirects authenticated users away
+[ ] Sign-up flow completes end-to-end
+[ ] Sign-in flow completes end-to-end
+[ ] If 2FA selected: /2fa/verify page exists; TOTP code accepted
+[ ] If Passkeys selected: passkey registration and login work
+[ ] If RBAC selected: default group assigned on registration
+[ ] Font is set in layout.tsx (not browser default serif)
+[ ] Middleware protects authenticated routes (unauthenticated redirect to /login)
+[ ] Superuser created (if applicable)
+```
 
 ---
 

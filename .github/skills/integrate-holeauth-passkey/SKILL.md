@@ -14,8 +14,9 @@ Adds passkey registration and login via `@holeauth/plugin-passkey` and the Drizz
 
 ## Source of truth
 
-- Reference: `apps/playground/lib/auth.ts` (line `passkey({ adapter: passkeyPluginAdapter, ... })`)
-- Docs: `https://docs.holeauth.dev/docs/packages/plugin-passkey`, `https://docs.holeauth.dev/docs/getting-started/nextjs-app-router/plugin-passkey`
+- Reference plugin wiring: `apps/playground/lib/auth.ts` (line `passkey({ adapter: passkeyPluginAdapter, ... })`)
+- Docs: `https://docs.holeauth.dev/docs/packages/plugin-passkey`
+- Platform-specific getting-started: `https://docs.holeauth.dev/docs/getting-started/<framework>/plugin-passkey`
 
 ---
 
@@ -115,47 +116,24 @@ auth.passkey.delete(userId, credentialId)
 
 ---
 
-### Step 6 — Client-side ceremony
+### Step 6 — Client-side WebAuthn ceremony
 
-Register flow (client component):
+The browser-side ceremony **must** use `@simplewebauthn/browser`. The AI agent creates registration and login pages appropriate for the user's platform.
 
-```tsx
-'use client';
-import { startRegistration } from '@simplewebauthn/browser';
+**Registration flow (3 steps):**
+1. `POST <basePath>/passkey/register/options` → receive challenge options
+2. `startRegistration(options)` — opens the OS passkey prompt (browser API)
+3. `POST <basePath>/passkey/register/verify` with `{ response, deviceName? }` → credential persisted
 
-async function enrollPasskey(deviceName: string) {
-  const optionsRes = await fetch('/api/auth/passkey/register/options', { method: 'POST' });
-  const { options } = await optionsRes.json();
+**Login flow (3 steps):**
+1. `POST <basePath>/passkey/login/options` → receive challenge options
+2. `startAuthentication(options)` — opens the OS passkey prompt (browser API)
+3. `POST <basePath>/passkey/login/verify` with `{ response }` → session tokens set
 
-  // Browser shows the OS prompt:
-  const credential = await startRegistration(options);
-
-  const verifyRes = await fetch('/api/auth/passkey/register/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ response: credential, deviceName }),
-  });
-  return verifyRes.json();
-}
-```
-
-Login flow:
-
-```tsx
-'use client';
-import { startAuthentication } from '@simplewebauthn/browser';
-
-async function loginWithPasskey() {
-  const optionsRes = await fetch('/api/auth/passkey/login/options', { method: 'POST' });
-  const { options } = await optionsRes.json();
-  const assertion = await startAuthentication(options);
-  return fetch('/api/auth/passkey/login/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ response: assertion }),
-  });
-}
-```
+**The AI agent generates the passkey registration and login pages in a platform-appropriate way.** Refer to:
+- Platform docs: `https://docs.holeauth.dev/docs/getting-started/<framework>/plugin-passkey`
+- Reference register page: `apps/playground/app/passkey/register/page.tsx`
+- Reference login page: `apps/playground/app/(guest)/passkey/login/page.tsx`
 
 ---
 
@@ -167,6 +145,22 @@ async function loginWithPasskey() {
 4. **`@simplewebauthn/server` is a peer dependency** — runtime error `PASSKEY_NOT_CONFIGURED` (500) if missing.
 5. **The headless `PasskeyAdapter` interface** is: `list(userId)`, `getByCredentialId(id)`, `insert(record)`, `updateCounter(id, counter)`, `delete(userId, id)`.
 6. **Cross-device/cross-origin:** if your prod domain differs from dev (e.g. `localhost` vs `app.example.com`), credentials enrolled in one will not authenticate in the other. This is a WebAuthn spec invariant.
+
+---
+
+## Verification checklist
+
+```
+[ ] DB migration applied after schema change: pnpm db:push
+[ ] passkey plugin appears in the plugins array with `as const`
+[ ] @simplewebauthn/server installed (peer dep)
+[ ] POST <basePath>/passkey/register/options responds (requires active session)
+[ ] OS passkey prompt appears during registration ceremony
+[ ] Credential saved and visible via auth.passkey.list(userId)
+[ ] POST <basePath>/passkey/login/options responds without session
+[ ] Login ceremony completes and session is established
+[ ] pnpm typecheck passes
+```
 
 ---
 

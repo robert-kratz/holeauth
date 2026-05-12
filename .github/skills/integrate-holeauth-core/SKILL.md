@@ -1,6 +1,6 @@
 ---
 name: integrate-holeauth-core
-description: "Set up the holeauth core packages (@holeauth/core, @holeauth/adapter-drizzle, @holeauth/nextjs-app-router, @holeauth/react) in a Next.js App Router project. Use when: installing holeauth core, setting up the auth instance, creating Drizzle schema for auth, wiring the catch-all route handler, adding the HoleauthProvider, configuring middleware. Required first step before any plugin skill."
+description: "Set up the holeauth core packages (@holeauth/core, @holeauth/adapter-drizzle, and the matching platform adapter) in any supported framework. Use when: installing holeauth core, setting up the auth instance, creating Drizzle schema for auth, wiring the route handler, adding the HoleauthProvider, configuring middleware. Required first step before any plugin skill. Supports: Next.js App Router, Next.js Pages Router, Express, Hono."
 argument-hint: "Inherits answers from integrate-holeauth or bootstrap-nextjs-holeauth"
 ---
 
@@ -29,6 +29,7 @@ Inherit from dispatcher. Ask only what's missing:
 
 | Variable | Type | Default if not asked |
 |---|---|---|
+| `framework` | radio | Next.js App Router · Next.js Pages Router · Express · Hono |
 | `dialect` | radio | pg / mysql / sqlite |
 | `usersTablePath` | text | `db/schema.ts` exports `users` |
 | `cookiePrefix` | text | `holeauth` |
@@ -37,18 +38,27 @@ Inherit from dispatcher. Ask only what's missing:
 | `allowDangerousEmailAccountLinking` | radio | `false` (security default) |
 | `ssoProviders` | multi-select | Google / GitHub / None |
 | `logger` | radio | console / none / custom |
+| `useReactUi` | radio | Yes — use `@holeauth/react-ui` headless components · No — build own UI |
+| `uiStyle` (only if `useReactUi === Yes`) | radio | Tailwind CSS · CSS Modules · Inline styles (unstyled) |
 
 ---
 
 ### Step 2 — Install
 
 ```bash
-pnpm add @holeauth/core @holeauth/adapter-drizzle @holeauth/nextjs-app-router @holeauth/react drizzle-orm
-# dialect driver:
-pnpm add pg                 # if pg
-pnpm add mysql2             # if mysql
-pnpm add better-sqlite3     # if sqlite
+# Core + Drizzle adapter (always)
+pnpm add @holeauth/core @holeauth/adapter-drizzle drizzle-orm
+
+# Dialect driver:
+pnpm add pg                 # Postgres
+pnpm add mysql2             # MySQL
+pnpm add better-sqlite3     # SQLite
 pnpm add -D drizzle-kit @types/pg
+
+# Platform adapter (pick exactly one based on `framework`):
+pnpm add @holeauth/nextjs-app-router @holeauth/react   # Next.js App Router / Pages Router
+pnpm add @holeauth/express                              # Express
+pnpm add @holeauth/hono                                 # Hono
 ```
 
 For password hashing on Node runtime (optional, faster than scrypt fallback):
@@ -91,6 +101,8 @@ export const schema = { ...core.tables, ...core.relations };
 
 **Critical:** `core.tables` does **not** include `users` — that's the app-owned table. Do NOT add `users` to the `schema` spread again or you'll get a duplicate-table error.
 
+> **⚠️ drizzle-kit gotcha:** `createHoleauthTables()` returns a plain object. drizzle-kit detects tables by scanning top-level **named exports** from the schema file — it will not recurse into nested objects. Always destructure and re-export each table individually (as shown above). Omitting the re-exports causes `relation "holeauth_audit_log" does not exist` (and similar) runtime errors because those tables are never included in the migration.
+
 If the user picked "existing application table", swap the `users` declaration for their existing import.
 
 ---
@@ -113,10 +125,16 @@ export const db = drizzle(pool, { schema });
 
 ### Step 5 — Auth instance (fully-filled)
 
+> **Platform note:** The config object is identical across all frameworks. The only difference is the import:
+> - **Next.js App Router / Pages Router:** `import { createAuthHandler } from '@holeauth/nextjs-app-router'`
+> - **Express:** `import { createAuthHandler } from '@holeauth/express'`
+> - **Hono:** `import { createAuthHandler } from '@holeauth/hono'`
+> For non-Next.js setups, replace the import and refer to the platform docs at `https://docs.holeauth.dev/docs/packages/<framework>`.
+
 Create `lib/auth.ts`:
 
 ```ts
-import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { createAuthHandler } from '@holeauth/nextjs-app-router'; // swap for your platform adapter
 import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/<dialect>';
 import { GoogleProvider, GithubProvider } from '@holeauth/core/sso';
 import { db } from '../db/client';
@@ -172,20 +190,20 @@ export const auth = createAuthHandler({
 
 ### Step 6 — Route handler
 
-Create `app/api/auth/[...holeauth]/route.ts`:
+Mount a catch-all route that forwards all requests under `<basePath>` to `auth.handlers.GET` / `auth.handlers.POST`. **This step is platform-specific** — the AI agent must implement it in the pattern appropriate for `framework`.
+
+Docs:
+- Next.js App Router: `https://docs.holeauth.dev/docs/packages/nextjs-app-router#route-handler`
+- Express: `https://docs.holeauth.dev/docs/packages/express#route-handler`
+- Hono: `https://docs.holeauth.dev/docs/packages/hono#route-handler`
+
+Reference (Next.js App Router only — `app/api/auth/[...holeauth]/route.ts`):
 
 ```ts
 import { auth } from '@/lib/auth';
-
 export const runtime = 'nodejs'; // argon2 + scrypt-fallback need Node
-
-export function GET(req: Request): Promise<Response> {
-  return auth.handlers.GET(req);
-}
-
-export function POST(req: Request): Promise<Response> {
-  return auth.handlers.POST(req);
-}
+export function GET(req: Request): Promise<Response> { return auth.handlers.GET(req); }
+export function POST(req: Request): Promise<Response> { return auth.handlers.POST(req); }
 ```
 
 ---
@@ -204,69 +222,93 @@ export const COOKIE_PREFIX = '<cookiePrefix>';
 
 ### Step 8 — Middleware
 
-**Next.js 16+:** the file is `proxy.ts` at the project root.
-**Next.js 15 and earlier:** the file is `middleware.ts`.
+Configure request-level middleware to validate JWTs, protect routes, and handle token refresh. Use the `protectAllExcept` strategy (recommended): all routes require authentication except the explicitly listed public paths.
 
-```ts
-import { holeauthMiddleware } from '@holeauth/nextjs-app-router/middleware';
+**This step is platform-specific** — the AI agent must implement it in the pattern appropriate for `framework`:
+- **Next.js App Router 16+:** file is `proxy.ts` at the project root
+- **Next.js App Router 15 and earlier:** file is `middleware.ts`
+- **Express / Hono:** middleware registered on the router
 
-export default holeauthMiddleware({
-  config: {
-    secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
-    // Middleware only validates JWTs — DB adapters never touched here.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    adapters: {} as any,
-    tokens: { cookiePrefix: '<cookiePrefix>' },
-  },
-  protectAllExcept: [
-    '/login',
-    '/register',
-    '/logout',
-    '/password/forgot',
-    '/password/reset',
-    '/passkey/login',
-    '/sso',
-    '/2fa/verify',
-    '/api/auth',
-    '/_next',
-    '/favicon.ico',
-    // tRPC handles its own refresh — exclude if using tRPC:
-    // '/api/trpc',
-  ],
-  signInPath: '/login',
-});
+Docs:
+- Next.js: `https://docs.holeauth.dev/docs/packages/nextjs-app-router#middleware`
+- Express: `https://docs.holeauth.dev/docs/packages/express#middleware`
+- Hono: `https://docs.holeauth.dev/docs/packages/hono#middleware`
 
-export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
-};
+The following paths **must always be accessible without authentication** (include them in `protectAllExcept` or equivalent):
+
 ```
+/login, /register, /register/accept, /logout,
+/password/forgot, /password/reset,
+/passkey/login, /sso, /2fa/verify,
+/api/auth, /_next, /favicon.ico
+```
+
+Key config values the middleware must receive:
+- `secrets.jwtSecret` = `process.env.HOLEAUTH_SECRET!`
+- `tokens.cookiePrefix` = `'<cookiePrefix>'` — must match exactly
+- `adapters: {} as any` — middleware ONLY validates JWTs, never touches the DB
+- `signInPath: '/login'`
 
 ---
 
 ### Step 9 — Provider
 
-Wrap `app/layout.tsx`:
+Wrap the app root with `HoleauthProvider` from `@holeauth/react`. Pass in:
+- `basePath` — must match `AUTH_BASE_PATH` (`'/api/auth'` by default)
+- `cookiePrefix` — must match the value in `createAuthHandler` and the middleware
 
-```tsx
-import { HoleauthProvider } from '@holeauth/react';
-import { AUTH_BASE_PATH, COOKIE_PREFIX } from '@/lib/constants';
+**The AI agent adds the provider to the framework-appropriate root layout or entry point.** For Next.js App Router this is `app/layout.tsx`; for other frameworks, the equivalent root component.
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body>
-        <HoleauthProvider basePath={AUTH_BASE_PATH} cookiePrefix={COOKIE_PREFIX}>
-          {children}
-        </HoleauthProvider>
-      </body>
-    </html>
-  );
-}
-```
+Docs: `https://docs.holeauth.dev/docs/packages/react#provider`
 
 ---
 
-### Step 10 — Env
+### Step 9b — UI components (only if `useReactUi === Yes`)
+
+Install:
+
+```bash
+pnpm add @holeauth/react-ui
+```
+
+`@holeauth/react-ui` exports **fully headless compound components** — zero CSS, all styling via `className` / `style` props. Never import a stylesheet from this package.
+
+| Component | Purpose |
+|---|---|
+| `SignInForm` | Email + password + 2FA pending state + optional passkey button |
+| `SignUpForm` | Email + password + name |
+| `SignOutButton` | Triggers sign-out |
+| `SsoButton` | One per SSO provider |
+| `PasskeyLoginButton` | Standalone passkey sign-in trigger |
+| `PasskeySetup` | Passkey enrollment flow |
+| `TwoFactorVerifyForm` | TOTP code entry |
+| `PasswordResetRequestForm`, `PasswordChangeForm` | Password recovery |
+
+Docs + usage examples: `https://docs.holeauth.dev/docs/packages/react-ui`
+
+**The AI agent generates the login, register, and other auth pages using these components**, styled for `<uiStyle>`. It must not use platform-specific router imports from this skill — that is determined at generation time.
+
+---
+
+### Step 10 — Guest UI pages
+
+After provider and middleware are in place, the following routes must exist and be reachable **without authentication**:
+
+| Route | Purpose |
+|---|---|
+| `/login` | Sign-in form |
+| `/register` | Self-serve sign-up (if `registration.selfServe` is `true`) |
+| `/register/accept` | Invite token acceptance (if invite-only or both) |
+
+Also create a guest route group layout (e.g. `app/(guest)/layout.tsx` for Next.js App Router) that redirects already-authenticated users to `AFTER_AUTH_PATH`, preventing signed-in users from hitting the login/register pages.
+
+**The AI agent generates these files in a platform-appropriate way** based on `framework`. Do not hard-code their implementation in this skill. Refer to:
+- Platform docs: `https://docs.holeauth.dev/docs/getting-started/<framework>/login`
+- Reference implementation: `apps/playground/app/(guest)/` in the holeauth repo
+
+---
+
+### Step 11 — Env
 
 Add to `.env.local`:
 
@@ -294,6 +336,28 @@ These cannot be derived from the docs alone — **embed them in the generated co
 5. **`cookiePrefix` must match exactly** in three places: `createAuthHandler({ tokens })`, `holeauthMiddleware({ config: { tokens }})`, `<HoleauthProvider cookiePrefix>`.
 6. **`core.tables` does NOT contain `users`** — that's app-owned. Adding it again to the schema spread produces a Drizzle duplicate-table error.
 7. **`runtime = 'nodejs'`** on the route handler — `@node-rs/argon2` and scrypt-fallback need Node APIs.
+8. **`@holeauth/react-ui` ships zero CSS.** It is fully headless — never import a stylesheet from it. All styling is done by passing `className` / `style` props to each compound-component slot. Forgetting this leads to completely unstyled forms with no error in the console.
+
+---
+
+---
+
+## Verification checklist
+
+After completing all steps, confirm the following before reporting success:
+
+```
+[ ] pnpm install completed without peer-dep warnings
+[ ] DB schema pushed: pnpm db:push (or drizzle-kit push)
+[ ] Auth route handler responds at <basePath>/.well-known/... (or equivalent)
+[ ] Middleware is in place and protects authenticated routes
+[ ] HoleauthProvider wraps the app root
+[ ] /login, /register pages exist and load without a 404
+[ ] Visiting a protected route while unauthenticated redirects to /login
+[ ] Required env vars set: HOLEAUTH_SECRET, DATABASE_URL, APP_URL
+[ ] pnpm typecheck passes with 0 errors
+[ ] pnpm build succeeds
+```
 
 ---
 

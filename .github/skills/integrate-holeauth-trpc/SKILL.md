@@ -135,53 +135,16 @@ export { handler as GET, handler as POST };
 
 ### Step 6 — Client setup
 
-`lib/trpc/client.ts`:
+Create the typed React client and a provider component that wraps `@tanstack/react-query` + tRPC. Mount the provider inside `<HoleauthProvider>` in the root layout.
 
-```ts
-import { createTRPCReact } from '@trpc/react-query';
-import type { AppRouter } from './router';
+**The AI agent generates the client files in a platform-appropriate way.** Key requirements:
+- `trpc` client export typed against `AppRouter`
+- `TrpcProvider` uses `httpBatchLink` pointing at `<endpointPath>`
+- `transformer: superjson` goes inside `httpBatchLink` (NOT at `createClient()` top-level — this is a v11 breaking change)
+- Provider is mounted **inside** `<HoleauthProvider>` in the root layout
 
-export const trpc = createTRPCReact<AppRouter>();
-```
-
-`lib/trpc/provider.tsx`:
-
-```tsx
-'use client';
-import { useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { httpBatchLink } from '@trpc/client';
-import superjson from 'superjson';
-import { trpc } from './client';
-
-export function TrpcProvider({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
-  const [trpcClient] = useState(() =>
-    trpc.createClient({
-      links: [
-        httpBatchLink({
-          url: '/api/trpc',
-          transformer: superjson,        // <- v11: transformer goes ON the link
-        }),
-      ],
-    }),
-  );
-
-  return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </trpc.Provider>
-  );
-}
-```
-
-Mount inside `<HoleauthProvider>` in `app/layout.tsx`:
-
-```tsx
-<HoleauthProvider basePath={AUTH_BASE_PATH} cookiePrefix={COOKIE_PREFIX}>
-  <TrpcProvider>{children}</TrpcProvider>
-</HoleauthProvider>
-```
+Docs: `https://docs.holeauth.dev/docs/packages/trpc#client`
+Reference: `apps/playground/lib/trpc/` and `apps/playground/app/layout.tsx`
 
 ---
 
@@ -208,6 +171,21 @@ Otherwise the Next.js middleware will 302 the request to `/login` and the tRPC c
 4. **Permission denied returns `FORBIDDEN`** (HTTP 403), not `UNAUTHORIZED`. Unauthenticated requests still get `UNAUTHORIZED` from `authProcedure`.
 5. **`createHoleauthContext` performs transparent refresh** when the access token is expired but the refresh token is still valid. It sets `Set-Cookie` headers on `ctx.resHeaders` — your route handler propagation works automatically when using `fetchRequestHandler`.
 6. **runtime = 'nodejs'** on the route handler — the context calls into adapters that may use Node-only deps.
+
+---
+
+## Verification checklist
+
+```
+[ ] pnpm install completed without peer-dep warnings
+[ ] /api/trpc route handler responds to GET /api/trpc/hello
+[ ] /api/trpc is in protectAllExcept in the middleware
+[ ] authProcedure throws UNAUTHORIZED when called without a session
+[ ] me procedure returns correct userId after sign-in
+[ ] permissionProcedure throws FORBIDDEN for insufficient permissions (if RBAC selected)
+[ ] TrpcProvider mounted inside HoleauthProvider in root layout
+[ ] pnpm typecheck passes
+```
 
 ---
 

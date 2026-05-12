@@ -160,11 +160,14 @@ SESSION_SECRET=<openssl rand -base64 32>
 
 ### Step 8 — Refresh middleware (if `refreshStrategy === 'On every SSR'`)
 
-Add to `middleware.ts` (or `proxy.ts` on Next.js 16+):
+On each incoming request: read the session cookie, check if `accessExpiresAt < now + 60s`, and if so, refresh the access token and update the session cookie before serving the response.
 
-```ts
-// On each request: read session cookie → if accessExpiresAt < now + 60s → refresh + Set-Cookie
-```
+**This step is platform-specific** — the AI agent implements it in the pattern appropriate for `framework`:
+- **Next.js App Router 16+:** `proxy.ts` at the project root
+- **Next.js App Router 15 and earlier:** `middleware.ts`
+- **Express / Hono:** middleware registered before route handlers
+
+Docs: `https://docs.holeauth.dev/docs/sso/consumer#refresh`
 
 ---
 
@@ -177,6 +180,21 @@ Add to `middleware.ts` (or `proxy.ts` on Next.js 16+):
 5. **`offline_access` scope** is required to receive a refresh token from most providers (including holeauth IdPs).
 6. **RP-initiated logout requires `id_token_hint`** — store the `id_token` server-side at login if you want true single-logout. Otherwise the user remains signed in upstream.
 7. **State cookie MUST be `sameSite: 'lax'`** (not `strict`) — `strict` blocks the cookie on the cross-site redirect back from the IdP.
+
+---
+
+## Verification checklist
+
+```
+[ ] DB migration applied after schema change: pnpm db:push
+[ ] GET <issuerUrl>/.well-known/openid-configuration reachable
+[ ] Login redirect sends user to upstream authorization URL with PKCE
+[ ] Callback handler exchanges code, verifies id_token, creates local session
+[ ] Session cookie set and user is authenticated after callback
+[ ] Token refresh works when access token expires
+[ ] Logout clears local session (and upstream session if RP-initiated)
+[ ] pnpm typecheck passes
+```
 
 ---
 

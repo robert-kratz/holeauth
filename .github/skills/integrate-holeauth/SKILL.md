@@ -37,10 +37,12 @@ Use `vscode_askQuestions` with these questions. **Never assume defaults — alwa
 | 4 | `plugins` | multi-select | 2FA · Passkeys · RBAC · IDP server · IDP consumer · (none) |
 | 5 | `trpc` | radio | Yes / No |
 | 6 | `ssoProviders` | multi-select | Google · GitHub · None (these are CORE providers — not the IDP consumer) |
-| 7 | `registration` | radio | Self-serve · Invite-only · Both |
-| 8 | `superuser` | radio | Seed script · Bootstrap CLI · Env-driven · Manual SQL · None |
-| 9 | `basePath` | text | default `/api/auth` |
-| 10 | `middleware` | radio | protectAllExcept (recommended) · refresh-only · None |
+| 7 | `useReactUi` | radio | Yes — use `@holeauth/react-ui` headless components · No — build own UI |
+| 7b | `uiStyle` (only if `useReactUi === Yes`) | radio | Tailwind CSS · CSS Modules · Inline styles (unstyled) |
+| 8 | `registration` | radio | Self-serve · Invite-only · Both |
+| 9 | `superuser` | radio | Seed script · Bootstrap CLI · Env-driven · Manual SQL · None |
+| 10 | `basePath` | text | default `/api/auth` |
+| 11 | `middleware` | radio | protectAllExcept (recommended) · refresh-only · None |
 
 ---
 
@@ -56,7 +58,7 @@ Run skills in this strict order. Each loaded skill inherits the answers from Ste
 6. If `plugins` includes IDP consumer: `integrate-holeauth-idp-consumer`
 7. If `trpc === Yes`: `integrate-holeauth-trpc`
 
-If `framework` is Express/Hono/Other: stop after the interview and tell the user the relevant framework adapter exists in `@holeauth/express` / `@holeauth/hono` — point them at `https://docs.holeauth.dev/docs/getting-started/express` (or `hono`) and the search API.
+If `framework` is **Express or Hono**: do NOT bail. The `integrate-holeauth-core` skill supports these frameworks. Pass the `framework` variable through and the core skill will reference the correct platform adapter and docs.
 
 ---
 
@@ -79,9 +81,18 @@ Print this checklist back to the user. They run the commands; you don't.
 ```
 [ ] pnpm install completed without peer-dep warnings
 [ ] Drizzle migration generated and applied (pnpm db:push or drizzle-kit push)
-[ ] /api/auth/[...holeauth]/route.ts exists and re-exports auth.handlers
-[ ] middleware.ts (or proxy.ts on Next.js 16+) is in place
-[ ] HoleauthProvider wraps the app in app/layout.tsx
+[ ] Auth route handler responds at <basePath>/... (e.g. GET /api/auth/.well-known/openid-configuration)
+[ ] Middleware is in place and protects authenticated routes
+[ ] HoleauthProvider wraps the app in the root layout
+[ ] /login page exists and loads (200 — no 404)
+[ ] /register page exists and loads (if registration is self-serve or both)
+[ ] /(guest)/layout.tsx (or equivalent) redirects authenticated users away from guest routes
+[ ] Sign-up flow completes end-to-end
+[ ] Sign-in flow completes end-to-end
+[ ] If 2FA selected: /2fa/verify page exists; TOTP code accepted after sign-in
+[ ] If Passkeys selected: passkey register and login pages exist and work
+[ ] If RBAC selected: default group auto-assigned after registration
+[ ] Font set in root layout (not browser default serif)
 [ ] Superuser created (if applicable)
 [ ] Required env vars set: HOLEAUTH_SECRET, DATABASE_URL, APP_URL
 [ ] pnpm typecheck passes

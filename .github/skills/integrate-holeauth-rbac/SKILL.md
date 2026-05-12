@@ -16,7 +16,8 @@ Adds groups + permissions with wildcard matching and YAML config via `@holeauth/
 
 - Reference auth wiring: `apps/playground/lib/auth.ts` (line `rbac({ adapter: rbacAdapter, groups: rbacYaml.snapshot.groups })`)
 - Reference YAML: `apps/playground/holeauth.rbac.yml`
-- Docs: `https://docs.holeauth.dev/docs/packages/plugin-rbac`, `https://docs.holeauth.dev/docs/packages/plugin-rbac/yaml`, `https://docs.holeauth.dev/docs/getting-started/nextjs-app-router/plugin-rbac`
+- Docs: `https://docs.holeauth.dev/docs/packages/plugin-rbac`
+- Platform-specific enforcement: `https://docs.holeauth.dev/docs/getting-started/<framework>/plugin-rbac`
 
 ---
 
@@ -201,37 +202,25 @@ subscribe(auth.config, 'user.invite_consumed', async (e) => {
 
 ---
 
-### Step 8 — Server enforcement
+### Step 8 — Server-side enforcement
 
-In a Server Component or Route Handler:
+Use `auth.rbac.can(userId, 'permission.node')` (or `canAll` / `canAny`) in server-side code to enforce permissions before returning data or rendering content. Unauthorized requests should redirect or return an error response appropriate for the framework.
 
-```ts
-import { validateCurrentRequest } from '@holeauth/nextjs-app-router/server';
-import { auth } from '@/lib/auth';
+**This step is platform-specific.** The AI agent implements enforcement guards in the pattern appropriate for `framework`:
+- For platform-specific helpers (e.g. `validateCurrentRequest` for Next.js), refer to the platform docs
+- Reference server-component guard: `apps/playground/app/admin/page.tsx`
 
-export default async function AdminPage() {
-  await validateCurrentRequest(auth, {
-    permissions: ['admin.read'],
-    redirectTo: '/login',
-  });
-  return <AdminDashboard />;
-}
-```
+Docs: `https://docs.holeauth.dev/docs/packages/plugin-rbac#enforcement`
 
 ---
 
-### Step 9 — Client hook
+### Step 9 — Client-side visibility
 
-```tsx
-'use client';
-import { useRbac } from '@holeauth/react';
+The `useRbac()` hook from `@holeauth/react` exposes `can`, `canAll`, `canAny` for conditional UI rendering. The hook reads the RBAC permission snapshot lazily on mount — no extra fetch. It requires `<HoleauthProvider>` to be mounted above the component.
 
-export function EditButton() {
-  const { can } = useRbac();
-  if (!can('posts.edit.own')) return null;
-  return <button>Edit</button>;
-}
-```
+**The AI agent adds platform-appropriate permission checks to UI components.** Refer to:
+- Docs: `https://docs.holeauth.dev/docs/packages/plugin-rbac#client`
+- Reference usage: `apps/playground/app/` (components with RBAC visibility guards)
 
 ---
 
@@ -244,6 +233,21 @@ export function EditButton() {
 5. **Permission cache TTL** defaults to 5000ms in dev, 30000ms in prod. Cache misses can mask `assignGroup` calls until the TTL expires.
 6. **`useRbac()` requires `<HoleauthProvider>`** — and the snapshot is fetched lazily on mount.
 7. **Headless `RbacAdapter` interface:** `listUserGroups`, `assignGroup`, `removeGroup`, `listUserPermissions`, `grantPermission`, `revokePermission`, `listAllGroupAssignments`, `purgeUser`.
+
+---
+
+## Verification checklist
+
+```
+[ ] DB migration applied after schema change: pnpm db:push
+[ ] rbac plugin appears in the plugins array with `as const`
+[ ] holeauth.rbac.yml exists at project root with exactly one `default: true` group
+[ ] Default group auto-assigned after a new user registers
+[ ] auth.rbac.can(userId, 'permission') returns correct boolean
+[ ] Server-side enforcement gate redirects unauthorized users
+[ ] useRbac() hook returns correct permissions for signed-in user
+[ ] pnpm typecheck passes
+```
 
 ---
 

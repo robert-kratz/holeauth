@@ -15,8 +15,9 @@ Turns the app into a full OAuth 2.0 / OpenID Connect authorization server. Issue
 
 ## Source of truth
 
-- Reference: `apps/playground/lib/auth.ts` (line `idp({ adapter: idpPluginAdapter, issuer: ... })`)
-- Docs: `https://docs.holeauth.dev/docs/packages/plugin-idp`, `https://docs.holeauth.dev/docs/sso/provider`
+- Reference plugin wiring: `apps/playground/lib/auth.ts` (line `idp({ adapter: idpPluginAdapter, issuer: ... })`)
+- Docs: `https://docs.holeauth.dev/docs/packages/plugin-idp`
+- SSO provider guide: `https://docs.holeauth.dev/docs/sso/provider`
 
 ---
 
@@ -118,28 +119,16 @@ Auto-registered endpoints:
 
 ---
 
-### Step 5 — Bootstrap signing keys
+### Step 5 — Bootstrap signing keys at startup
 
-Create `instrumentation.ts` at the project root:
+Call `auth.idp.keys.bootstrap()` once at application startup. Without this, the first `/oauth2/authorize` request fails with `no_signing_keys`.
 
-```ts
-export async function register() {
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { auth } = await import('./lib/auth');
-    await auth.idp.keys.bootstrap();
-  }
-}
-```
+**This step is platform-specific** — the AI agent hooks into the startup mechanism appropriate for `framework`:
+- **Next.js App Router:** use `instrumentation.ts` at the project root (guard with `process.env.NEXT_RUNTIME === 'nodejs'`; `instrumentationHook: true` required only on Next.js <15)
+- **Express / Hono:** call `await auth.idp.keys.bootstrap()` in the server startup code, before the first request
+- **Other:** call it in the equivalent application lifecycle hook
 
-Add to `next.config.ts`:
-
-```ts
-export default {
-  experimental: { instrumentationHook: true }, // not needed on Next.js 15+
-};
-```
-
-On Next.js 15+ instrumentation is enabled by default.
+Docs: `https://docs.holeauth.dev/docs/packages/plugin-idp#key-bootstrap`
 
 ---
 
@@ -188,9 +177,12 @@ auth.idp.adapter
 
 ### Step 8 — Custom consent screen (optional)
 
-If `consentScreen === 'Custom'`, create `app/oauth/consent/page.tsx`. Use `auth.idp.adapter.findConsent({ userId, clientId })` to check existing consents and submit a POST to `<basePath>/oauth2/authorize` with `consent=granted`.
+If `consentScreen === 'Custom'`, the AI agent creates a consent page appropriate for `framework`. The page must:
+1. Read `userId` and `clientId` from the request context
+2. Call `auth.idp.adapter.findConsent({ userId, clientId })` to check existing grants
+3. Submit a form/request to `<basePath>/oauth2/authorize` with `consent=granted`
 
-Docs: `https://docs.holeauth.dev/docs/sso/provider/consent`.
+Docs: `https://docs.holeauth.dev/docs/sso/provider/consent`
 
 ---
 
@@ -203,6 +195,21 @@ Docs: `https://docs.holeauth.dev/docs/sso/provider/consent`.
 5. **`createAppPermission` / `adminAppPermission` are only enforced if `plugin-rbac` is also registered.** Without RBAC, anyone with a valid session can create apps via `auth.idp.apps.create()` server-side (no HTTP endpoint).
 6. **Default `tokenRateLimiter` is in-memory** (20 req/60s). Replace with a distributed limiter (or `false` to disable) in production.
 7. **Key rotation** (`auth.idp.keys.rotate()`) marks the old key as `inactive` but keeps it for JWT verification until all tokens signed with it expire. Don't delete inactive keys before `refreshTokenTtl + accessTokenTtl` has passed.
+
+---
+
+## Verification checklist
+
+```
+[ ] DB migration applied after schema change: pnpm db:push
+[ ] idp plugin appears in the plugins array with `as const`
+[ ] Signing keys bootstrapped at startup (no errors on first request)
+[ ] GET <basePath>/.well-known/openid-configuration returns valid JSON
+[ ] GET <basePath>/.well-known/jwks.json returns at least one key
+[ ] OAuth app created via auth.idp.apps.create() or seed script
+[ ] Authorization code flow completes successfully with a test client
+[ ] pnpm typecheck passes
+```
 
 ---
 

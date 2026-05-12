@@ -88,6 +88,11 @@ export const users = pgTable('user', {
 });
 
 export const holeauth = createHoleauthTables({ usersTable: users });
+
+// Re-export individual tables so drizzle-kit includes them in migrations.
+// drizzle-kit only detects top-level named exports — it will not recurse
+// into holeauth.tables automatically.
+export const { sessions, accounts, verificationTokens, auditLog } = holeauth.tables;
 ```
 </Tab>
   <Tab value="MySQL">
@@ -106,6 +111,9 @@ export const users = mysqlTable('user', {
 });
 
 export const holeauth = createHoleauthTables({ usersTable: users });
+
+// Re-export individual tables so drizzle-kit includes them in migrations.
+export const { sessions, accounts, verificationTokens, auditLog } = holeauth.tables;
 ```
 </Tab>
   <Tab value="SQLite">
@@ -124,6 +132,9 @@ export const users = sqliteTable('user', {
 });
 
 export const holeauth = createHoleauthTables({ usersTable: users });
+
+// Re-export individual tables so drizzle-kit includes them in migrations.
+export const { sessions, accounts, verificationTokens, auditLog } = holeauth.tables;
 ```
 </Tab>
   <Tab value="Headless">
@@ -145,6 +156,13 @@ export const users = pgTable('user', {
 ```
 </Tab>
 </Tabs>
+
+<Callout type="warn">
+  `createHoleauthTables()` returns a plain object — drizzle-kit will **not** detect tables nested
+  inside it. The re-exports above are required so drizzle-kit includes all holeauth tables
+  (including `holeauth_audit_log`) in your migration. Skipping them causes
+  `relation "holeauth_audit_log" does not exist` errors at runtime.
+</Callout>
 
 Create and configure your database connection:
 
