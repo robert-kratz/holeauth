@@ -1,30 +1,50 @@
 # docker-compose.coolify.yml — monorepo root
 #
 # Deploys BOTH the landing app (port 3000) and the docs app (port 3001) under
-# a SINGLE domain using Traefik path-based routing:
+# a SINGLE public Coolify service named `landing`.
 #
-#   https://<domain>/docs/** → docs container (port 3001)
-#   https://<domain>/**      → landing container (port 3000)
+# Coolify/Traefik routes https://<domain> to the `landing` nginx gateway
+# container on port 80. Nginx then proxies internally:
+#
+#   /docs/** → docs container (port 3001)
+#   /**      → landing-app container (port 3000)
 #
 # The docs app uses Next.js `basePath: '/docs'` so its static assets are
 # served at /docs/_next/static/... and the Traefik PathPrefix rule catches
 # both pages AND assets for the docs container cleanly.
 #
 # Coolify usage:
-#   - Set SERVICE_FQDN_LANDING to your domain (e.g. holeauth.dev).
-#     Coolify generates this automatically from the service configuration.
-#   - Both Traefik routers reference the same variable, creating one FQDN.
-#   - NEXT_PUBLIC_LANDING_URL is passed as a Docker build arg so the baked-in
-#     JS bundle in the docs app knows how to link back to the landing site.
+#   - Attach the production domain to the `landing` service only.
+#   - Leave `docs` and `landing-app` without public domains.
+#   - The docs app gets NEXT_PUBLIC_LANDING_URL at build time so its sidebar
+#     link points back to the landing site.
 
 services:
-  # ── Landing / Marketing site ─────────────────────────────────────────────
+  # ── Public gateway ────────────────────────────────────────────────────────
+  # Coolify should attach holeauth.dev to this service. It proxies internally
+  # to the two Next.js standalone containers below.
   landing:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    expose:
+      - "80"
+    volumes:
+      - ./deploy/coolify/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - landing-app
+      - docs
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Landing / Marketing site ─────────────────────────────────────────────
+  landing-app:
     build:
       context: .
       dockerfile: apps/landing/Dockerfile
-      # NEXT_PUBLIC_DOCS_URL is left empty in production because docs links
-      # resolve as /docs/... on the same origin via Traefik routing.
       args:
         NEXT_PUBLIC_DOCS_URL: ""
     restart: unless-stopped
@@ -35,15 +55,6 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.holeauth-landing.rule=Host(`holeauth.dev`)"
-      - "traefik.http.routers.holeauth-landing.entrypoints=https"
-      - "traefik.http.routers.holeauth-landing.tls=true"
-      - "traefik.http.routers.holeauth-landing.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.holeauth-landing.priority=1"
-      - "traefik.http.routers.holeauth-landing.service=holeauth-landing"
-      - "traefik.http.services.holeauth-landing.loadbalancer.server.port=3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
       interval: 30s
@@ -66,18 +77,6 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       PORT: "3001"
       HOSTNAME: "0.0.0.0"
-    labels:
-      - traefik.enable=true
-      # PathPrefix(/docs) is more specific → Traefik gives it higher priority
-      # than the Coolify-managed landing router. Next.js basePath ensures
-      # /docs/_next/static/... assets also match this rule.
-      - "traefik.http.routers.holeauth-docs.rule=Host(`holeauth.dev`) && PathPrefix(`/docs`)"
-      - "traefik.http.routers.holeauth-docs.entrypoints=https"
-      - "traefik.http.routers.holeauth-docs.tls=true"
-      - "traefik.http.routers.holeauth-docs.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.holeauth-docs.priority=10"
-      - "traefik.http.routers.holeauth-docs.service=holeauth-docs"
-      - "traefik.http.services.holeauth-docs.loadbalancer.server.port=3001"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/docs/"]
       interval: 30s
