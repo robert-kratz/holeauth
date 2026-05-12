@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { landingUrl } from '@/lib/landing-url';
 
 export const metadata: Metadata = {
   title: '404 — Page not found',
@@ -72,7 +73,7 @@ export default function NotFound() {
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
         <a
-          href="/docs"
+          href="/"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -89,7 +90,7 @@ export default function NotFound() {
           Docs home
         </a>
         <a
-          href="/"
+          href={landingUrl('/')}
           style={{
             display: 'inline-flex',
             alignItems: 'center',

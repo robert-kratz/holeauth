@@ -6,7 +6,7 @@ import { source } from '@/lib/source';
 export default async function Page({ params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug } = await params;
 
-  // Redirect bare /docs/ → /docs/getting-started (basePath prepends /docs).
+  // Redirect bare / → /getting-started (docs landing page on the subdomain).
   if (!slug || slug.length === 0) {
     redirect('/getting-started');
   }

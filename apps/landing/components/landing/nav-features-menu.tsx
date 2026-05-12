@@ -16,7 +16,7 @@ import {
 import { FEATURES_BY_CATEGORY, type FeatureData } from '@/lib/features-data';
 import Link from 'next/link';
 
-/** Maps a feature's docsHref (/docs/packages/plugin-2fa) → docsUrl(/packages/plugin-2fa) */
+/** Maps a feature's docsHref (legacy '/docs/...' or '/...') to an absolute docs subdomain URL. */
 function featureDocsUrl(feature: FeatureData): string {
   const path = feature.docsHref.replace(/^\/docs/, '') || '/';
   return docsUrl(path);

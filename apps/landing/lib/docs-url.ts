@@ -1,17 +1,17 @@
 /**
  * Resolves a URL inside the docs (Fumadocs) app.
  *
- * Production (same domain): NEXT_PUBLIC_DOCS_URL is not set → returns plain
- * path like /docs/getting-started that Traefik routes to the docs container.
+ * The docs app runs on its own subdomain (docs.holeauth.dev in production,
+ * http://localhost:3001 in dev). `NEXT_PUBLIC_DOCS_URL` must be set to the
+ * absolute origin of that host — there is no longer a `/docs` subpath.
  *
- * Dev: set NEXT_PUBLIC_DOCS_URL=http://localhost:3001 in apps/landing/.env.local
- * so cross-app links reach the docs dev server on port 3001.
+ * Production: NEXT_PUBLIC_DOCS_URL=https://docs.holeauth.dev
+ * Dev:        NEXT_PUBLIC_DOCS_URL=http://localhost:3001
  */
 const BASE = (process.env.NEXT_PUBLIC_DOCS_URL ?? '').replace(/\/+$/, '');
 
 export function docsUrl(path: string = '/'): string {
   if (!path.startsWith('/')) path = `/${path}`;
-  // The docs app sits under /docs (fumadocs baseUrl + basePath).
-  if (path === '/') return `${BASE}/docs`;
-  return `${BASE}/docs${path}`;
+  if (path === '/') return `${BASE}/`;
+  return `${BASE}${path}`;
 }

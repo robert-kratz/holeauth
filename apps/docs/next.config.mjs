@@ -4,10 +4,9 @@ const withMDX = createMDX();
 
 /** @type {import('next').NextConfig} */
 const config = {
-  // All routes in this app are served under /docs on the shared domain.
-  // Traefik's PathPrefix(/docs) rule routes both pages (/docs/...) and
-  // static assets (/docs/_next/static/...) to this container cleanly.
-  basePath: '/docs',
+  // The docs app is served on its own subdomain (docs.holeauth.dev).
+  // No basePath: routes live at the root of the host (e.g. /, /getting-started).
+  // Static assets are served from /_next/static/... on the same subdomain.
   output: 'standalone',
 };
 

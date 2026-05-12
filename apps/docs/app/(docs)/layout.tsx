@@ -3,10 +3,11 @@ import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { source } from '@/lib/source';
 import { Github, Home } from 'lucide-react';
 
-// The landing site lives on the same domain in production (e.g. https://holeauth.dev).
+// The landing site lives on its own host (https://holeauth.dev in production).
 // In dev it's on localhost:3000, provided via NEXT_PUBLIC_LANDING_URL in .env.local.
-// We always use a plain <a> tag (not Next.js <Link>) for cross-app navigation so
-// that basePath: '/docs' is never prepended to landing-bound hrefs.
+// Because the docs app no longer uses a basePath, ordinary Next.js <Link>s
+// stay within the docs subdomain. Cross-app links must still be plain <a>
+// tags so the browser performs a real navigation to the other host.
 const LANDING = process.env.NEXT_PUBLIC_LANDING_URL ?? '';
 
 /** Gradient orb + wordmark — no <a> here; Fumadocs wraps nav.title in its own Link */
@@ -99,7 +100,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       nav={{
         // nav.url tells Fumadocs where the title Link should point.
         // In dev: LANDING = 'http://localhost:3000' → links to landing app.
-        // In prod: LANDING = '' → '/' → Next.js prepends basePath → '/docs/' (docs home).
+        // In prod: LANDING = 'https://holeauth.dev' → cross-host link back to landing.
         url: LANDING || '/',
         title: HoleauthLogo,
       }}

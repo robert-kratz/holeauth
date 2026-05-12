@@ -1,14 +1,15 @@
 /**
  * Resolves a URL inside the landing/marketing app.
  *
- * Production (same domain): NEXT_PUBLIC_LANDING_URL is not set → returns a
- * plain path like / that the browser resolves on the same domain (landing).
+ * The landing site runs on its own host (holeauth.dev in production,
+ * http://localhost:3000 in dev). `NEXT_PUBLIC_LANDING_URL` must be set to
+ * the absolute origin of that host.
  *
- * Dev: set NEXT_PUBLIC_LANDING_URL=http://localhost:3000 in apps/docs/.env.local
- * so cross-app links reach the landing dev server on port 3000.
+ * Production: NEXT_PUBLIC_LANDING_URL=https://holeauth.dev
+ * Dev:        NEXT_PUBLIC_LANDING_URL=http://localhost:3000
  *
  * Note: always use the returned value in a plain <a> tag, never in Next.js
- * <Link>, because basePath (/docs) would otherwise be prepended.
+ * <Link>, so the browser performs a real cross-host navigation.
  */
 const BASE = (process.env.NEXT_PUBLIC_LANDING_URL ?? '').replace(/\/+$/, '');
 

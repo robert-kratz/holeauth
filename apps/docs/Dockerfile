@@ -26,8 +26,9 @@ COPY packages    packages
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # NEXT_PUBLIC_* vars are baked into the JS bundle at build time.
-# Pass --build-arg NEXT_PUBLIC_LANDING_URL=https://yourdomain.com so the docs
-# sidebar "Landing page" link correctly navigates to the marketing site.
+# Pass --build-arg NEXT_PUBLIC_LANDING_URL=https://holeauth.dev so the docs
+# sidebar "Landing page" link correctly navigates to the marketing site on
+# its own host (docs runs on docs.holeauth.dev).
 ARG NEXT_PUBLIC_LANDING_URL=""
 ENV NEXT_PUBLIC_LANDING_URL=${NEXT_PUBLIC_LANDING_URL}
 

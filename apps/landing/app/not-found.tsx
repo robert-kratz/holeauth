@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { docsUrl } from '@/lib/docs-url';
 
 export const metadata: Metadata = {
   title: '404 — Page not found',
@@ -86,7 +87,7 @@ export default function NotFound() {
           Back to home
         </Link>
         <a
-          href="/docs"
+          href={docsUrl('/')}
           style={{
             display: 'inline-flex',
             alignItems: 'center',

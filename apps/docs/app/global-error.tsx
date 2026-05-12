@@ -99,7 +99,7 @@ export default function GlobalError({
             Try again
           </button>
           <a
-            href="/docs"
+            href="/"
             style={{
               display: 'inline-flex',
               alignItems: 'center',

@@ -26,8 +26,8 @@ COPY packages     packages
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # NEXT_PUBLIC_* vars are baked into the JS bundle at build time.
-# In production (same domain), NEXT_PUBLIC_DOCS_URL can be left empty so
-# links resolve as /docs/... on the same origin via Traefik routing.
+# Docs runs on its own subdomain (docs.holeauth.dev). Pass the absolute URL
+# at build time, e.g. --build-arg NEXT_PUBLIC_DOCS_URL=https://docs.holeauth.dev.
 # In dev set NEXT_PUBLIC_DOCS_URL=http://localhost:3001 in .env.local.
 ARG NEXT_PUBLIC_DOCS_URL=""
 ENV NEXT_PUBLIC_DOCS_URL=${NEXT_PUBLIC_DOCS_URL}
