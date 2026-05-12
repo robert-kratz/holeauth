@@ -1,7 +1,6 @@
 ---
 "@holeauth/core": patch
 "@holeauth/adapter-drizzle": patch
-"@holeauth/nextjs": patch
 "@holeauth/react": patch
 "@holeauth/plugin-2fa": patch
 "@holeauth/plugin-rbac": patch
