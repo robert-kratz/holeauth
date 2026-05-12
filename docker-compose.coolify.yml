@@ -3,26 +3,13 @@
 # Deploys BOTH the landing app (port 3000) and the docs app (port 3001) under
 # a SINGLE public Coolify service named `landing`.
 #
-# Coolify/Traefik routes https://<domain> to the `landing` nginx gateway
-# container on port 80. Nginx then proxies internally:
-#
-#   /docs/** → docs container (port 3001)
-#   /**      → landing-app container (port 3000)
-#
-# The docs app uses Next.js `basePath: '/docs'` so its static assets are
-# served at /docs/_next/static/... and the Traefik PathPrefix rule catches
-# both pages AND assets for the docs container cleanly.
-#
-# Coolify usage:
-#   - Attach the production domain to the `landing` service only.
-#   - Leave `docs` and `landing-app` without public domains.
-#   - The docs app gets NEXT_PUBLIC_LANDING_URL at build time so its sidebar
-#     link points back to the landing site.
+# Coolify/Traefik routes https://holeauth.dev to the `landing` nginx gateway
+# container on port 80. Nginx then proxies internally.
 
 services:
   # ── Public gateway ────────────────────────────────────────────────────────
-  # Coolify should attach holeauth.dev to this service. It proxies internally
-  # to the two Next.js standalone containers below.
+  # Coolify nutzt das Feld "Domains for landing" aus der UI, um diesen Dienst 
+  # an holeauth.dev zu binden. Manuelle Labels sind hier nicht nötig.
   landing:
     build:
       context: .
@@ -30,15 +17,6 @@ services:
     restart: unless-stopped
     expose:
       - "80"
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.holeauth.rule=Host(`holeauth.dev`)"
-      - "traefik.http.routers.holeauth.entrypoints=https"
-      - "traefik.http.routers.holeauth.tls=true"
-      - "traefik.http.routers.holeauth.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.holeauth.priority=100"
-      - "traefik.http.routers.holeauth.service=holeauth"
-      - "traefik.http.services.holeauth.loadbalancer.server.port=80"
     depends_on:
       - landing-app
       - docs
