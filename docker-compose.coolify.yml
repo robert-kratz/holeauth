@@ -30,6 +30,15 @@ services:
     restart: unless-stopped
     expose:
       - "80"
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.holeauth.rule=Host(`holeauth.dev`)"
+      - "traefik.http.routers.holeauth.entrypoints=https"
+      - "traefik.http.routers.holeauth.tls=true"
+      - "traefik.http.routers.holeauth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.holeauth.priority=100"
+      - "traefik.http.routers.holeauth.service=holeauth"
+      - "traefik.http.services.holeauth.loadbalancer.server.port=80"
     depends_on:
       - landing-app
       - docs
