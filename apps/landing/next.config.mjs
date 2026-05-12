@@ -4,11 +4,25 @@ const config = {
   output: 'standalone',
   images: { unoptimized: true },
   trailingSlash: true,
-  // The landing app inherits the same lax type-checking posture as the docs
-  // app (which used to host this code). Type errors are still surfaced by
-  // `pnpm typecheck` and IDE diagnostics; we just don't block production
-  // builds on them.
   typescript: { ignoreBuildErrors: true },
+
+  async redirects() {
+    return [
+      // Permanent redirect: any /docs/... path → docs.holeauth.dev/...
+      // Strips the /docs prefix since the new subdomain has no basePath.
+      {
+        source: '/docs/:path*',
+        destination: 'https://docs.holeauth.dev/:path*',
+        permanent: true,
+      },
+      // Bare /docs → docs root
+      {
+        source: '/docs',
+        destination: 'https://docs.holeauth.dev/',
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default config;
