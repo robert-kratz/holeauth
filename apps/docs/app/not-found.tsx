@@ -9,7 +9,9 @@ export default function NotFound() {
   return (
     <div
       style={{
-        minHeight: '100svh',
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

@@ -431,7 +431,7 @@ export async function linkGoogleAccount() {
 }
 ```
 
-Then modify your authorize route to accept the `link` query parameter and pass it to the callback. This is an advanced pattern — see [Account linking](/guides/account-linking) for a full implementation.
+Then modify your authorize route to accept the `link` query parameter and pass it to the callback. This is an advanced pattern — see [Account linking](/sso/consumer) for a full implementation.
 </Step>
 </Steps>
 
@@ -445,7 +445,7 @@ Then modify your authorize route to accept the `link` query parameter and pass i
 6. Holeauth creates a user row (if new) or links the account (if `allowDangerousEmailAccountLinking: true` and email matches), creates a session, and sets access and refresh cookies.
 7. User is redirected to `/` (or the `redirectTo` query parameter).
 
-See [SSO](/guides/sso) for a detailed flow diagram and security considerations.
+See [SSO](/sso) for a detailed flow diagram and security considerations.
 
 ## Next steps
 
@@ -457,7 +457,7 @@ See [SSO](/guides/sso) for a detailed flow diagram and security considerations.
   />
   <Card
     title="Account linking"
-    href="/guides/account-linking"
+    href="/sso/consumer"
     description="Let users link multiple SSO accounts to one profile."
   />
 </Cards>

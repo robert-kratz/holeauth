@@ -8,8 +8,8 @@ const COLS: { title: string; links: { label: string; href: string; external?: bo
     links: [
       { label: 'docs', href: docsUrl('/'), external: true },
       { label: 'packages', href: docsUrl('/packages'), external: true },
-      { label: 'guides', href: docsUrl('/guides'), external: true },
-      { label: 'configuration', href: docsUrl('/configuration'), external: true },
+      { label: 'getting started', href: docsUrl('/getting-started'), external: true },
+      { label: 'concepts', href: docsUrl('/concepts'), external: true },
     ],
   },
   {

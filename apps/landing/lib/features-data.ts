@@ -777,7 +777,7 @@ const session = await auth.verifySession(token);
 console.log('signed in as', session?.user.email);`,
       },
     ],
-    docsHref: '/docs/adapters/headless',
+    docsHref: '/docs/concepts/adapters',
   },
 
   // ── Drizzle ────────────────────────────────────────────────────────────────
@@ -949,7 +949,7 @@ export default async function DashboardPage() {
 }`,
       },
     ],
-    docsHref: '/docs/getting-started/nextjs',
+    docsHref: '/docs/getting-started/nextjs-app-router',
   },
 
   // ── Next.js Pages Router ─────────────────────────────────────────────────
@@ -1015,7 +1015,7 @@ export default function Dashboard({ email }: { email: string }) {
 }`,
       },
     ],
-    docsHref: '/docs/getting-started/nextjs',
+    docsHref: '/docs/getting-started/nextjs-pages-router',
   },
 
   // ── Express ──────────────────────────────────────────────────────────────

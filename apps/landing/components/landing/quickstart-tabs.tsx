@@ -125,7 +125,7 @@ export function QuickstartTabs({ authTsHtml, routeHtml, routeFile }: Props) {
 
         <div className="mt-8 text-center">
           <Link
-            href={docsUrl('/getting-started/nextjs')}
+            href={docsUrl('/getting-started/nextjs-app-router')}
             className="inline-flex items-center gap-1.5 text-[13px] text-ink-dim transition hover:text-ink"
           >
             see the full guide

@@ -370,7 +370,7 @@ When a provider is configured:
 5. If the account exists, holeauth issues session tokens. If not, holeauth creates a new user and links the account.
 6. Session cookies are set, and the user is redirected to the `returnTo` URL or `/`.
 
-See [SSO Concepts](/concepts/sso) for details on account linking and email verification.
+See [SSO](/sso) for details on account linking and email verification.
 
 ## Configuration reference
 
@@ -439,7 +439,7 @@ Microsoft-specific options:
 
 By default, holeauth links SSO accounts to existing users by email. If a user with the same email already exists, the SSO account is linked to that user. To disable this (and require explicit account linking), set `allowDangerousEmailAccountLinking: false` in your auth configuration.
 
-See [Account Linking](/concepts/account-linking) for details and security considerations.
+See [Account Linking](/sso/consumer) for details and security considerations.
 
 ## Next steps
 
@@ -451,7 +451,7 @@ See [Account Linking](/concepts/account-linking) for details and security consid
   />
   <Card
     title="SSO Concepts"
-    href="/concepts/sso"
+    href="/sso"
     description="Learn how account linking and provider discovery work."
   />
   <Card

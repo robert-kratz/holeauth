@@ -159,7 +159,7 @@ roles:
 ```
 
 <Callout type="info">
-  The YAML schema supports permission negation (`!permission:name`), group inheritance, and wildcard permissions (`resource:*` or `*`). See [`@holeauth/rbac-yaml`](/packages/rbac-yaml) for the full syntax.
+  The YAML schema supports permission negation (`!permission:name`), group inheritance, and wildcard permissions (`resource:*` or `*`). See [`@holeauth/rbac-yaml`](/packages/plugin-rbac/yaml) for the full syntax.
 </Callout>
 </Step>
 
@@ -411,7 +411,7 @@ The RBAC plugin:
    - Returning the final set of allowed permissions.
 4. The `can` / `canAll` / `canAny` helpers match the requested permission(s) against the user effective permissions, supporting wildcards (`resource:*` or `*`).
 
-See [RBAC Concepts](/concepts/rbac) for details on permission resolution order and wildcard matching.
+See [@holeauth/plugin-rbac](/packages/plugin-rbac) for details on permission resolution order and wildcard matching.
 
 ## Configuration reference
 
@@ -445,12 +445,12 @@ See [RBAC Concepts](/concepts/rbac) for details on permission resolution order a
   />
   <Card
     title="RBAC YAML"
-    href="/packages/rbac-yaml"
+    href="/packages/plugin-rbac/yaml"
     description="Full YAML schema reference for groups, roles, and permissions."
   />
   <Card
     title="RBAC Concepts"
-    href="/concepts/rbac"
+    href="/packages/plugin-rbac"
     description="Learn how permission resolution and wildcard matching work."
   />
 </Cards>
