@@ -14,6 +14,13 @@ const TABS: { id: Framework; label: string; badge?: string }[] = [
   { id: 'hono',         label: 'Hono'                           },
 ];
 
+const GUIDE_PATH: Record<Framework, string> = {
+  'app-router':   '/getting-started/nextjs-app-router',
+  'pages-router': '/getting-started/nextjs-pages-router',
+  express:        '/getting-started/express',
+  hono:           '/getting-started/hono',
+};
+
 interface Props {
   authTsHtml: string;
   routeHtml: Record<Framework, string>;
@@ -125,7 +132,7 @@ export function QuickstartTabs({ authTsHtml, routeHtml, routeFile }: Props) {
 
         <div className="mt-8 text-center">
           <Link
-            href={docsUrl('/getting-started/nextjs-app-router')}
+            href={docsUrl(GUIDE_PATH[active])}
             className="inline-flex items-center gap-1.5 text-[13px] text-ink-dim transition hover:text-ink"
           >
             see the full guide

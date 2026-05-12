@@ -46,7 +46,7 @@ const GROUPS: Group[] = [
     title: 'rbac',
     rows: [
       { label: 'roles + groups + wildcard perms', cells: ['yes', 'yes', 'yes', 'yes'], docsPath: '/packages/plugin-rbac' },
-      { label: 'rbac yaml config', cells: ['yes', 'yes', 'yes', 'manual'], docsPath: '/packages/rbac-yaml' },
+      { label: 'rbac yaml config', cells: ['yes', 'yes', 'yes', 'manual'], docsPath: '/packages/plugin-rbac/yaml' },
       { label: 'client useRbac', cells: ['yes', 'yes', 'na', 'na'], docsPath: '/packages/react' },
     ],
   },
