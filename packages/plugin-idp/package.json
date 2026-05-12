@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/plugin-idp",
-  "version": "0.0.2-alpha.0",
+  "version": "1.0.0-alpha.1",
   "description": "holeauth plugin: OIDC / OAuth2 Identity Provider (issue tokens to third-party apps).",
   "license": "MIT",
   "author": "Robert Kratz",

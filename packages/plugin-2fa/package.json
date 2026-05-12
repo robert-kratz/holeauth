@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/plugin-2fa",
-  "version": "0.0.2-alpha.0",
+  "version": "1.0.0-alpha.1",
   "description": "holeauth plugin: TOTP-based second-factor authentication.",
   "license": "MIT",
   "author": "Robert Kratz",
