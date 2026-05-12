@@ -254,7 +254,7 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
           const accessTtl = rctx.plugin.config.tokens?.accessTtl ?? 900;
           const refreshTtl = rctx.plugin.config.tokens?.refreshTtl ?? 2592000;
           rctx.setCookie({ name: `${prefix}.at`, value: tokens.accessToken, maxAge: accessTtl, httpOnly: true, path: '/' });
-          rctx.setCookie({ name: `${prefix}.rt`, value: tokens.refreshToken, maxAge: refreshTtl, httpOnly: true, path: '/api/auth' });
+          rctx.setCookie({ name: `${prefix}.rt`, value: tokens.refreshToken, maxAge: refreshTtl, httpOnly: true, path: '/' });
           rctx.setCookie({ name: `${prefix}.csrf`, value: tokens.csrfToken, maxAge: refreshTtl, httpOnly: false, path: '/' });
           rctx.setCookie({ name: `${prefix}.passkey.challenge`, value: '', maxAge: 0, httpOnly: true, path: '/' });
           return new Response(
@@ -265,6 +265,43 @@ export function passkey(options: PasskeyOptions): PasskeyPlugin {
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },
           );
+        },
+      },
+      {
+        method: 'GET', path: '/passkey/list',
+        requireAuth: true,
+        async handler(rctx) {
+          const s = await rctx.getSession();
+          if (!s) return jsonError('UNAUTHENTICATED', 401);
+          const api = rctx.plugin.getPlugin<PasskeyApi>(PLUGIN_ID);
+          const records = await api.list(s.userId);
+          const safe = records.map((r) => ({
+            id: r.id,
+            credentialId: r.credentialId,
+            deviceName: r.deviceName ?? null,
+            transports: r.transports ?? null,
+            createdAt: r.createdAt ? r.createdAt.toISOString() : null,
+          }));
+          return new Response(JSON.stringify({ passkeys: safe }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+          });
+        },
+      },
+      {
+        method: 'POST', path: '/passkey/delete',
+        requireAuth: true, requireCsrf: true,
+        async handler(rctx) {
+          const s = await rctx.getSession();
+          if (!s) return jsonError('UNAUTHENTICATED', 401);
+          const raw = rctx.body['credentialId'];
+          if (typeof raw !== 'string' || raw.length === 0) {
+            return jsonError('BAD_REQUEST', 400, { message: 'credentialId required' });
+          }
+          const api = rctx.plugin.getPlugin<PasskeyApi>(PLUGIN_ID);
+          await api.delete(s.userId, raw);
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+          });
         },
       },
     ],

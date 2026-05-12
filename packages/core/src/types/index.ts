@@ -7,7 +7,7 @@ import type {
   TransactionAdapter,
   AdapterUser,
 } from '../adapters/index.js';
-import type { HoleauthEvent } from '../events/types.js';
+import type { HoleauthEvent, HoleauthEventType } from '../events/types.js';
 import type { HoleauthPlugin } from '../plugins/types.js';
 
 export interface TokenPolicy {
@@ -244,4 +244,21 @@ export interface HoleauthInstance {
       input: { code: string; state: string; codeVerifier: string; ip?: string; userAgent?: string },
     ): Promise<{ user: AdapterUser; tokens: IssuedTokens }>;
   };
+
+  /**
+   * Subscribe to an event emitted by this auth instance.
+   * Shorthand for `import { events } from '@holeauth/core'; events.subscribe(auth.config, type, handler)`.
+   *
+   * @param type - Well-known event type (autocompleted) or any plugin-namespaced string.
+   * @param handler - Async-safe handler; errors are swallowed to avoid blocking flows.
+   * @returns An unsubscribe function.
+   *
+   * @example
+   * ```ts
+   * auth.on('user.registered', async (e) => {
+   *   await assignDefaultGroup(e.userId);
+   * });
+   * ```
+   */
+  on(type: HoleauthEventType, handler: (e: HoleauthEvent) => void | Promise<void>): () => void;
 }

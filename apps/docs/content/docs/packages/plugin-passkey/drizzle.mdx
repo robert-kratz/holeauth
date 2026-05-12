@@ -1,0 +1,315 @@
+---
+title: "@holeauth/passkey-drizzle"
+description: Drizzle ORM adapter for passkey credential storage across PostgreSQL, MySQL, and SQLite.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/passkey-drizzle
+
+Drizzle ORM adapter for `@holeauth/plugin-passkey` supporting PostgreSQL, MySQL, and SQLite.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/passkey-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/passkey-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/passkey-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/passkey-drizzle
+```
+</Tab>
+</Tabs>
+
+## Subpath Exports
+
+This package provides dialect-specific entry points:
+
+- `@holeauth/passkey-drizzle/pg` — PostgreSQL
+- `@holeauth/passkey-drizzle/mysql` — MySQL
+- `@holeauth/passkey-drizzle/sqlite` — SQLite
+
+All three expose the same API: `createPasskeyTables` and `createPasskeyAdapter`.
+
+## Usage by Dialect
+
+<Tabs items={['PostgreSQL', 'MySQL', 'SQLite']}>
+  <Tab value="PostgreSQL">
+    ```ts title="db/schema.ts"
+    import { pgTable, text } from 'drizzle-orm/pg-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+    import { createPasskeyTables } from '@holeauth/passkey-drizzle/pg';
+
+    export const users = pgTable('users', {
+      id: text('id').primaryKey(),
+      email: text('email').notNull().unique(),
+      name: text('name'),
+      image: text('image'),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const passkeys = createPasskeyTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...passkeys.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...passkeys.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { passkey } from '@holeauth/plugin-passkey';
+    import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/pg';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        passkey({
+          adapter: createPasskeyAdapter({ db, tables }),
+          rpID: 'example.com',
+          rpOrigin: 'https://example.com',
+        }),
+      ],
+    });
+    ```
+  </Tab>
+  <Tab value="MySQL">
+    ```ts title="db/schema.ts"
+    import { mysqlTable, varchar } from 'drizzle-orm/mysql-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+    import { createPasskeyTables } from '@holeauth/passkey-drizzle/mysql';
+
+    export const users = mysqlTable('users', {
+      id: varchar('id', { length: 191 }).primaryKey(),
+      email: varchar('email', { length: 255 }).notNull().unique(),
+      name: varchar('name', { length: 255 }),
+      image: varchar('image', { length: 512 }),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const passkeys = createPasskeyTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...passkeys.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...passkeys.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { passkey } from '@holeauth/plugin-passkey';
+    import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/mysql';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        passkey({
+          adapter: createPasskeyAdapter({ db, tables }),
+          rpID: 'example.com',
+          rpOrigin: 'https://example.com',
+        }),
+      ],
+    });
+    ```
+  </Tab>
+  <Tab value="SQLite">
+    ```ts title="db/schema.ts"
+    import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+    import { createPasskeyTables } from '@holeauth/passkey-drizzle/sqlite';
+
+    export const users = sqliteTable('users', {
+      id: text('id').primaryKey(),
+      email: text('email').notNull().unique(),
+      name: text('name'),
+      image: text('image'),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const passkeys = createPasskeyTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...passkeys.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...passkeys.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { passkey } from '@holeauth/plugin-passkey';
+    import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/sqlite';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        passkey({
+          adapter: createPasskeyAdapter({ db, tables }),
+          rpID: 'example.com',
+          rpOrigin: 'https://example.com',
+        }),
+      ],
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## API Reference
+
+### createPasskeyTables()
+
+Creates Drizzle table definitions for passkey credentials.
+
+```ts
+function createPasskeyTables<U extends UsersTable>(
+  options: CreatePasskeyTablesOptions<U>
+): { tables: { passkeys: ... }; relations: { passkeysRelations: ... } }
+```
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table (must have an `id` column).',
+      type: 'DrizzleTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Prefix for the generated table name.',
+      type: 'string',
+      default: '"holeauth_passkey_"',
+    },
+  }}
+/>
+
+**Returns**
+
+An object with:
+
+- `tables.passkeys` — Drizzle table with columns: `id` (PK), `userId` (FK cascade), `credentialId` (unique), `publicKey`, `counter`, `transports`, `deviceName`, `createdAt`.
+- `relations.passkeysRelations` — Drizzle relation joining `passkeys.userId` to `usersTable.id`.
+
+**Example**
+
+```ts title="db/schema.ts"
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/pg';
+import { users } from './users';
+
+const passkeys = createPasskeyTables({
+  usersTable: users,
+  prefix: 'app_passkey_',
+});
+
+export const tables = { ...passkeys.tables };
+export const relations = { ...passkeys.relations };
+```
+
+### createPasskeyAdapter()
+
+Constructs a `PasskeyAdapter` that implements the plugin's storage interface.
+
+```ts
+function createPasskeyAdapter(
+  options: CreatePasskeyAdapterOptions
+): PasskeyAdapter
+```
+
+<TypeTable
+  type={{
+    db: {
+      description: 'Drizzle database instance.',
+      type: 'DrizzleDB',
+      required: true,
+    },
+    tables: {
+      description: 'Tables object returned by `createPasskeyTables`.',
+      type: 'Tables',
+      required: true,
+    },
+    generateId: {
+      description: 'Function that generates unique IDs for new credentials.',
+      type: '() => string',
+      default: 'crypto.randomUUID',
+    },
+  }}
+/>
+
+**Example**
+
+```ts title="lib/auth.ts"
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/pg';
+import { db } from '@/db';
+import { tables } from '@/db/schema';
+
+const adapter = createPasskeyAdapter({ db, tables });
+```
+
+## Schema Details
+
+The `passkeys` table has the following columns (PostgreSQL example):
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `text` | Primary key |
+| `userId` | `text` | Not null, foreign key → `users.id` (on delete cascade), indexed |
+| `credentialId` | `text` | Not null, unique |
+| `publicKey` | `text` | Not null |
+| `counter` | `integer` | Not null, default `0` |
+| `transports` | `text[]` | Nullable |
+| `deviceName` | `text` | Nullable |
+| `createdAt` | `timestamp` | Not null, default now |
+
+The `counter` column is updated on every successful assertion to prevent replay attacks. A counter regression indicates a cloned authenticator and triggers a verification failure.
+
+## Migration
+
+After defining your schema, generate and run a migration:
+
+```bash
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/plugin-passkey" href="index" description="Learn about the passkey plugin options and API" />
+  <Card title="@holeauth/plugin-rbac" href="/packages/plugin-rbac" description="Add role-based access control" />
+</Cards>

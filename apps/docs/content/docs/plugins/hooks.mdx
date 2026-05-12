@@ -1,0 +1,667 @@
+---
+title: Hooks
+description: Full reference for every hook slot and when they run.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+# Hooks
+
+Plugins register hook functions that run before or after core flows. Hooks are the primary mechanism for plugins to observe and influence authentication events.
+
+## Before vs. after semantics
+
+### Before hooks
+
+`before` hooks run **before** the core flow executes. They may throw to abort the flow. Exceptions propagate to the caller (HTTP dispatcher or application code) and prevent the operation from proceeding.
+
+**Use cases:** Validation, rate limiting, pre-flight checks, custom authorization.
+
+```ts
+import { definePlugin, type PluginContext } from '@holeauth/core/plugins';
+
+export const rateLimiter = () => definePlugin({
+  id: 'rateLimiter' as const,
+  hooks: {
+    signIn: {
+      async before(input, ctx) {
+        const attempts = await checkAttempts(input.email);
+        if (attempts > 5) {
+          throw new Error('Rate limit exceeded');
+        }
+      },
+    },
+  },
+  api: () => ({}),
+});
+```
+
+### After hooks
+
+`after` hooks run **after** the core flow has succeeded. They **cannot abort** the flow. Exceptions from `after` hooks are caught by core, logged via `ctx.logger`, and emitted as `plugin.error` events. The flow continues normally.
+
+**Use cases:** Audit logging, analytics, notifications, cache invalidation, downstream side effects.
+
+```ts
+import { definePlugin, type PluginContext } from '@holeauth/core/plugins';
+
+export const auditLogger = () => definePlugin({
+  id: 'auditLogger' as const,
+  hooks: {
+    signIn: {
+      async after(result, ctx) {
+        await ctx.events.emit({
+          type: 'audit.login',
+          userId: result.user.id,
+          data: { method: result.method, timestamp: Date.now() },
+        });
+      },
+    },
+  },
+  api: () => ({}),
+});
+```
+
+<Callout type="warn">
+  **Never throw from `after` hooks.** Core will catch the exception and emit a `plugin.error` event, but the flow has already completed. If you need to abort a flow, throw from a `before` hook.
+</Callout>
+
+## Challenge hooks
+
+The `signIn.challenge` hook is special: it returns a `ChallengeResult | null` to optionally halt sign-in and require a follow-up verification step (e.g. TOTP code, passkey ceremony, magic link click).
+
+**Semantics:**
+
+- If no plugin returns a `ChallengeResult`, sign-in proceeds normally.
+- If one or more plugins return a `ChallengeResult`, only the **first non-null** wins. Subsequent non-null results trigger a warning and are ignored.
+- The winning plugin's `pluginId` is set in the response, and a short-lived `pendingToken` (JWT) is issued.
+- The client must drive the plugin's follow-up route (e.g. `POST /2fa/verify`) with the pending token + verification data.
+
+```ts
+import { definePlugin, type ChallengeResult, type PluginContext } from '@holeauth/core/plugins';
+import { issuePendingToken } from '@holeauth/core/flows';
+
+export const twofa = () => definePlugin({
+  id: 'twofa' as const,
+  hooks: {
+    signIn: {
+      async challenge(user, input, ctx): Promise<ChallengeResult | null> {
+        const record = await ctx.getPluginAdapter<TwoFactorAdapter>('twofa')?.getByUserId(user.id);
+        if (!record?.enabled) return null;
+
+        const { token, expiresAt } = await issuePendingToken(ctx.config, {
+          userId: user.id,
+          pluginId: 'twofa',
+          ttlSeconds: 300,
+        });
+
+        return {
+          pluginId: 'twofa',
+          pendingToken: token,
+          expiresAt,
+        };
+      },
+    },
+  },
+  api: () => ({}),
+});
+```
+
+## Hook reference
+
+### register
+
+| Slot | Arguments | Returns | Semantics |
+| --- | --- | --- | --- |
+| `before` | `RegisterHookInput, PluginContext` | `Promise<void> \| void` | May throw to abort. |
+| `after` | `AdapterUser, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+
+<TypeTable
+  type={{
+    email: {
+      description: 'Email address being registered.',
+      type: 'string',
+      required: true,
+    },
+    password: {
+      description: 'Plaintext password (hashed by core before persisting).',
+      type: 'string',
+      required: true,
+    },
+    name: {
+      description: 'Optional display name.',
+      type: 'string | null',
+    },
+  }}
+/>
+
+**Example:**
+
+```ts
+hooks: {
+  register: {
+    async before(input, ctx) {
+      if (input.email.endsWith('@blocked.com')) {
+        throw new Error('Domain blocked');
+      }
+    },
+    async after(user, ctx) {
+      await ctx.events.emit({
+        type: 'analytics.user_created',
+        userId: user.id,
+        data: { email: user.email },
+      });
+    },
+  },
+}
+```
+
+### signIn
+
+| Slot | Arguments | Returns | Semantics |
+| --- | --- | --- | --- |
+| `before` | `{ email, ip?, userAgent? }, PluginContext` | `Promise<void> \| void` | May throw to abort. |
+| `challenge` | `AdapterUser, { ip?, userAgent? }, PluginContext` | `Promise<ChallengeResult \| null>` | First non-null wins. |
+| `after` | `{ user, tokens, method }, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+
+**`before` input:**
+
+<TypeTable
+  type={{
+    email: {
+      description: 'Email address being signed in.',
+      type: 'string',
+      required: true,
+    },
+    ip: {
+      description: 'Client IP address (if available).',
+      type: 'string',
+    },
+    userAgent: {
+      description: 'Client User-Agent header (if available).',
+      type: 'string',
+    },
+  }}
+/>
+
+**`challenge` returns:**
+
+<TypeTable
+  type={{
+    pluginId: {
+      description: 'Plugin id (must match the returning plugin).',
+      type: 'string',
+      required: true,
+    },
+    pendingToken: {
+      description: 'Short-lived JWT issued by the plugin.',
+      type: 'string',
+      required: true,
+    },
+    expiresAt: {
+      description: 'Unix-ms expiry.',
+      type: 'number',
+      required: true,
+    },
+    data: {
+      description: 'Arbitrary extra payload echoed back to the caller.',
+      type: 'Record<string, unknown> | null',
+    },
+  }}
+/>
+
+**`after` input:**
+
+<TypeTable
+  type={{
+    user: {
+      description: 'The signed-in user.',
+      type: 'AdapterUser',
+      required: true,
+    },
+    tokens: {
+      description: 'Issued session tokens (accessToken, refreshToken, csrfToken, sessionId, familyId, expiresAt).',
+      type: 'IssuedTokens',
+      required: true,
+    },
+    method: {
+      description: 'Authentication method (\'password\', \'passkey\', \'sso\', or plugin-defined string like \'totp\').',
+      type: 'string',
+      required: true,
+    },
+  }}
+/>
+
+**Example:**
+
+```ts
+hooks: {
+  signIn: {
+    async before(input, ctx) {
+      const blocked = await ctx.getPluginAdapter<BlocklistAdapter>('blocklist')?.isBlocked(input.email);
+      if (blocked) throw new Error('Email blocked');
+    },
+    async challenge(user, input, ctx) {
+      const twofa = await ctx.getPluginAdapter<TwoFactorAdapter>('twofa')?.getByUserId(user.id);
+      if (!twofa?.enabled) return null;
+      const { token, expiresAt } = await issuePendingToken(ctx.config, {
+        userId: user.id,
+        pluginId: 'twofa',
+        ttlSeconds: 300,
+      });
+      return { pluginId: 'twofa', pendingToken: token, expiresAt };
+    },
+    async after(result, ctx) {
+      ctx.logger.info(`User ${result.user.id} signed in via ${result.method}`);
+    },
+  },
+}
+```
+
+### signOut
+
+| Slot | Arguments | Returns | Semantics |
+| --- | --- | --- | --- |
+| `after` | `{ userId, sessionId }, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+
+<TypeTable
+  type={{
+    userId: {
+      description: 'User id (null if session was already invalid).',
+      type: 'string | null',
+    },
+    sessionId: {
+      description: 'Session id (null if session was already invalid).',
+      type: 'string | null',
+    },
+  }}
+/>
+
+**Example:**
+
+```ts
+hooks: {
+  signOut: {
+    async after(data, ctx) {
+      if (data.userId) {
+        await ctx.events.emit({
+          type: 'analytics.user_signed_out',
+          userId: data.userId,
+          data: { sessionId: data.sessionId },
+        });
+      }
+    },
+  },
+}
+```
+
+### refresh
+
+| Slot | Arguments | Returns | Semantics |
+| --- | --- | --- | --- |
+| `before` | `{ ip?, userAgent? }, PluginContext` | `Promise<void> \| void` | May throw to abort. |
+| `after` | `{ userId, sessionId, tokens }, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+
+**`before` input:**
+
+<TypeTable
+  type={{
+    ip: {
+      description: 'Client IP address (if available).',
+      type: 'string',
+    },
+    userAgent: {
+      description: 'Client User-Agent header (if available).',
+      type: 'string',
+    },
+  }}
+/>
+
+**`after` input:**
+
+<TypeTable
+  type={{
+    userId: {
+      description: 'User id.',
+      type: 'string',
+      required: true,
+    },
+    sessionId: {
+      description: 'New session id (rotated).',
+      type: 'string',
+      required: true,
+    },
+    tokens: {
+      description: 'New session tokens.',
+      type: 'IssuedTokens',
+      required: true,
+    },
+  }}
+/>
+
+**Example:**
+
+```ts
+hooks: {
+  refresh: {
+    async before(input, ctx) {
+      // Pre-flight check before token rotation
+    },
+    async after(data, ctx) {
+      ctx.logger.info(`Session ${data.sessionId} rotated for user ${data.userId}`);
+    },
+  },
+}
+```
+
+### passwordChange
+
+| Slot | Arguments | Returns | Semantics |
+| --- | --- | --- | --- |
+| `before` | `PasswordChangeHookInput, PluginContext` | `Promise<void> \| void` | May throw to abort. |
+| `after` | `{ userId }, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+
+<TypeTable
+  type={{
+    userId: {
+      description: 'User id.',
+      type: 'string',
+      required: true,
+    },
+    currentPassword: {
+      description: 'Current plaintext password (verified by core).',
+      type: 'string',
+      required: true,
+    },
+    newPassword: {
+      description: 'New plaintext password (hashed by core).',
+      type: 'string',
+      required: true,
+    },
+  }}
+/>
+
+**Example:**
+
+```ts
+hooks: {
+  passwordChange: {
+    async before(input, ctx) {
+      if (input.newPassword.length < 8) {
+        throw new Error('Password too short');
+      }
+    },
+    async after(data, ctx) {
+      await ctx.events.emit({
+        type: 'audit.password_changed',
+        userId: data.userId,
+        data: { timestamp: Date.now() },
+      });
+    },
+  },
+}
+```
+
+### passwordReset
+
+| Slot | Arguments | Returns | Semantics |
+| --- | --- | --- | --- |
+| `before` | `PasswordResetHookInput, PluginContext` | `Promise<void> \| void` | May throw to abort. |
+| `after` | `{ userId, stage }, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+
+**`before` input:**
+
+<TypeTable
+  type={{
+    email: {
+      description: 'Email address.',
+      type: 'string',
+      required: true,
+    },
+    token: {
+      description: 'Reset token (present in consume stage).',
+      type: 'string',
+    },
+    newPassword: {
+      description: 'New plaintext password (present in consume stage).',
+      type: 'string',
+    },
+  }}
+/>
+
+**`after` input:**
+
+<TypeTable
+  type={{
+    userId: {
+      description: 'User id.',
+      type: 'string',
+      required: true,
+    },
+    stage: {
+      description: 'Which stage: \'request\' (token issued) or \'consume\' (password updated).',
+      type: "'request' | 'consume'",
+      required: true,
+    },
+  }}
+/>
+
+**Example:**
+
+```ts
+hooks: {
+  passwordReset: {
+    async before(input, ctx) {
+      // Additional validation
+    },
+    async after(data, ctx) {
+      if (data.stage === 'consume') {
+        await ctx.events.emit({
+          type: 'audit.password_reset',
+          userId: data.userId,
+          data: { timestamp: Date.now() },
+        });
+      }
+    },
+  },
+}
+```
+
+### userUpdate
+
+| Slot | Arguments | Returns | Semantics |
+| --- | --- | --- | --- |
+| `after` | `{ user, patch }, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+
+<TypeTable
+  type={{
+    user: {
+      description: 'The updated user record.',
+      type: 'AdapterUser',
+      required: true,
+    },
+    patch: {
+      description: 'The fields that were updated (partial).',
+      type: 'Partial<AdapterUser>',
+      required: true,
+    },
+  }}
+/>
+
+**Example:**
+
+```ts
+hooks: {
+  userUpdate: {
+    async after(data, ctx) {
+      if (data.patch.email) {
+        ctx.logger.info(`User ${data.user.id} changed email to ${data.patch.email}`);
+      }
+    },
+  },
+}
+```
+
+### userDelete
+
+| Slot | Arguments | Returns | Semantics |
+| --- | --- | --- | --- |
+| `after` | `{ userId }, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+
+<TypeTable
+  type={{
+    userId: {
+      description: 'User id.',
+      type: 'string',
+      required: true,
+    },
+  }}
+/>
+
+**Example:**
+
+```ts
+hooks: {
+  userDelete: {
+    async after(data, ctx) {
+      // Purge plugin-specific data
+      const adapter = ctx.getPluginAdapter<TwoFactorAdapter>('twofa');
+      if (adapter) await adapter.delete(data.userId);
+    },
+  },
+}
+```
+
+### session
+
+Session lifecycle hooks run in addition to the flow-specific hooks (signIn, refresh, signOut).
+
+| Slot | Arguments | Returns | Semantics |
+| --- | --- | --- | --- |
+| `onIssue` | `SessionIssueHookData, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+| `onRotate` | `SessionRotateHookData, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+| `onRevoke` | `SessionRevokeHookData, PluginContext` | `Promise<void> \| void` | Non-destructive. |
+
+**`onIssue` input:**
+
+<TypeTable
+  type={{
+    userId: {
+      description: 'User id.',
+      type: 'string',
+      required: true,
+    },
+    sessionId: {
+      description: 'New session id.',
+      type: 'string',
+      required: true,
+    },
+    familyId: {
+      description: 'Refresh token family id (for rotation tracking).',
+      type: 'string',
+      required: true,
+    },
+  }}
+/>
+
+**`onRotate` input:**
+
+<TypeTable
+  type={{
+    userId: {
+      description: 'User id.',
+      type: 'string',
+      required: true,
+    },
+    sessionId: {
+      description: 'New session id (rotated).',
+      type: 'string',
+      required: true,
+    },
+    familyId: {
+      description: 'Refresh token family id (unchanged).',
+      type: 'string',
+      required: true,
+    },
+  }}
+/>
+
+**`onRevoke` input:**
+
+<TypeTable
+  type={{
+    userId: {
+      description: 'User id (null if session was invalid).',
+      type: 'string | null',
+    },
+    sessionId: {
+      description: 'Session id (null if session was invalid).',
+      type: 'string | null',
+    },
+    scope: {
+      description: 'Set to \'all\' when revoking all sessions for the user.',
+      type: "'all'",
+    },
+  }}
+/>
+
+**Example:**
+
+```ts
+hooks: {
+  session: {
+    async onIssue(data, ctx) {
+      ctx.logger.info(`Session ${data.sessionId} issued for user ${data.userId}`);
+    },
+    async onRotate(data, ctx) {
+      ctx.logger.info(`Session ${data.sessionId} rotated for user ${data.userId}`);
+    },
+    async onRevoke(data, ctx) {
+      if (data.scope === 'all') {
+        ctx.logger.warn(`All sessions revoked for user ${data.userId}`);
+      }
+    },
+  },
+}
+```
+
+## Hook error handling
+
+Exceptions from `after` hooks are caught by core and emitted as `plugin.error` events. The flow continues normally.
+
+The `plugin.error` event shape:
+
+```ts
+{
+  type: 'plugin.error',
+  data: {
+    hook: string,       // e.g. 'signIn.after'
+    error: string,      // Error message
+  }
+}
+```
+
+Subscribe to this event to surface plugin errors to an error tracking service:
+
+```ts
+auth.events.on('plugin.error', async (e) => {
+  console.error('Plugin hook failed:', e.data.hook, e.data.error);
+  await reportToSentry(e);
+});
+```
+
+<Callout type="info">
+  Core logs every `plugin.error` via `ctx.logger.error`. You do not need to log them again unless you want custom formatting.
+</Callout>
+
+## Next
+
+<Cards>
+  <Card
+    title="Routes"
+    href="/plugins/routes"
+    description="Mount HTTP endpoints alongside core auth routes."
+  />
+</Cards>

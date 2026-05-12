@@ -1,0 +1,679 @@
+---
+title: Build your own plugin
+description: Step-by-step tutorial building a magic link sign-in plugin.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+# Build your own plugin
+
+This tutorial walks you through building a complete third-party plugin: a **magic link sign-in** system that sends a one-time link via email, bypassing password entry.
+
+<Steps>
+
+<Step>
+
+### Decide the plugin's contract
+
+A magic link plugin needs two flows:
+
+1. **Request:** User submits their email. Plugin generates a token, stores it, and sends an email with a link.
+2. **Consume:** User clicks the link. Plugin verifies the token and issues a session.
+
+The plugin will expose:
+
+```ts
+auth.magicLink.request(email: string): Promise<void>
+auth.magicLink.consume(token: string): Promise<{ userId: string; sessionId: string }>
+```
+
+And two HTTP routes:
+
+- `POST /magic-link/request` (CSRF-protected, no auth required)
+- `GET /magic-link/consume?token=...` (no auth required)
+
+</Step>
+
+<Step>
+
+### Define the plugin adapter interface
+
+The plugin needs to persist tokens. We define a minimal adapter interface:
+
+```ts title="lib/plugins/magicLink/adapter.ts"
+export interface MagicLinkRecord {
+  id: string;
+  email: string;
+  tokenHash: string;
+  expiresAt: Date;
+  createdAt: Date;
+}
+
+export interface MagicLinkAdapter {
+  /**
+   * Store a new token. Tokens are single-use.
+   * Throws if the database operation fails.
+   */
+  createToken(record: Omit<MagicLinkRecord, 'id' | 'createdAt'>): Promise<{ id: string }>;
+
+  /**
+   * Retrieve a token by hash. Returns null if not found or expired.
+   * Does NOT delete the token (consume does that).
+   */
+  findValidToken(tokenHash: string): Promise<MagicLinkRecord | null>;
+
+  /**
+   * Delete a token by id after successful consumption.
+   * Idempotent — does not throw if the token does not exist.
+   */
+  consumeToken(id: string): Promise<void>;
+}
+```
+
+**Why `tokenHash` instead of `token`?**
+
+Tokens are secrets. If the database is compromised, an attacker should not be able to use raw tokens. We hash tokens (SHA-256) before persisting them, similar to password hashing.
+
+</Step>
+
+<Step>
+
+### Implement the plugin file
+
+```ts title="lib/plugins/magicLink/index.ts"
+import { definePlugin, type PluginContext, type PluginRoute } from '@holeauth/core/plugins';
+import { HoleauthError } from '@holeauth/core/errors';
+import { randomBytes, createHash } from 'node:crypto';
+import type { MagicLinkAdapter } from './adapter';
+
+const PLUGIN_ID = 'magicLink' as const;
+const TOKEN_TTL_SECONDS = 600; // 10 minutes
+
+function generateToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function jsonError(code: string, status: number): Response {
+  return new Response(
+    JSON.stringify({ error: { code } }),
+    { status, headers: { 'content-type': 'application/json' } }
+  );
+}
+
+export interface MagicLinkOptions {
+  /**
+   * Email sender implementation. Called by `request()` with the magic link URL.
+   * Consumers implement this to wire their email service (SendGrid, Resend, etc.).
+   */
+  sendEmail: (args: { email: string; url: string }) => Promise<void>;
+  /**
+   * Base URL for constructing the magic link (e.g. 'https://example.com/api/auth').
+   * The plugin appends '/magic-link/consume?token=...'.
+   */
+  baseUrl: string;
+}
+
+export interface MagicLinkApi {
+  request(email: string): Promise<void>;
+  consume(token: string): Promise<{ userId: string; sessionId: string }>;
+}
+
+export const magicLink = (options: MagicLinkOptions) => definePlugin({
+  id: PLUGIN_ID,
+  version: '1.0.0',
+  dependsOn: [],
+
+  routes: [
+    {
+      method: 'POST',
+      path: '/magic-link/request',
+      requireCsrf: true,
+      async handler(ctx): Promise<Response> {
+        const email = ctx.body.email;
+        if (typeof email !== 'string' || !email.includes('@')) {
+          return jsonError('INVALID_EMAIL', 400);
+        }
+
+        try {
+          const api = ctx.plugin.getPlugin<MagicLinkApi>(PLUGIN_ID);
+          await api.request(email);
+          // Silent success for security (don't leak whether email exists)
+          return new Response(
+            JSON.stringify({ ok: true, message: 'If the email exists, a magic link has been sent.' }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        } catch (err) {
+          ctx.plugin.logger.error('magicLink: request failed', err);
+          return jsonError('INTERNAL_ERROR', 500);
+        }
+      },
+    },
+    {
+      method: 'GET',
+      path: '/magic-link/consume',
+      async handler(ctx): Promise<Response> {
+        const token = new URL(ctx.req.url).searchParams.get('token');
+        if (!token) return jsonError('MISSING_TOKEN', 400);
+
+        try {
+          const api = ctx.plugin.getPlugin<MagicLinkApi>(PLUGIN_ID);
+          const { userId, sessionId } = await api.consume(token);
+
+          // Retrieve session tokens (api.consume already issued them via completeSignIn)
+          const session = await ctx.getSession();
+          if (!session) {
+            ctx.plugin.logger.error('magicLink: session not found after consume');
+            return jsonError('SESSION_ERROR', 500);
+          }
+
+          // Redirect to dashboard (consumers can customize by catching the success and redirecting elsewhere)
+          return new Response(null, {
+            status: 302,
+            headers: { Location: '/dashboard' },
+          });
+        } catch (err) {
+          ctx.plugin.logger.error('magicLink: consume failed', err);
+          if (err instanceof HoleauthError) {
+            return jsonError(err.code, err.status);
+          }
+          return jsonError('INTERNAL_ERROR', 500);
+        }
+      },
+    },
+  ] satisfies PluginRoute[],
+
+  api(ctx: PluginContext): MagicLinkApi {
+    const adapter = ctx.getPluginAdapter<MagicLinkAdapter>(PLUGIN_ID);
+    if (!adapter) {
+      throw new Error(
+        'MagicLinkAdapter not configured. Pass it via pluginAdapters.magicLink.'
+      );
+    }
+
+    return {
+      async request(email) {
+        // Look up user by email
+        const user = await ctx.core.getUserByEmail(email);
+        if (!user) {
+          // Silent failure for security
+          ctx.logger.info(`magicLink: request for non-existent email: ${email}`);
+          return;
+        }
+
+        // Generate token
+        const token = generateToken();
+        const tokenHash = hashToken(token);
+        const expiresAt = new Date(Date.now() + TOKEN_TTL_SECONDS * 1000);
+
+        // Persist token
+        await adapter.createToken({ email, tokenHash, expiresAt });
+
+        // Construct magic link
+        const url = `${options.baseUrl}/magic-link/consume?token=${token}`;
+
+        // Send email (consumer-provided implementation)
+        try {
+          await options.sendEmail({ email, url });
+        } catch (err) {
+          ctx.logger.error('magicLink: sendEmail failed', err);
+          throw new HoleauthError('EMAIL_SEND_FAILED', 'Failed to send magic link', 500);
+        }
+
+        // Emit event
+        await ctx.events.emit({
+          type: 'magicLink.requested',
+          userId: user.id,
+          data: { email },
+        });
+
+        ctx.logger.info(`magicLink: sent to ${email}`);
+      },
+
+      async consume(token) {
+        // Hash token and look up
+        const tokenHash = hashToken(token);
+        const record = await adapter.findValidToken(tokenHash);
+
+        if (!record) {
+          throw new HoleauthError('INVALID_TOKEN', 'Magic link is invalid or expired', 400);
+        }
+
+        // Check expiry
+        if (record.expiresAt < new Date()) {
+          await adapter.consumeToken(record.id); // Clean up expired token
+          throw new HoleauthError('EXPIRED_TOKEN', 'Magic link has expired', 400);
+        }
+
+        // Look up user
+        const user = await ctx.core.getUserByEmail(record.email);
+        if (!user) {
+          await adapter.consumeToken(record.id);
+          throw new HoleauthError('USER_NOT_FOUND', 'User not found', 404);
+        }
+
+        // Consume token (single-use)
+        await adapter.consumeToken(record.id);
+
+        // Issue session via completeSignIn (runs signIn.after hooks)
+        const { tokens } = await ctx.core.completeSignIn(user.id, {
+          method: 'magic_link',
+        });
+
+        // Emit event
+        await ctx.events.emit({
+          type: 'magicLink.consumed',
+          userId: user.id,
+          data: { sessionId: tokens.sessionId },
+        });
+
+        ctx.logger.info(`magicLink: consumed for user ${user.id}`);
+
+        return { userId: user.id, sessionId: tokens.sessionId };
+      },
+    };
+  },
+});
+
+export type { MagicLinkAdapter, MagicLinkRecord } from './adapter';
+```
+
+**Key points:**
+
+- We hash tokens with SHA-256 before persisting them (`tokenHash`).
+- `request()` is silent on user-not-found for security (prevents email enumeration).
+- `consume()` calls `ctx.core.completeSignIn` to funnel through the same `signIn.after` hook chain as password sign-in, ensuring plugins like RBAC assign roles consistently.
+- We emit namespaced events (`magicLink.requested`, `magicLink.consumed`) for audit logging.
+- We use `ctx.logger` instead of `console.*` so consumers can control verbosity.
+
+</Step>
+
+<Step>
+
+### Wire it into defineHoleauth
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { magicLink } from './plugins/magicLink';
+import { magicLinkDrizzleAdapter } from './adapters/magicLinkDrizzle';
+import { db } from './db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    magicLink({
+      baseUrl: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000/api/auth',
+      sendEmail: async ({ email, url }) => {
+        // Wire your email service here (SendGrid, Resend, Nodemailer, etc.)
+        console.log(`Magic link for ${email}: ${url}`);
+        // In production:
+        // await sendgrid.send({ to: email, subject: 'Sign in', html: `<a href="${url}">Click here</a>` });
+      },
+    }),
+  ] as const,
+  pluginAdapters: {
+    magicLink: magicLinkDrizzleAdapter(db),
+  },
+});
+
+// TypeScript infers auth.magicLink.request() and auth.magicLink.consume()
+```
+
+</Step>
+
+<Step>
+
+### Implement a Drizzle adapter
+
+```ts title="lib/adapters/magicLinkDrizzle.ts"
+import { pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { eq } from 'drizzle-orm';
+import type { MagicLinkAdapter, MagicLinkRecord } from '../plugins/magicLink/adapter';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+
+export const magicLinkTable = pgTable('holeauth_magic_links', {
+  id: varchar('id', { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export function magicLinkDrizzleAdapter(db: NodePgDatabase): MagicLinkAdapter {
+  return {
+    async createToken(record) {
+      const [row] = await db
+        .insert(magicLinkTable)
+        .values({
+          email: record.email,
+          tokenHash: record.tokenHash,
+          expiresAt: record.expiresAt,
+        })
+        .returning({ id: magicLinkTable.id });
+      return { id: row.id };
+    },
+
+    async findValidToken(tokenHash) {
+      const rows = await db
+        .select()
+        .from(magicLinkTable)
+        .where(eq(magicLinkTable.tokenHash, tokenHash))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+
+    async consumeToken(id) {
+      await db.delete(magicLinkTable).where(eq(magicLinkTable.id, id));
+    },
+  };
+}
+```
+
+Run a migration to create the `holeauth_magic_links` table:
+
+```sql title="migrations/0001_magic_links.sql"
+CREATE TABLE holeauth_magic_links (
+  id VARCHAR(36) PRIMARY KEY,
+  email TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_magic_links_token_hash ON holeauth_magic_links(token_hash);
+CREATE INDEX idx_magic_links_expires_at ON holeauth_magic_links(expires_at);
+```
+
+</Step>
+
+<Step>
+
+### Call it from app code
+
+```tsx title="app/login/page.tsx"
+'use client';
+
+import { useState } from 'react';
+
+export default function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setMessage('');
+
+    try {
+      // Fetch CSRF token first
+      const csrfRes = await fetch('/api/auth/csrf');
+      const { csrfToken } = await csrfRes.json();
+
+      // Call plugin route
+      const res = await fetch('/api/auth/magic-link/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken,
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!res.ok) {
+        const { error } = await res.json();
+        setMessage(`Error: ${error.code}`);
+      } else {
+        const { message: msg } = await res.json();
+        setMessage(msg);
+      }
+    } catch (err) {
+      setMessage('Network error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <h1>Sign in with magic link</h1>
+      <input
+        type="email"
+        placeholder="you@example.com"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        required
+      />
+      <button type="submit" disabled={loading}>
+        {loading ? 'Sending...' : 'Send magic link'}
+      </button>
+      {message && <p>{message}</p>}
+    </form>
+  );
+}
+```
+
+**Or call the API directly in a server action:**
+
+```ts title="app/actions/magicLink.ts"
+'use server';
+
+import { auth } from '@/lib/auth';
+
+export async function requestMagicLink(email: string) {
+  await auth.magicLink.request(email);
+  return { ok: true };
+}
+```
+
+</Step>
+
+<Step>
+
+### Test it
+
+Write a test using Vitest and an in-memory adapter:
+
+```ts title="lib/plugins/magicLink/__tests__/magicLink.test.ts"
+import { describe, it, expect, vi } from 'vitest';
+import { defineHoleauth } from '@holeauth/core';
+import { magicLink } from '../index';
+import type { MagicLinkAdapter } from '../adapter';
+
+// In-memory adapter for testing
+const mockAdapter: MagicLinkAdapter = {
+  tokens: new Map(),
+  async createToken(record) {
+    const id = crypto.randomUUID();
+    this.tokens.set(id, { id, ...record, createdAt: new Date() });
+    return { id };
+  },
+  async findValidToken(tokenHash) {
+    for (const record of this.tokens.values()) {
+      if (record.tokenHash === tokenHash) return record;
+    }
+    return null;
+  },
+  async consumeToken(id) {
+    this.tokens.delete(id);
+  },
+};
+
+describe('magicLink plugin', () => {
+  it('should send a magic link and consume it', async () => {
+    const sendEmailMock = vi.fn();
+
+    const auth = defineHoleauth({
+      adapter: mockCoreAdapter(), // mock core adapter (user + session)
+      secrets: { jwtSecret: 'test-secret' },
+      plugins: [
+        magicLink({
+          baseUrl: 'http://localhost:3000/api/auth',
+          sendEmail: sendEmailMock,
+        }),
+      ] as const,
+      pluginAdapters: {
+        magicLink: mockAdapter,
+      },
+    });
+
+    // Request magic link
+    await auth.magicLink.request('test@example.com');
+
+    expect(sendEmailMock).toHaveBeenCalledWith({
+      email: 'test@example.com',
+      url: expect.stringContaining('/magic-link/consume?token='),
+    });
+
+    // Extract token from URL
+    const url = sendEmailMock.mock.calls[0][0].url;
+    const token = new URL(url).searchParams.get('token')!;
+
+    // Consume token
+    const result = await auth.magicLink.consume(token);
+
+    expect(result.userId).toBe('user_123'); // mock user id
+    expect(result.sessionId).toBeTruthy();
+
+    // Token should be consumed (single-use)
+    await expect(auth.magicLink.consume(token)).rejects.toThrow('invalid or expired');
+  });
+});
+```
+
+</Step>
+
+<Step>
+
+### Publish
+
+To publish your plugin as an npm package:
+
+1. **Create a new repo:**
+
+   ```bash
+   mkdir holeauth-plugin-magiclink
+   cd holeauth-plugin-magiclink
+   npm init -y
+   ```
+
+2. **Set up TypeScript:**
+
+   ```json title="package.json"
+   {
+     "name": "@yourorg/holeauth-plugin-magiclink",
+     "version": "1.0.0",
+     "main": "./dist/index.js",
+     "types": "./dist/index.d.ts",
+     "exports": {
+       ".": {
+         "import": "./dist/index.js",
+         "types": "./dist/index.d.ts"
+       },
+       "./adapter": {
+         "import": "./dist/adapter.js",
+         "types": "./dist/adapter.d.ts"
+       }
+     },
+     "scripts": {
+       "build": "tsup",
+       "test": "vitest"
+     },
+     "peerDependencies": {
+       "@holeauth/core": "^1.0.0"
+     },
+     "devDependencies": {
+       "@holeauth/core": "^1.0.0",
+       "tsup": "^8.0.0",
+       "typescript": "^5.0.0",
+       "vitest": "^1.0.0"
+     }
+   }
+   ```
+
+3. **Bundle with tsup:**
+
+   ```ts title="tsup.config.ts"
+   import { defineConfig } from 'tsup';
+
+   export default defineConfig({
+     entry: ['src/index.ts', 'src/adapter.ts'],
+     format: ['esm'],
+     dts: true,
+     sourcemap: true,
+     clean: true,
+   });
+   ```
+
+4. **Move plugin code to `src/`:**
+
+   ```
+   src/
+     index.ts       # definePlugin + routes + api
+     adapter.ts     # MagicLinkAdapter interface + MagicLinkRecord type
+   ```
+
+5. **Export both the plugin and the adapter interface:**
+
+   ```ts title="src/index.ts"
+   export { magicLink } from './plugin';
+   export type { MagicLinkOptions, MagicLinkApi } from './plugin';
+   export type { MagicLinkAdapter, MagicLinkRecord } from './adapter';
+   ```
+
+6. **Publish:**
+
+   ```bash
+   npm run build
+   npm publish --access public
+   ```
+
+Consumers install and wire it:
+
+```bash
+pnpm add @yourorg/holeauth-plugin-magiclink
+```
+
+```ts title="lib/auth.ts"
+import { magicLink } from '@yourorg/holeauth-plugin-magiclink';
+
+export const auth = defineHoleauth({
+  plugins: [magicLink({ baseUrl: '...', sendEmail: ... })] as const,
+  pluginAdapters: { magicLink: myAdapter },
+});
+```
+
+</Step>
+
+</Steps>
+
+## Key takeaways
+
+- **Plugin adapters are opaque to core.** The consumer wires them via `pluginAdapters[id]`, and the plugin retrieves them via `ctx.getPluginAdapter<T>(id)`.
+- **Use `ctx.core.completeSignIn` for non-password sign-ins.** This ensures `signIn.after` hooks run consistently for all authentication methods.
+- **Emit namespaced events.** Use `<plugin.id>.<name>` to avoid collisions with core events and other plugins.
+- **Hash secrets before persisting.** Tokens, API keys, and other secrets should be hashed (SHA-256 or stronger) before storage.
+- **Fail fast on missing adapters.** Check for required adapters in `api(ctx)` and throw a friendly error if they're missing.
+- **Test with in-memory adapters.** Write unit tests using a mock adapter to verify plugin logic independently of database setup.
+
+## Next
+
+<Cards>
+  <Card
+    title="@holeauth/core/plugins"
+    href="/packages/core#holeauthcoreplugins"
+    description="Package-level reference for the plugin system."
+  />
+  <Card
+    title="Events"
+    href="/concepts/events"
+    description="Deep dive into the event system for audit logging and cross-plugin communication."
+  />
+</Cards>

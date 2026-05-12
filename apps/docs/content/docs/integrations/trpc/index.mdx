@@ -1,0 +1,66 @@
+---
+title: tRPC integration
+description: Auth-aware tRPC context with transparent refresh rotation and RBAC-gated procedures.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# tRPC integration
+
+The `@holeauth/trpc` package provides typed helpers for wiring tRPC v11 procedures to a holeauth instance. It handles three key concerns:
+
+1. **Auth-aware context** — Every tRPC procedure receives a fully-typed `session` object automatically extracted from the request cookies.
+2. **Transparent refresh rotation** — When the access token has expired, the context factory silently rotates it using the refresh token and propagates new `Set-Cookie` headers to the response.
+3. **RBAC-gated procedures** — A factory that creates permission-protected procedures, throwing `FORBIDDEN` when the user lacks required permissions.
+
+<Callout type="info">
+  This integration is **framework-agnostic** within tRPC's fetch-based ecosystem. It works with Next.js (App Router and Pages Router), Express, Hono, and any environment that supports the Web `Request` API.
+</Callout>
+
+## How it works
+
+The request flow for a tRPC query or mutation with holeauth:
+
+1. Client calls a tRPC procedure (e.g., `trpc.posts.create.mutate(data)`).
+2. The tRPC context factory runs **before** the procedure handler:
+   - Reads the `holeauth-access` and `holeauth-refresh` cookies from the request.
+   - Validates the access JWT.
+   - If expired, rotates the refresh token and issues new access/refresh/CSRF cookies.
+   - Appends `Set-Cookie` headers to the response.
+3. The procedure handler receives `ctx.session` (validated session data) and `ctx.refreshed` (true when rotation occurred).
+4. The procedure logic runs with full type-safety on the session.
+5. The response returns to the client with updated cookies (if rotation happened).
+
+<Callout type="warn">
+  Because rotation writes cookies **during** the request, tRPC's HTTP batch mode may cause issues if multiple procedures are batched into a single HTTP request — only the last procedure's `Set-Cookie` headers win. For critical flows, disable batching or use single requests.
+</Callout>
+
+## Package overview
+
+| Export | Purpose |
+| --- | --- |
+| `createHoleauthContext` | Factory that returns a tRPC context creator with typed session and automatic refresh rotation. |
+| `makePermissionProcedure` | Factory that returns a `(nodes, mode?) => procedure` builder for RBAC-gated procedures. |
+| `HoleauthTrpcContext` | TypeScript interface for the injected context fields. |
+| `RbacLike` | Minimal RBAC surface required by `makePermissionProcedure`. |
+
+## Next Steps
+
+<Cards>
+  <Card
+    title="Setup"
+    href="/integrations/trpc/setup"
+    description="Build the tRPC context and wire it into your framework's route handler."
+  />
+  <Card
+    title="Refresh Rotation"
+    href="/integrations/trpc/refresh-rotation"
+    description="Understand how transparent token rotation works in long-lived tRPC queries."
+  />
+  <Card
+    title="RBAC Procedures"
+    href="/integrations/trpc/rbac-procedures"
+    description="Create permission-gated procedures using makePermissionProcedure."
+  />
+</Cards>

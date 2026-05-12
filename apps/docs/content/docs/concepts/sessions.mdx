@@ -1,0 +1,185 @@
+---
+title: Sessions
+description: Access tokens, refresh tokens, and session lifecycle in holeauth
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Sessions
+
+A session in holeauth represents an authenticated browser or API client. Every session consists of three tokens: a short-lived access token, a long-lived rotating refresh token, and a CSRF token.
+
+## Access Tokens
+
+Access tokens are signed JWTs with a default lifetime of 15 minutes. They carry the minimum claims needed to identify the user and session:
+
+<TypeTable
+  type={{
+    sid: {
+      description: 'Session ID (UUID).',
+      type: 'string',
+      required: true,
+    },
+    sub: {
+      description: 'User ID (subject claim).',
+      type: 'string',
+      required: true,
+    },
+    fam: {
+      description: 'Family ID—shared across all rotations of a refresh token chain.',
+      type: 'string',
+      required: true,
+    },
+    nce: {
+      description: 'Nonce—unique to each issued token pair, prevents replay.',
+      type: 'string',
+      required: true,
+    },
+    exp: {
+      description: 'Expiration timestamp (Unix seconds).',
+      type: 'number',
+      required: true,
+    },
+    iat: {
+      description: 'Issued-at timestamp (Unix seconds).',
+      type: 'number',
+      required: true,
+    },
+  }}
+/>
+
+When you call `auth.getSession(accessToken)`, holeauth verifies the JWT signature and decodes it into a `SessionData` object:
+
+<TypeTable
+  type={{
+    userId: {
+      description: 'The user ID extracted from the `sub` claim.',
+      type: 'string',
+      required: true,
+    },
+    sessionId: {
+      description: 'The session ID extracted from the `sid` claim.',
+      type: 'string',
+      required: true,
+    },
+    expiresAt: {
+      description: 'Expiration timestamp in milliseconds.',
+      type: 'number',
+      required: true,
+    },
+  }}
+/>
+
+## Refresh Tokens
+
+Refresh tokens are also JWTs, but they include an additional `typ: 'refresh'` claim and have a default lifetime of 30 days. Their purpose is to issue fresh access tokens without requiring the user to re-authenticate.
+
+Refresh tokens are never sent in the clear over the network. Instead, holeauth stores a SHA-256 hash of the token in the database. When a client presents a refresh token, holeauth hashes it and looks up the session by `refreshTokenHash`.
+
+<Callout type="warn">
+  Refresh tokens are single-use. After issuing a new access token, the old refresh token is rotated away and its hash is replaced. Attempting to reuse an old refresh token triggers reuse detection and revokes the entire session family.
+</Callout>
+
+## Session Lifecycle
+
+The typical session lifecycle looks like this:
+
+1. **Sign in** — The user provides credentials. holeauth verifies them, creates a session row in the database, and issues an access + refresh token pair. The refresh token hash is stored in the `refreshTokenHash` column.
+2. **Access** — The client sends the access token with each request. If valid, the request proceeds. If expired, the client must refresh.
+3. **Refresh** — The client sends the refresh token. holeauth hashes it, looks up the session, and verifies it has not been revoked or reused. If valid, holeauth issues a new access + refresh pair and atomically rotates the stored hash.
+4. **Sign out** — The client calls the sign-out endpoint with the refresh token. holeauth revokes the session by setting `revokedAt` to the current timestamp.
+
+## Cookie Names
+
+holeauth stores tokens in three cookies:
+
+<TypeTable
+  type={{
+    'holeauth.at': {
+      description: 'Access token (HttpOnly, Secure, SameSite=Lax).',
+      type: 'string',
+      default: 'cookiePrefix: "holeauth"',
+    },
+    'holeauth.rt': {
+      description: 'Refresh token (HttpOnly, Secure, SameSite=Lax).',
+      type: 'string',
+      default: 'cookiePrefix: "holeauth"',
+    },
+    'holeauth.csrf': {
+      description: 'CSRF token (NOT HttpOnly, readable by client JS).',
+      type: 'string',
+      default: 'cookiePrefix: "holeauth"',
+    },
+  }}
+/>
+
+You can customize the prefix and domain via the `tokens.cookiePrefix` and `tokens.cookieDomain` configuration options.
+
+## Token Lifetimes
+
+Control token lifetimes via the `tokens` config:
+
+<TypeTable
+  type={{
+    accessTtl: {
+      description: 'Access token lifetime in seconds.',
+      type: 'number',
+      default: '900',
+    },
+    refreshTtl: {
+      description: 'Refresh token lifetime in seconds.',
+      type: 'number',
+      default: '2592000',
+    },
+    pendingTtl: {
+      description: 'Pending challenge cookie lifetime (for 2FA flows).',
+      type: 'number',
+      default: '300',
+    },
+  }}
+/>
+
+Example:
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  tokens: {
+    accessTtl: 1800,
+    refreshTtl: 604800,
+    cookiePrefix: 'myapp',
+  },
+});
+```
+
+## Session Data Extensions
+
+Plugins can extend `SessionData` with additional claims. For example, the RBAC plugin injects `groups` and `permissions` arrays. Access them via type augmentation:
+
+```ts title="types/holeauth.d.ts"
+import '@holeauth/core';
+
+declare module '@holeauth/core' {
+  interface SessionData {
+    groups?: string[];
+    permissions?: string[];
+  }
+}
+```
+
+## Next
+
+<Cards>
+  <Card
+    title="Token rotation"
+    description="Learn how refresh token families and reuse detection work."
+    href="/concepts/token-rotation"
+  />
+</Cards>

@@ -1,0 +1,15 @@
+{
+  "title": "Plugins",
+  "pages": [
+    "index",
+    "architecture",
+    "getting-started",
+    "define-plugin",
+    "hooks",
+    "routes",
+    "api-surface",
+    "adapter",
+    "dependencies",
+    "tutorial"
+  ]
+}

@@ -1,0 +1,290 @@
+---
+title: Generic OIDC provider
+description: Connect to any OpenID Connect provider including Keycloak, Auth0, Okta, or another holeauth instance.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Generic OIDC provider
+
+Use `OIDCProvider` to connect to any **OpenID Connect** compliant identity provider, including:
+- Keycloak
+- Auth0
+- Okta
+- Authentik
+- **Another holeauth instance** running `@holeauth/plugin-idp`
+- Any other OIDC IDP
+
+<Steps>
+  <Step>
+    ### Discover the OIDC metadata
+
+    Most OIDC providers expose a discovery endpoint at:
+
+    ```
+    https://provider.example.com/.well-known/openid-configuration
+    ```
+
+    Fetch this URL to find:
+    - `authorization_endpoint`
+    - `token_endpoint`
+    - `userinfo_endpoint`
+    - `issuer`
+
+    Example for a holeauth-as-IDP instance:
+
+    ```bash
+    curl https://auth.example.com/.well-known/openid-configuration
+    ```
+
+    Response:
+
+    ```json
+    {
+      "issuer": "https://auth.example.com",
+      "authorization_endpoint": "https://auth.example.com/oauth2/authorize",
+      "token_endpoint": "https://auth.example.com/oauth2/token",
+      "userinfo_endpoint": "https://auth.example.com/oauth2/userinfo",
+      "jwks_uri": "https://auth.example.com/oauth2/jwks",
+      "scopes_supported": ["openid", "profile", "email", "offline_access"]
+    }
+    ```
+  </Step>
+
+  <Step>
+    ### Register an OAuth client
+
+    In the OIDC provider's admin console:
+    1. Create a new OAuth client / application
+    2. Set the redirect URI to `http://localhost:3000/api/auth/sso/<provider-id>/callback` (replace `<provider-id>` with a unique ID like `keycloak`, `auth0`, etc.)
+    3. Copy the **Client ID** and **Client Secret**
+  </Step>
+
+  <Step>
+    ### Set environment variables
+
+    ```bash title=".env.local"
+    OIDC_CLIENT_ID=abc123...
+    OIDC_CLIENT_SECRET=xyz...
+    OIDC_ISSUER=https://auth.example.com
+    ```
+  </Step>
+
+  <Step>
+    ### Wire `OIDCProvider` into holeauth
+
+    ```ts title="lib/auth.ts" {4,10-19}
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+import { OIDCProvider } from '@holeauth/core/sso';
+import * as schema from '@/db/schema';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db, schema.holeauth),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  providers: [
+    OIDCProvider({
+      id: 'keycloak',
+      name: 'Keycloak',
+      clientId: process.env.OIDC_CLIENT_ID!,
+      clientSecret: process.env.OIDC_CLIENT_SECRET!,
+      redirectUri: 'http://localhost:3000/api/auth/sso/keycloak/callback',
+      issuer: process.env.OIDC_ISSUER!,
+      authorizationUrl: `${process.env.OIDC_ISSUER}/oauth2/authorize`,
+      tokenUrl: `${process.env.OIDC_ISSUER}/oauth2/token`,
+      userinfoUrl: `${process.env.OIDC_ISSUER}/oauth2/userinfo`,
+    }),
+  ],
+});
+```
+
+    <TypeTable
+      type={{
+        id: {
+          description: 'Provider ID (used as the :provider URL segment). Must be unique across all providers.',
+          type: 'string',
+          required: true,
+        },
+        name: {
+          description: 'Human-readable provider name (displayed in UI).',
+          type: 'string',
+        },
+        clientId: {
+          description: 'OAuth client ID from the OIDC provider.',
+          type: 'string',
+          required: true,
+        },
+        clientSecret: {
+          description: 'OAuth client secret from the OIDC provider.',
+          type: 'string',
+          required: true,
+        },
+        redirectUri: {
+          description: 'OAuth callback URL registered with the OIDC provider. Must match exactly.',
+          type: 'string',
+          required: true,
+        },
+        issuer: {
+          description: 'OIDC issuer URL (used for ID token iss claim validation). Must match the iss field from the discovery document.',
+          type: 'string',
+          required: true,
+        },
+        authorizationUrl: {
+          description: 'OAuth authorization endpoint URL from the discovery document.',
+          type: 'string',
+          required: true,
+        },
+        tokenUrl: {
+          description: 'OAuth token endpoint URL from the discovery document.',
+          type: 'string',
+          required: true,
+        },
+        userinfoUrl: {
+          description: 'OIDC userinfo endpoint URL from the discovery document.',
+          type: 'string',
+          required: true,
+        },
+        scopes: {
+          description: 'OAuth scopes to request. Standard OIDC scopes work for most providers.',
+          type: 'string[]',
+          default: '["openid", "email", "profile"]',
+        },
+      }}
+    />
+
+    <Callout type="info">
+      holeauth does **not** auto-fetch the discovery document. You must manually extract the endpoint URLs from `/.well-known/openid-configuration` and pass them to `OIDCProvider`. This gives you full control over which endpoints are used and prevents runtime network calls during configuration.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Add a sign-in button
+
+    ```tsx title="app/login/page.tsx"
+export default function LoginPage() {
+  return (
+    <div>
+      <h1>Sign in</h1>
+      <a href="/api/auth/sso/keycloak/authorize">
+        <button>Sign in with Keycloak</button>
+      </a>
+    </div>
+  );
+}
+```
+
+    When clicked, the user is redirected to the OIDC provider's authorization endpoint. After approval, the provider redirects back to `/api/auth/sso/keycloak/callback`, where holeauth:
+    1. Exchanges the authorization code for an access token and ID token
+    2. Verifies the ID token signature using the provider's JWKS endpoint
+    3. Extracts `sub`, `email`, `name`, and `picture` from the ID token
+    4. Creates a new user or links the account to an existing user
+    5. Issues a holeauth session
+  </Step>
+
+  <Step>
+    ### Handle the result
+
+    ```tsx title="app/dashboard/page.tsx"
+import { auth } from '@/lib/auth';
+import { validateCurrentRequest } from '@holeauth/nextjs/server';
+
+export default async function DashboardPage() {
+  const session = await validateCurrentRequest(auth);
+  if (!session) return <div>Not signed in</div>;
+
+  return <div>Welcome, {session.user.email}!</div>;
+}
+```
+  </Step>
+</Steps>
+
+## ID token validation
+
+holeauth validates the ID token before trusting its claims:
+1. **Signature**: Verifies the JWT signature using the provider's JWKS endpoint (from `jwks_uri` in the discovery document).
+2. **Issuer**: Checks `iss` == `issuer` (the value you passed to `OIDCProvider`).
+3. **Audience**: Checks `aud` == `clientId`.
+4. **Expiration**: Checks `exp` > current time.
+
+If any check fails, holeauth throws `ProviderError` and the sign-in fails.
+
+<Callout type="warn">
+  The `issuer` field must **exactly** match the `iss` claim in the ID token. If the provider uses a different issuer URL in the token (e.g., with a port or path suffix), holeauth will reject the token. Verify the `iss` claim by decoding a sample ID token before deploying.
+</Callout>
+
+## Example: Keycloak
+
+Keycloak URLs follow this pattern:
+
+```
+https://keycloak.example.com/realms/{realm}/.well-known/openid-configuration
+```
+
+For a realm named `myrealm`:
+
+```ts
+OIDCProvider({
+  id: 'keycloak',
+  name: 'Keycloak',
+  clientId: process.env.KEYCLOAK_CLIENT_ID!,
+  clientSecret: process.env.KEYCLOAK_CLIENT_SECRET!,
+  redirectUri: 'http://localhost:3000/api/auth/sso/keycloak/callback',
+  issuer: 'https://keycloak.example.com/realms/myrealm',
+  authorizationUrl: 'https://keycloak.example.com/realms/myrealm/protocol/openid-connect/auth',
+  tokenUrl: 'https://keycloak.example.com/realms/myrealm/protocol/openid-connect/token',
+  userinfoUrl: 'https://keycloak.example.com/realms/myrealm/protocol/openid-connect/userinfo',
+})
+```
+
+## Example: Auth0
+
+Auth0 URLs:
+
+```ts
+OIDCProvider({
+  id: 'auth0',
+  name: 'Auth0',
+  clientId: process.env.AUTH0_CLIENT_ID!,
+  clientSecret: process.env.AUTH0_CLIENT_SECRET!,
+  redirectUri: 'http://localhost:3000/api/auth/sso/auth0/callback',
+  issuer: 'https://your-tenant.auth0.com/',
+  authorizationUrl: 'https://your-tenant.auth0.com/authorize',
+  tokenUrl: 'https://your-tenant.auth0.com/oauth/token',
+  userinfoUrl: 'https://your-tenant.auth0.com/userinfo',
+})
+```
+
+## Example: Another holeauth instance
+
+If you run `@holeauth/plugin-idp` on `https://auth.example.com`:
+
+```ts
+OIDCProvider({
+  id: 'holeauth-idp',
+  name: 'Our SSO',
+  clientId: process.env.HOLEAUTH_IDP_CLIENT_ID!,
+  clientSecret: process.env.HOLEAUTH_IDP_CLIENT_SECRET!,
+  redirectUri: 'http://localhost:3000/api/auth/sso/holeauth-idp/callback',
+  issuer: 'https://auth.example.com',
+  authorizationUrl: 'https://auth.example.com/oauth2/authorize',
+  tokenUrl: 'https://auth.example.com/oauth2/token',
+  userinfoUrl: 'https://auth.example.com/oauth2/userinfo',
+})
+```
+
+This allows you to chain holeauth instances: one as the central IDP, others as consumer apps.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Integrations"
+    href="/integrations"
+    description="Learn how to integrate holeauth into different frameworks and platforms"
+  />
+</Cards>

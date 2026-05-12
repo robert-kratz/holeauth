@@ -1,0 +1,409 @@
+---
+title: Dependencies and lifecycle
+description: Load-order constraints, onInit, and onShutdown.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+# Dependencies and lifecycle
+
+Plugins can declare load-order constraints via `dependsOn`, and participate in startup and shutdown lifecycle hooks via `onInit` and `onShutdown`.
+
+## dependsOn
+
+The `dependsOn` field is a readonly array of plugin ids that must be loaded before this plugin. Core validates and enforces these constraints using Kahn's topological sort algorithm.
+
+```ts
+import { definePlugin, type PluginContext } from '@holeauth/core/plugins';
+
+export const analytics = () => definePlugin({
+  id: 'analytics' as const,
+  dependsOn: ['rbac', 'twofa'] as const,
+
+  api(ctx: PluginContext) {
+    const rbac = ctx.getPlugin('rbac');
+    const twofa = ctx.getPlugin('twofa');
+    // Safe: rbac and twofa are guaranteed to be wired
+  },
+});
+```
+
+### Load order guarantees
+
+- Plugins are constructed in topological order: dependencies come first.
+- `api(ctx)` is called in topological order, so `ctx.getPlugin(dependencyId)` is always safe inside `api(ctx)`.
+- Hooks run in topological order within their slot (e.g. all `signIn.before` hooks run dependency-first).
+
+### Startup errors
+
+Core throws at startup if any of these violations are detected:
+
+#### Duplicate plugin id
+
+```ts
+export const auth = defineHoleauth({
+  plugins: [
+    twofa({ issuer: 'A' }),
+    twofa({ issuer: 'B' }), // ❌ Both have id='twofa'
+  ] as const,
+});
+```
+
+Error: `holeauth: duplicate plugin id "twofa"`.
+
+#### Missing dependency
+
+```ts
+export const analytics = () => definePlugin({
+  id: 'analytics' as const,
+  dependsOn: ['rbac'] as const, // rbac not registered
+  api: () => ({}),
+});
+
+export const auth = defineHoleauth({
+  plugins: [analytics()] as const, // ❌ Missing 'rbac'
+});
+```
+
+Error: `holeauth: plugin "analytics" depends on missing plugin "rbac"`.
+
+#### Dependency cycle
+
+```ts
+export const A = () => definePlugin({
+  id: 'A' as const,
+  dependsOn: ['B'] as const,
+  api: () => ({}),
+});
+
+export const B = () => definePlugin({
+  id: 'B' as const,
+  dependsOn: ['A'] as const, // ❌ Cycle: A → B → A
+  api: () => ({}),
+});
+
+export const auth = defineHoleauth({
+  plugins: [A(), B()] as const,
+});
+```
+
+Error: `holeauth: plugin dependsOn graph has a cycle`.
+
+<Callout type="warn">
+  **Declare `dependsOn` explicitly.** Even if your plugin only calls another plugin inside a route handler (not in `api(ctx)`), declare the dependency. This ensures the other plugin is always present and avoids runtime `undefined` errors.
+</Callout>
+
+## onInit
+
+`onInit(ctx)` is called once per plugin after all plugins have been wired and `apiMap` is filled. This is the earliest point where you can safely call `ctx.getPlugin(otherId)` for **any** plugin (dependency or not).
+
+**Use cases:** Cross-plugin discovery, lazy initialization, one-time setup that depends on other plugins.
+
+```ts
+import { definePlugin, type PluginContext } from '@holeauth/core/plugins';
+
+export const notifier = () => definePlugin({
+  id: 'notifier' as const,
+  dependsOn: [],
+
+  api(ctx: PluginContext) {
+    return {
+      async send(userId: string, message: string) {
+        // Send notification
+      },
+    };
+  },
+
+  async onInit(ctx: PluginContext) {
+    // Check if RBAC plugin is present (optional dependency)
+    try {
+      const rbac = ctx.getPlugin('rbac');
+      ctx.logger.info('notifier: RBAC plugin detected, will use role-based routing');
+    } catch {
+      ctx.logger.info('notifier: RBAC plugin not present, using default routing');
+    }
+
+    // Subscribe to events after all plugins are ready
+    ctx.events.on('user.registered', async (e) => {
+      const api = ctx.getPlugin('notifier');
+      await api.send(e.userId!, 'Welcome!');
+    });
+  },
+});
+```
+
+<Callout type="info">
+  **`onInit` runs after `api(ctx)` for all plugins.** If you call `ctx.getPlugin(dependentId)` where `dependentId` is a plugin that depends on YOU (reverse direction), it will work in `onInit` but not in `api(ctx)`.
+</Callout>
+
+### When NOT to use onInit
+
+- **Do not use it for adapter retrieval.** Retrieve adapters in `api(ctx)` and cache them:
+
+  ```ts
+  api(ctx: PluginContext) {
+    const adapter = ctx.getPluginAdapter<TwoFactorAdapter>('twofa');
+    if (!adapter) throw new Error('TwoFactorAdapter not configured');
+    
+    return {
+      async setup(userId: string) {
+        // use adapter
+      },
+    };
+  }
+  ```
+
+- **Do not use it for heavy I/O.** `onInit` is called during `defineHoleauth()`, which is typically in a module-scope initializer. Blocking I/O delays server startup. If you need to fetch external config, do it lazily on first call.
+
+## onShutdown
+
+`onShutdown()` is called on shutdown (best-effort; consumer-controlled). Use it for cleanup: close DB connections, flush buffers, cancel timers.
+
+```ts
+import { definePlugin } from '@holeauth/core/plugins';
+
+export const cachePlugin = () => {
+  const interval = setInterval(() => {
+    // Periodic cache invalidation
+  }, 60_000);
+
+  return definePlugin({
+    id: 'cache' as const,
+
+    api: () => ({
+      async get(key: string) { /* ... */ },
+      async set(key: string, value: unknown) { /* ... */ },
+    }),
+
+    async onShutdown() {
+      clearInterval(interval);
+      // Flush pending writes
+    },
+  });
+};
+```
+
+<Callout type="warn">
+  **`onShutdown` is not guaranteed to run.** The consumer must call it explicitly (e.g. `process.on('SIGTERM', () => auth.shutdown())`). Do not rely on it for critical cleanup unless you control the deployment environment.
+</Callout>
+
+### How to invoke shutdown
+
+Core does not automatically wire `onShutdown`. The consumer must opt in:
+
+```ts title="server.ts"
+import { auth } from './lib/auth';
+
+process.on('SIGTERM', async () => {
+  console.log('Shutting down...');
+  await auth.shutdown(); // Calls onShutdown on all plugins
+  process.exit(0);
+});
+```
+
+If `auth.shutdown()` is not wired, `onShutdown` hooks are never called.
+
+## Cross-plugin calls via getPlugin
+
+`ctx.getPlugin<T>(id)` retrieves another plugin's API by id. It throws if the plugin is not registered.
+
+### Inside `api(ctx)` (safe for dependencies)
+
+```ts
+export const A = () => definePlugin({
+  id: 'A' as const,
+  dependsOn: ['B'] as const,
+
+  api(ctx: PluginContext) {
+    const B = ctx.getPlugin<BApi>('B');
+    // Safe: B was wired before A
+    return {
+      async doSomething() {
+        await B.method();
+      },
+    };
+  },
+});
+```
+
+### Inside `api(ctx)` (unsafe for dependents)
+
+```ts
+export const A = () => definePlugin({
+  id: 'A' as const,
+  dependsOn: [],
+
+  api(ctx: PluginContext) {
+    // ❌ B depends on A, so B's api(ctx) has not run yet
+    const B = ctx.getPlugin<BApi>('B');
+    // Throws: holeauth: plugin "B" not registered
+  },
+});
+
+export const B = () => definePlugin({
+  id: 'B' as const,
+  dependsOn: ['A'] as const,
+  api: () => ({}),
+});
+```
+
+### Inside `onInit` (safe for all plugins)
+
+```ts
+export const A = () => definePlugin({
+  id: 'A' as const,
+  dependsOn: [],
+
+  api: () => ({}),
+
+  async onInit(ctx: PluginContext) {
+    // ✅ All plugins have been wired, B is available
+    const B = ctx.getPlugin<BApi>('B');
+    await B.init();
+  },
+});
+```
+
+### Inside hooks and routes (always safe)
+
+```ts
+export const A = () => definePlugin({
+  id: 'A' as const,
+  dependsOn: [],
+
+  hooks: {
+    signIn: {
+      async after(result, ctx) {
+        // ✅ Hooks run after startup, all plugins are wired
+        const B = ctx.getPlugin<BApi>('B');
+        await B.track(result.user.id);
+      },
+    },
+  },
+
+  routes: [
+    {
+      method: 'POST',
+      path: '/a/action',
+      async handler(rctx) {
+        // ✅ Routes run at request time, all plugins are wired
+        const B = rctx.plugin.getPlugin<BApi>('B');
+        await B.log('action invoked');
+        return new Response(JSON.stringify({ ok: true }));
+      },
+    },
+  ],
+
+  api: () => ({}),
+});
+```
+
+## Lifecycle summary
+
+| Phase | When | Safe to call `ctx.getPlugin(depId)` | Safe to call `ctx.getPlugin(dependentId)` |
+| --- | --- | --- | --- |
+| `api(ctx)` | During `defineHoleauth()`, in topo order | ✅ Yes | ❌ No |
+| `onInit(ctx)` | After all `api(ctx)` calls | ✅ Yes | ✅ Yes |
+| Hooks | At runtime (register, signIn, etc.) | ✅ Yes | ✅ Yes |
+| Routes | At runtime (HTTP request) | ✅ Yes | ✅ Yes |
+| `onShutdown()` | When consumer calls `auth.shutdown()` | ✅ Yes | ✅ Yes |
+
+## Best practices
+
+### Declare explicit dependencies
+
+Even if you only call another plugin inside a route handler, declare `dependsOn`. This documents the relationship and prevents breaking changes.
+
+```ts
+// ✅ Good
+export const A = () => definePlugin({
+  id: 'A' as const,
+  dependsOn: ['B'] as const,
+  routes: [
+    {
+      method: 'POST',
+      path: '/a/action',
+      async handler(rctx) {
+        const B = rctx.plugin.getPlugin<BApi>('B');
+        await B.method();
+      },
+    },
+  ],
+  api: () => ({}),
+});
+
+// ❌ Bad (implicit dependency)
+export const A = () => definePlugin({
+  id: 'A' as const,
+  routes: [
+    {
+      method: 'POST',
+      path: '/a/action',
+      async handler(rctx) {
+        const B = rctx.plugin.getPlugin<BApi>('B');
+        // Throws at runtime if B is not registered
+      },
+    },
+  ],
+  api: () => ({}),
+});
+```
+
+### Fail fast on missing adapters
+
+Check for required adapters in `api(ctx)` and throw immediately:
+
+```ts
+api(ctx: PluginContext) {
+  const adapter = ctx.getPluginAdapter<MyAdapter>('myPlugin');
+  if (!adapter) {
+    throw new Error('MyAdapter not configured. Pass it via pluginAdapters.myPlugin.');
+  }
+  return { /* ... */ };
+}
+```
+
+This surfaces misconfiguration at startup, not at first request.
+
+### Use onInit for optional cross-plugin discovery
+
+If your plugin optionally integrates with another plugin (not a hard dependency), check for it in `onInit`:
+
+```ts
+async onInit(ctx: PluginContext) {
+  try {
+    const rbac = ctx.getPlugin('rbac');
+    ctx.logger.info('RBAC plugin detected, enabling role-based features');
+    // Store rbac reference for later use
+  } catch {
+    ctx.logger.info('RBAC plugin not present, skipping role-based features');
+  }
+}
+```
+
+### Keep onShutdown idempotent
+
+`onShutdown` may be called multiple times (e.g. in tests). Make it safe to call repeatedly:
+
+```ts
+async onShutdown() {
+  if (this.timer) {
+    clearInterval(this.timer);
+    this.timer = undefined;
+  }
+  await this.db?.close();
+  this.db = undefined;
+}
+```
+
+## Next
+
+<Cards>
+  <Card
+    title="Build your own plugin"
+    href="/plugins/tutorial"
+    description="Step-by-step tutorial building a magic link sign-in plugin."
+  />
+</Cards>

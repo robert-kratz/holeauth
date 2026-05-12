@@ -1,0 +1,539 @@
+---
+title: Express
+description: Set up email and password authentication with sessions, CSRF protection, and secure cookie handling in an Express application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Express
+
+This guide walks you through integrating holeauth into an Express application with Drizzle ORM. By the end, you will have email and password authentication, session management with automatic refresh-token rotation, and CSRF-protected endpoints.
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/core @holeauth/express @holeauth/adapter-drizzle drizzle-orm express cookie-parser
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/core @holeauth/express @holeauth/adapter-drizzle drizzle-orm express cookie-parser
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/core @holeauth/express @holeauth/adapter-drizzle drizzle-orm express cookie-parser
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/core @holeauth/express @holeauth/adapter-drizzle drizzle-orm express cookie-parser
+```
+</Tab>
+</Tabs>
+
+Add the database driver and TypeScript types for your chosen dialect:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite', 'Headless']}>
+  <Tab value="Postgres">
+```bash
+pnpm add pg @types/pg @types/express @types/cookie-parser
+```
+</Tab>
+  <Tab value="MySQL">
+```bash
+pnpm add mysql2 @types/express @types/cookie-parser
+```
+</Tab>
+  <Tab value="SQLite">
+```bash
+pnpm add better-sqlite3 @types/better-sqlite3 @types/express @types/cookie-parser
+```
+</Tab>
+  <Tab value="Headless">
+    <Callout type="info">
+      If you choose the headless adapter, you will implement the `BaseAdapter` interface yourself. Skip the `@holeauth/adapter-drizzle` and driver installs. See [Adapters](/concepts/adapters) for the full contract.
+    </Callout>
+  </Tab>
+</Tabs>
+</Step>
+
+<Step>
+### Create database schema
+
+Holeauth provides a table factory for each Drizzle dialect. Import the factory that matches your database, pass your existing users table, and export the resulting tables for use in migrations.
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite', 'Headless']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts"
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  emailVerified: timestamp('email_verified', { withTimezone: true, mode: 'date' }),
+  passwordHash: text('password_hash'),
+  name: text('name'),
+  image: text('image'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts"
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  emailVerified: timestamp('email_verified'),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  name: varchar('name', { length: 255 }),
+  image: varchar('image', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts"
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  emailVerified: integer('email_verified', { mode: 'timestamp' }),
+  passwordHash: text('password_hash'),
+  name: text('name'),
+  image: text('image'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="Headless">
+```ts title="db/schema.ts"
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  emailVerified: timestamp('email_verified', { withTimezone: true, mode: 'date' }),
+  passwordHash: text('password_hash'),
+  name: text('name'),
+  image: text('image'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+// Implement BaseAdapter yourself — no holeauth table factory needed.
+// See /docs/concepts/adapters for the full contract.
+```
+</Tab>
+</Tabs>
+
+Create and configure your database connection:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite', 'Headless']}>
+  <Tab value="Postgres">
+```ts title="db/client.ts"
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle(pool, { schema });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/client.ts"
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
+import * as schema from './schema';
+
+const connection = await mysql.createConnection(process.env.DATABASE_URL!);
+export const db = drizzle(connection, { schema, mode: 'default' });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/client.ts"
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+import * as schema from './schema';
+
+const sqlite = new Database(process.env.DATABASE_URL ?? 'sqlite.db');
+export const db = drizzle(sqlite, { schema });
+```
+</Tab>
+  <Tab value="Headless">
+```ts title="db/client.ts"
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle(pool, { schema });
+
+// You will also need to implement BaseAdapter for holeauth to use.
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` (or `migrate`) to create the tables.
+</Step>
+
+<Step>
+### Environment variables
+
+Create a `.env` file in your project root:
+
+<TypeTable
+  type={{
+    HOLEAUTH_SECRET: {
+      description: 'Secret used to sign JWTs. Must be at least 32 characters. Generate with `openssl rand -base64 32`.',
+      type: 'string',
+      required: true,
+    },
+    DATABASE_URL: {
+      description: 'Connection string for your database.',
+      type: 'string',
+      required: true,
+    },
+    APP_URL: {
+      description: 'Base URL of your application. Used for SSO redirects and password-reset emails.',
+      type: 'string',
+      default: '"http://localhost:3000"',
+    },
+    PORT: {
+      description: 'Port the Express server will listen on.',
+      type: 'string',
+      default: '"3000"',
+    },
+  }}
+/>
+
+```bash title=".env"
+HOLEAUTH_SECRET="your-secret-here-minimum-32-chars"
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
+APP_URL="http://localhost:3000"
+PORT="3000"
+```
+</Step>
+
+<Step>
+### Create the auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite', 'Headless']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts"
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '../db/client';
+import { holeauth } from '../db/schema';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  tokens: {
+    accessTtl: 60 * 15, // 15 minutes
+    refreshTtl: 60 * 60 * 24 * 30, // 30 days
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60, // 7 days
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts"
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '../db/client';
+import { holeauth } from '../db/schema';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts"
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '../db/client';
+import { holeauth } from '../db/schema';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="Headless">
+```ts title="lib/auth.ts"
+import { createExpressAuth } from '@holeauth/express';
+import { db } from '../db/client';
+import { users } from '../db/schema';
+// Import your custom adapter implementation:
+import { myUserAdapter, mySessionAdapter, /* ... */ } from './adapters';
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: myUserAdapter,
+    session: mySessionAdapter,
+    account: myAccountAdapter,
+    auditLog: myAuditLogAdapter,
+    verificationToken: myVerificationTokenAdapter,
+    transaction: myTransactionAdapter,
+  },
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+</Step>
+
+<Step>
+### Create the Express server
+
+Build your Express server with cookie parsing enabled and mount the holeauth router:
+
+```ts title="server.ts"
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import { auth } from './lib/auth';
+
+const app = express();
+
+app.use(express.json());
+app.use(cookieParser());
+
+// Mount the holeauth router at /api/auth
+app.use('/api/auth', auth.router);
+
+// Example protected route
+app.get('/api/me', async (req, res) => {
+  const { getSession } = await import('@holeauth/express');
+  const session = await getSession(req, auth);
+  
+  if (!session) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  res.json({ user: session.user });
+});
+
+const port = process.env.PORT ?? 3000;
+app.listen(port, () => {
+  console.log(`Server listening on http://localhost:${port}`);
+});
+```
+
+<Callout type="info">
+  The `createExpressAuth` function returns an object containing both the holeauth instance API and an Express `.router` property. Mount the router with `app.use('/api/auth', auth.router)` to serve all auth endpoints.
+</Callout>
+</Step>
+
+<Step>
+### Available routes
+
+Mounting `auth.router` exposes the following routes:
+
+<TypeTable
+  type={{
+    'POST /api/auth/register': {
+      description: 'Create a new user with email and password. Returns session tokens on success.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/login': {
+      description: 'Sign in with email and password. Returns session tokens or a pending token if a challenge is required (e.g. 2FA).',
+      type: 'endpoint',
+    },
+    'POST /api/auth/logout': {
+      description: 'Revoke the current refresh token and clear session cookies. Requires CSRF token.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/refresh': {
+      description: 'Exchange a refresh token for a new access token and optionally rotate the refresh token.',
+      type: 'endpoint',
+    },
+    'GET /api/auth/session': {
+      description: 'Read the current session from the access token cookie. Returns user data if authenticated.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/change-password': {
+      description: 'Change the current user password. Requires authentication and CSRF token.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/request-password-reset': {
+      description: 'Send a password-reset email to the given address.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/consume-password-reset': {
+      description: 'Verify a password-reset token and set a new password.',
+      type: 'endpoint',
+    },
+  }}
+/>
+
+See [Core API](/packages/core) for full request and response schemas.
+</Step>
+
+<Step>
+### Read session in a protected route
+
+Use the `getSession` helper to read the current session inside any Express route handler:
+
+```ts title="routes/profile.ts"
+import type { Request, Response } from 'express';
+import { getSession } from '@holeauth/express';
+import { auth } from '../lib/auth';
+
+export async function getProfile(req: Request, res: Response) {
+  const session = await getSession(req, auth);
+  
+  if (!session) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  // session is SessionData: { user: { id, email, name?, image? }, ... }
+  return res.json({
+    id: session.user.id,
+    email: session.user.email,
+    name: session.user.name ?? null,
+    image: session.user.image ?? null,
+  });
+}
+```
+
+<Callout type="info">
+  `getSession(req, auth)` reads the access-token cookie and validates the JWT. It returns `SessionData | null`. Use it to protect routes or conditionally serve content based on authentication state.
+</Callout>
+</Step>
+</Steps>
+
+## Configuration options
+
+All configuration options for `createExpressAuth` are the same as [`defineHoleauth`](/packages/core#defineHoleauth) in `@holeauth/core`. The Express wrapper adds the `.router` property and handles cookie/request bridging automatically.
+
+See [`@holeauth/core`](/packages/core) for the complete configuration reference, including token TTLs, registration policies, CSRF settings, and event hooks.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Two-factor authentication"
+    href="/getting-started/express/plugin-2fa"
+    description="Add TOTP-based 2FA with recovery codes."
+  />
+  <Card
+    title="Passkeys"
+    href="/getting-started/express/plugin-passkey"
+    description="Add WebAuthn / FIDO2 biometric login."
+  />
+  <Card
+    title="RBAC"
+    href="/getting-started/express/plugin-rbac"
+    description="Add role-based access control with permissions and groups."
+  />
+  <Card
+    title="SSO Consumer"
+    href="/getting-started/express/sso-consumer"
+    description="Sign in with Google, GitHub, or any OIDC provider."
+  />
+</Cards>

@@ -1,0 +1,229 @@
+---
+title: "@holeauth/nextjs-pages-router"
+description: Next.js Pages Router bindings for API routes, getServerSideProps, and tRPC context.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/nextjs-pages-router
+
+Next.js Pages Router bindings for holeauth. Provides an API route handler, `getServerSideProps` helpers, `withAuth` HOF for RBAC guards, and tRPC context factory.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/nextjs-pages-router
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/nextjs-pages-router
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/nextjs-pages-router
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/nextjs-pages-router
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from './db';
+
+export const auth = createPagesAuthHandler({
+  adapter: drizzleAdapter(db),
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+});
+```
+
+```ts title="pages/api/auth/[...holeauth].ts"
+import { auth } from '@/lib/auth';
+
+export default auth.handler;
+```
+
+## createPagesAuthHandler
+
+Creates a Next.js API route handler for the Pages Router.
+
+```ts
+function createPagesAuthHandler<
+  const Plugins extends readonly HoleauthPlugin<string, unknown>[] = [],
+>(
+  config: HoleauthConfig,
+  opts?: DispatchOptions,
+): PagesHoleauth<Plugins>;
+```
+
+Returns a `PagesHoleauth` instance with:
+
+- `handler` — Next.js API route handler for `/pages/api/auth/[...holeauth].ts`
+- All methods from `HoleauthInstance`
+- Plugin APIs when plugins are registered
+
+```ts title="pages/api/auth/[...holeauth].ts"
+import { auth } from '@/lib/auth';
+
+export default auth.handler;
+```
+
+## getServerSidePropsSession
+
+Read the current session inside `getServerSideProps`.
+
+```ts
+async function getServerSidePropsSession(
+  ctx: GetServerSidePropsContext,
+  config: HoleauthConfig,
+): Promise<SessionData | null>;
+```
+
+```ts title="pages/dashboard.tsx"
+import { getServerSidePropsSession } from '@holeauth/nextjs-pages-router';
+import { auth } from '@/lib/auth';
+import type { GetServerSideProps } from 'next';
+
+export const getServerSideProps: GetServerSideProps = async (ctx) => {
+  const session = await getServerSidePropsSession(ctx, auth);
+  if (!session) {
+    return { redirect: { destination: '/login', permanent: false } };
+  }
+
+  return { props: { userId: session.userId } };
+};
+
+export default function Dashboard({ userId }: { userId: string }) {
+  return <div>Welcome, {userId}</div>;
+}
+```
+
+## withAuth
+
+Higher-order function for `getServerSideProps` with optional RBAC guards.
+
+```ts
+function withAuth<P extends Record<string, unknown>>(
+  handler: GetServerSideProps<P>,
+  config: HoleauthConfig,
+  opts?: WithAuthOptions,
+): GetServerSideProps<P>;
+```
+
+<TypeTable
+  type={{
+    redirectTo: {
+      description: 'Redirect destination when no session is present.',
+      type: 'string',
+      default: '"/login"',
+    },
+    permissions: {
+      description: 'Require the session to satisfy ALL of the given permissions.',
+      type: 'readonly string[]',
+    },
+    groups: {
+      description: 'Require the session to belong to AT LEAST ONE of the given groups.',
+      type: 'readonly string[]',
+    },
+    redirectOnAuthFailure: {
+      description: 'Redirect destination when permission/group check fails.',
+      type: 'string',
+    },
+  }}
+/>
+
+```ts title="pages/admin.tsx"
+import { withAuth } from '@holeauth/nextjs-pages-router';
+import { auth } from '@/lib/auth';
+import type { GetServerSideProps } from 'next';
+
+export const getServerSideProps: GetServerSideProps = withAuth(
+  async (ctx) => {
+    return { props: {} };
+  },
+  auth,
+  {
+    permissions: ['admin.access'],
+    redirectOnAuthFailure: '/',
+  },
+);
+
+export default function AdminPage() {
+  return <div>Admin panel</div>;
+}
+```
+
+## createHoleauthPagesContext
+
+tRPC context factory for Pages Router.
+
+```ts
+function createHoleauthPagesContext(auth: HoleauthInstance) {
+  return async ({ req, res }: { req: NextApiRequest; res: NextApiResponse }) => {
+    const session = await getServerSidePropsSession({ req, res } as GetServerSidePropsContext, auth);
+    return { session, auth };
+  };
+}
+```
+
+```ts title="server/trpc.ts"
+import { createHoleauthPagesContext } from '@holeauth/nextjs-pages-router';
+import { auth } from '@/lib/auth';
+import { initTRPC } from '@trpc/server';
+
+const t = initTRPC.context<typeof createHoleauthPagesContext>().create();
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session } });
+});
+```
+
+## See also
+
+<Cards>
+  <Card
+    title="@holeauth/core"
+    href="/packages/core"
+    description="Core primitives used by this package."
+  />
+  <Card
+    title="@holeauth/react"
+    href="/packages/react"
+    description="Client-side provider and hooks for Next.js Pages Router."
+  />
+</Cards>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="@holeauth/express"
+    href="/packages/express"
+    description="Express router and middleware for holeauth."
+  />
+  <Card
+    title="@holeauth/react"
+    href="/packages/react"
+    description="React provider and hooks for client-side auth state."
+  />
+</Cards>

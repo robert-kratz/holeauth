@@ -79,7 +79,7 @@ jobs:
             const packages = [
               "@holeauth/core",
               "@holeauth/adapter-drizzle",
-              "@holeauth/nextjs",
+              "@holeauth/nextjs-app-router",
               "@holeauth/react",
               "@holeauth/plugin-2fa",
               "@holeauth/plugin-rbac",

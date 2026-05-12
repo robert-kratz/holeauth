@@ -1,0 +1,204 @@
+---
+title: "@holeauth/hono"
+description: Hono sub-app and middleware for edge-ready authentication.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/hono
+
+Hono bindings for holeauth. Provides a sub-app for all auth endpoints, session middleware, and `getSession` helper. Edge-ready.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/hono
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/hono
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/hono
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/hono
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { createHonoAuth } from '@holeauth/hono';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from './db';
+
+export const auth = createHonoAuth({
+  adapter: drizzleAdapter(db),
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+});
+```
+
+```ts title="server.ts"
+import { Hono } from 'hono';
+import { auth } from './lib/auth';
+
+const app = new Hono();
+
+app.route('/api/auth', auth.app);
+
+export default app;
+```
+
+## createHonoAuth
+
+Creates a Hono-compatible auth instance with a sub-app.
+
+```ts
+function createHonoAuth<
+  const Plugins extends readonly HoleauthPlugin<string, unknown>[] = [],
+>(
+  config: HoleauthConfig,
+  opts?: DispatchOptions,
+): HonoHoleauth<Plugins>;
+```
+
+Returns a `HonoHoleauth` instance with:
+
+- `app` — Hono sub-app for `/api/auth/*`
+- All methods from `HoleauthInstance`
+- Plugin APIs when plugins are registered
+
+```ts title="server.ts"
+import { Hono } from 'hono';
+import { auth } from './lib/auth';
+
+const app = new Hono();
+
+app.route('/api/auth', auth.app);
+```
+
+## createHonoAuthApp
+
+Build a Hono sub-app from an existing `HoleauthInstance`.
+
+```ts
+function createHonoAuthApp(
+  auth: HoleauthInstance,
+  opts?: DispatchOptions,
+): Hono;
+```
+
+Useful when the auth instance is constructed elsewhere (e.g., shared with a worker).
+
+```ts title="server.ts"
+import { Hono } from 'hono';
+import { createHonoAuthApp } from '@holeauth/hono';
+import { auth } from './lib/auth';
+
+const app = new Hono();
+
+app.route('/api/auth', createHonoAuthApp(auth));
+```
+
+## holeauthHonoMiddleware
+
+Hono middleware that resolves `c.var.holeauthSession`.
+
+```ts
+function holeauthHonoMiddleware(
+  auth: HoleauthInstance,
+): MiddlewareHandler<{ Variables: HoleauthHonoVariables }>;
+```
+
+```ts title="server.ts"
+import { Hono } from 'hono';
+import { holeauthHonoMiddleware } from '@holeauth/hono';
+import { auth } from './lib/auth';
+
+const app = new Hono();
+
+app.use('*', holeauthHonoMiddleware(auth));
+
+app.get('/api/me', (c) => {
+  const session = c.get('holeauthSession');
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  return c.json({ userId: session.userId });
+});
+```
+
+## getSession
+
+Read the current session from a Hono context.
+
+```ts
+async function getSession(
+  c: Context,
+  auth: HoleauthInstance,
+): Promise<SessionData | null>;
+```
+
+```ts title="routes/protected.ts"
+import { getSession } from '@holeauth/hono';
+import { auth } from '@/lib/auth';
+import type { Context } from 'hono';
+
+export const handler = async (c: Context) => {
+  const session = await getSession(c, auth);
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  return c.json({ userId: session.userId });
+};
+```
+
+<Callout type="info">
+  Hono is edge-ready and works on Cloudflare Workers, Deno Deploy, Bun, Vercel Edge Functions, and Node.js. Ensure your database adapter supports the target runtime.
+</Callout>
+
+## See also
+
+<Cards>
+  <Card
+    title="@holeauth/core"
+    href="/packages/core"
+    description="Core primitives used by this package."
+  />
+  <Card
+    title="Session management"
+    href="/concepts/sessions"
+    description="Understand refresh-token rotation and reuse detection."
+  />
+</Cards>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="@holeauth/react"
+    href="/packages/react"
+    description="React provider and hooks for client-side auth state."
+  />
+  <Card
+    title="@holeauth/adapter-drizzle"
+    href="/packages/adapter-drizzle"
+    description="Drizzle adapter for user, session, and audit storage."
+  />
+</Cards>

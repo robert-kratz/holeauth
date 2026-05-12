@@ -1,0 +1,120 @@
+---
+title: Transparent refresh rotation
+description: How holeauth automatically rotates expired access tokens during tRPC procedure execution.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Transparent refresh rotation
+
+When a user's access token expires while they are using your app, holeauth can **silently rotate** the token using the refresh token stored in a secure HTTP-only cookie. In tRPC procedures, this rotation happens **transparently** during the context factory execution, before your procedure handler runs.
+
+## Why it matters
+
+Long-lived dashboards and SPAs often keep firing tRPC queries in the background (e.g., polling, live data feeds). Without transparent rotation:
+
+- Every query after the access token expires would return `UNAUTHORIZED`.
+- The client would need to detect the error, call a dedicated `/refresh` endpoint, then retry the original query.
+- Race conditions arise when multiple queries expire simultaneously.
+
+Transparent rotation eliminates this complexity: the server rotates the token **before** the procedure handler runs, and the client receives fresh cookies in the same response.
+
+## How it works
+
+The holeauth tRPC context factory (`createHoleauthContext`, `createHoleauthPagesContext`, etc.) follows this flow:
+
+1. **Parse cookies** from the incoming request (`holeauth-access`, `holeauth-refresh`).
+2. **Validate the access JWT**:
+   - If valid → proceed with the current session.
+   - If expired → attempt rotation.
+3. **Rotate the refresh token** (if needed):
+   - Verify the refresh JWT.
+   - Check that it has not been revoked (via the adapter).
+   - Issue new access, refresh, and CSRF tokens.
+   - Append `Set-Cookie` headers to the response.
+4. **Inject context**:
+   - `ctx.session` contains the validated session data.
+   - `ctx.refreshed` is `true` when rotation occurred.
+5. The procedure handler runs with the fresh session.
+
+All of this happens **before** your procedure code executes, so you never see an expired session in `ctx.session`.
+
+## Example: Logging rotation events
+
+You can use the `ctx.refreshed` flag to log or audit when rotation happens:
+
+```ts title="lib/trpc/router.ts"
+import { z } from 'zod';
+import { router, authProcedure } from './server';
+
+export const appRouter = router({
+  dashboard: authProcedure.query(({ ctx }) => {
+    if (ctx.refreshed) {
+      console.log('[audit] Token rotated for user:', ctx.session.sub);
+    }
+
+    return {
+      userId: ctx.session.sub,
+      email: ctx.session.email,
+      rotated: ctx.refreshed,
+    };
+  }),
+});
+```
+
+## Mechanism details
+
+The context factory calls `getSessionOrRefreshFromRequest` from `@holeauth/core/session`, which:
+
+- Parses the `Cookie` header.
+- Validates the access JWT signature and expiration.
+- If expired, validates the refresh JWT and issues a new token bundle.
+- Returns `{ session, tokens, refreshed, setCookieHeaders }`.
+
+The context factory then appends each string in `setCookieHeaders` to the response's `Set-Cookie` header, ensuring the client receives the updated cookies.
+
+<Callout type="info">
+  The refresh token itself is also rotated on every use (refresh token rotation). This prevents replay attacks: once a refresh token is used, the old token is invalidated and cannot be reused.
+</Callout>
+
+## Caveats
+
+### HTTP batch mode
+
+tRPC's `httpBatchLink` sends multiple procedure calls in a single HTTP request. If rotation happens during the first procedure, the `Set-Cookie` headers are written once. However, if multiple procedures each trigger rotation logic (e.g., due to race conditions in the adapter), only the **last** set of `Set-Cookie` headers wins.
+
+**Recommendation**: For critical auth flows (login, password reset), disable batching or use single requests (`httpLink` instead of `httpBatchLink`).
+
+### Streaming and subscriptions
+
+If you use tRPC subscriptions (WebSocket or SSE-based), the initial handshake request performs rotation, but subsequent events do not re-check expiration. Ensure your access token TTL is long enough to cover the subscription lifetime, or implement periodic re-authentication on the client.
+
+### Cookie size limits
+
+After rotation, the response includes three `Set-Cookie` headers (access, refresh, CSRF). If your session data is large (e.g., storing permissions inline), the cookies may exceed browser limits (4 KB per cookie). Use the adapter to store large session data server-side and only store the session ID in the cookie.
+
+## Refresh token reuse detection
+
+The adapter tracks which refresh tokens have been used. If a client retries a request with an **already-rotated** refresh token (e.g., due to network retry, race condition), the adapter detects this as a potential replay attack and invalidates all tokens for that user.
+
+This is the **double-submit** pattern. To recover, the user must log in again.
+
+<Callout type="warn">
+  Network retries or race conditions between multiple browser tabs can trigger false positives. If you observe users being logged out unexpectedly, audit your retry logic and ensure only one refresh attempt happens at a time.
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card
+    title="RBAC Procedures"
+    href="/integrations/trpc/rbac-procedures"
+    description="Gate procedures on permissions using makePermissionProcedure."
+  />
+  <Card
+    title="Token Rotation Concept"
+    href="/concepts/token-rotation"
+    description="Deep dive into the refresh token rotation mechanism and security model."
+  />
+</Cards>

@@ -1,0 +1,124 @@
+---
+title: JWKS and key rotation
+description: How the IdP plugin manages signing keys, exposes them via JWKS, and supports rotation without downtime.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# JWKS and key rotation
+
+Access tokens and ID tokens issued by the IdP plugin are signed with **RSA keys** (RS256). The public keys are exposed at `/oauth2/jwks` in JSON Web Key Set format, allowing clients to verify token signatures without sharing secrets.
+
+## Key storage
+
+Signing keys are stored in the IdP adapter (`idp_signing_keys` table) and are scoped to the plugin, not to individual users or apps. Each key has:
+- `id` — unique identifier (key ID, exposed as `kid` in the JWKS)
+- `algorithm` — always `RS256` (configurable via `signingAlg` option)
+- `privateKey` — PEM-encoded RSA private key (2048-bit)
+- `publicKey` — PEM-encoded RSA public key
+- `createdAt` — timestamp of key generation
+- `retiredAt` — timestamp when the key was retired (null for active keys)
+
+## Key lifecycle
+
+1. **Bootstrap**: On first plugin initialization, if no keys exist, the plugin generates a new RSA key pair automatically (via `ensureSigningKey`).
+2. **Active key**: The plugin uses the most recently created non-retired key to sign new tokens.
+3. **Rotation**: When you rotate keys (manually via `keys.rotate()` or on a schedule), a new key is generated and the old key is marked `retiredAt = now()`.
+4. **Grace period**: Retired keys remain in the JWKS for a grace period (default: 24 hours) to allow clients to verify tokens signed with the old key before they expire.
+5. **Cleanup**: After the grace period + max token TTL, retired keys can be deleted (not automated — run a cron job).
+
+## JWKS endpoint
+
+Clients fetch the public keys from:
+
+```bash
+curl https://auth.example.com/oauth2/jwks
+```
+
+Response:
+
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "use": "sig",
+      "kid": "550e8400-e29b-41d4-a716-446655440000",
+      "alg": "RS256",
+      "n": "xGOr-H3z...",
+      "e": "AQAB"
+    },
+    {
+      "kty": "RSA",
+      "use": "sig",
+      "kid": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "alg": "RS256",
+      "n": "yH1P-K4a...",
+      "e": "AQAB"
+    }
+  ]
+}
+```
+
+The JWKS includes both the active key and any recently retired keys (within the grace period). Clients should cache this response and refresh periodically (every hour is typical).
+
+## Manual rotation
+
+Rotate keys via the plugin API:
+
+```ts title="scripts/rotate-idp-keys.ts"
+import { auth } from '@/lib/auth';
+
+const idpPlugin = auth.getPlugin('idp');
+const newKey = await idpPlugin.keys.rotate();
+
+console.log('New key ID:', newKey.id);
+console.log('Retired old keys. New tokens will be signed with the new key.');
+```
+
+<Callout type="info">
+  Rotation is instantaneous — new tokens use the new key immediately. Old tokens remain valid until they expire (TTL configured in `accessTokenTtl` and `idTokenTtl`).
+</Callout>
+
+## Automated rotation
+
+To rotate keys on a schedule, create a cron job or Next.js Edge Function:
+
+```ts title="app/api/cron/rotate-keys/route.ts"
+import { auth } from '@/lib/auth';
+
+export async function POST(req: Request) {
+  const authHeader = req.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const idpPlugin = auth.getPlugin('idp');
+  await idpPlugin.keys.rotate();
+
+  return new Response('Keys rotated', { status: 200 });
+}
+```
+
+Schedule this route to run monthly using Vercel Cron, GitHub Actions, or any cron service.
+
+## Why rotate keys
+
+- **Limit blast radius**: If a private key is compromised, only tokens signed with that key are affected.
+- **Compliance**: Many security frameworks (SOC 2, ISO 27001) require periodic key rotation.
+- **Defense in depth**: Automated rotation reduces the window of exposure if a key leaks.
+
+<Callout type="warn">
+  Do not rotate keys more frequently than your shortest token TTL. If you rotate every 5 minutes but access tokens live for 15 minutes, clients will fail to verify tokens signed with retired keys that have already been removed from the JWKS.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Consent screen"
+    href="/sso/provider/consent"
+    description="Customize the consent flow and understand how consent is remembered"
+  />
+</Cards>

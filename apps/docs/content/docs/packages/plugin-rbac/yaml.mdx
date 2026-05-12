@@ -1,0 +1,426 @@
+---
+title: "@holeauth/rbac-yaml"
+description: Load and hot-reload RBAC group definitions from a YAML file (Node.js only).
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/rbac-yaml
+
+Load RBAC group definitions from a YAML file with optional hot-reload. Node.js only.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/rbac-yaml
+```
+</Tab>
+</Tabs>
+
+<Callout type="warn">
+  This package depends on Node.js `fs` and `path` APIs. It is **NOT** compatible with edge runtimes (Cloudflare Workers, Vercel Edge, Deno Deploy). For edge environments, use `loadRbacYamlFromString` and supply the YAML content from an environment variable or KV store.
+</Callout>
+
+## Quick Example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { rbac } from '@holeauth/plugin-rbac';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { db } from '@/db';
+import { tables } from '@/db/schema';
+
+const yaml = loadRbacYaml('./holeauth.rbac.yml', {
+  watch: process.env.NODE_ENV !== 'production',
+});
+
+const plugin = rbac({
+  groups: yaml.snapshot.groups,
+  adapter: createRbacAdapter({ db, tables }),
+});
+
+yaml.onReload((snapshot) => plugin.reload(snapshot.groups));
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [plugin],
+});
+```
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  user:
+    default: true
+    displayName: User
+    priority: 100
+    permissions:
+      - posts.read
+      - comments.create
+      - comments.read
+
+  editor:
+    displayName: Editor
+    priority: 50
+    inherits:
+      - user
+    permissions:
+      - posts.create
+      - posts.update
+      - posts.*.self
+
+  admin:
+    displayName: Administrator
+    priority: 0
+    permissions:
+      - '*'
+```
+
+## API Reference
+
+### loadRbacYaml()
+
+Loads and validates a YAML file from the filesystem. Returns a snapshot object with optional file-watch.
+
+```ts
+function loadRbacYaml(
+  path: string,
+  options?: LoadYamlOptions
+): LoadedRbacYaml
+```
+
+<TypeTable
+  type={{
+    path: {
+      description: 'Absolute or relative path to the YAML file.',
+      type: 'string',
+      required: true,
+    },
+    watch: {
+      description: 'Enable file-watch and hot-reload. Recommended for development only.',
+      type: 'boolean',
+      default: 'false',
+    },
+    multipleDefaults: {
+      description: 'Behavior when multiple groups have `default: true`. "warn" logs and picks the first; "throw" raises an error.',
+      type: '"warn" | "throw"',
+      default: '"warn"',
+    },
+    logger: {
+      description: 'Custom logger with a `warn` method.',
+      type: '{ warn: (msg: string) => void }',
+      default: 'console.warn',
+    },
+  }}
+/>
+
+**Returns: LoadedRbacYaml**
+
+<TypeTable
+  type={{
+    snapshot: {
+      description: 'Current RBAC configuration snapshot (updated in-place on reload).',
+      type: 'RbacConfigSnapshot',
+    },
+    onReload: {
+      description: 'Subscribe to reload events. Returns an unsubscribe function.',
+      type: '(handler: (snapshot: RbacConfigSnapshot) => void) => () => void',
+    },
+    close: {
+      description: 'Stop file-watch (if enabled) and clean up resources.',
+      type: '() => void',
+    },
+  }}
+/>
+
+**Example**
+
+```ts title="lib/auth.ts"
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const yaml = loadRbacYaml('./holeauth.rbac.yml', {
+  watch: process.env.NODE_ENV === 'development',
+  multipleDefaults: 'throw',
+});
+
+console.log(yaml.snapshot.groups);
+
+yaml.onReload((snapshot) => {
+  console.log('RBAC config reloaded:', snapshot.groups.length, 'groups');
+});
+```
+
+### loadRbacYamlFromString()
+
+Parses YAML content from a string without touching the filesystem. **Edge-compatible**.
+
+```ts
+function loadRbacYamlFromString(
+  content: string,
+  options?: LoadOptions
+): RbacConfigSnapshot
+```
+
+<TypeTable
+  type={{
+    content: {
+      description: 'Raw YAML string.',
+      type: 'string',
+      required: true,
+    },
+    multipleDefaults: {
+      description: 'Behavior when multiple groups have `default: true`.',
+      type: '"warn" | "throw"',
+      default: '"warn"',
+    },
+    logger: {
+      description: 'Custom logger.',
+      type: '{ warn: (msg: string) => void }',
+    },
+  }}
+/>
+
+**Example (Cloudflare Worker / Edge Runtime)**
+
+```ts title="lib/auth.ts"
+import { rbac } from '@holeauth/plugin-rbac';
+import { loadRbacYamlFromString } from '@holeauth/rbac-yaml';
+
+const RBAC_YAML = `
+groups:
+  user:
+    default: true
+    permissions:
+      - posts.read
+  admin:
+    permissions:
+      - '*'
+`;
+
+const snapshot = loadRbacYamlFromString(RBAC_YAML);
+
+export const auth = defineHoleauth({
+  plugins: [rbac({ groups: snapshot.groups, adapter })],
+});
+```
+
+### validateRbacDefinition()
+
+Validates a JavaScript object (already parsed from YAML or JSON) against the schema.
+
+```ts
+function validateRbacDefinition(
+  obj: unknown,
+  options?: LoadOptions
+): RbacConfigSnapshot
+```
+
+**Throws**
+
+- Zod validation errors if the structure is invalid.
+- `Error` if no default group or multiple defaults (depending on `multipleDefaults` option).
+- `Error` on inheritance cycles.
+
+## YAML Schema
+
+The YAML file must have a top-level `groups` object. Each key is a group ID.
+
+### Group Properties
+
+<TypeTable
+  type={{
+    default: {
+      description: 'Whether this is the default group assigned to new users. Exactly one group must have `default: true`.',
+      type: 'boolean',
+    },
+    displayName: {
+      description: 'Human-readable group name.',
+      type: 'string',
+    },
+    description: {
+      description: 'Group description.',
+      type: 'string',
+    },
+    priority: {
+      description: 'Sort order for permission precedence (lower = higher priority).',
+      type: 'number',
+    },
+    inherits: {
+      description: 'Array of group IDs to inherit permissions from.',
+      type: 'string[]',
+    },
+    permissions: {
+      description: 'Array of permission nodes (dot-separated, wildcard `*`, negation prefix `!`).',
+      type: 'string[]',
+    },
+  }}
+/>
+
+### Permission Node Syntax
+
+- `posts.create` — Exact match
+- `posts.*` — Wildcard (matches `posts.create`, `posts.delete`, etc.)
+- `*` — Global wildcard (matches everything)
+- `!posts.delete` — Negation (revokes a permission)
+
+### Inheritance
+
+Groups can inherit permissions from other groups using the `inherits` field. Inheritance is resolved at load time, and the result is stored in the `effective` array.
+
+**Example**
+
+```yaml
+groups:
+  user:
+    default: true
+    permissions:
+      - posts.read
+      - comments.create
+
+  moderator:
+    inherits:
+      - user
+    permissions:
+      - comments.delete
+
+  admin:
+    inherits:
+      - moderator
+    permissions:
+      - '*'
+```
+
+The `admin` group's effective permissions are: `['posts.read', 'comments.create', 'comments.delete', '*']`.
+
+**Circular inheritance is detected and raises an error.**
+
+## Complete Example
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  # Default group for all users
+  user:
+    default: true
+    displayName: User
+    description: Standard user with read access
+    priority: 100
+    permissions:
+      - posts.read
+      - comments.create
+      - comments.read
+      - profile.update.self
+
+  # Content creators
+  creator:
+    displayName: Content Creator
+    description: Can create and manage their own posts
+    priority: 75
+    inherits:
+      - user
+    permissions:
+      - posts.create
+      - posts.update.self
+      - posts.delete.self
+
+  # Moderators
+  moderator:
+    displayName: Moderator
+    description: Can moderate comments and posts
+    priority: 50
+    inherits:
+      - creator
+    permissions:
+      - comments.delete
+      - posts.flag
+      - reports.read
+
+  # Editors
+  editor:
+    displayName: Editor
+    description: Can edit all content
+    priority: 25
+    inherits:
+      - moderator
+    permissions:
+      - posts.*
+      - '!posts.delete'  # Can edit but not delete
+
+  # Administrators
+  admin:
+    displayName: Administrator
+    description: Full access to everything
+    priority: 0
+    permissions:
+      - '*'
+```
+
+## Hot Reload
+
+When `watch: true` is enabled, the loader monitors the YAML file for changes and automatically reloads the configuration.
+
+```ts title="lib/auth.ts"
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+import { rbac } from '@holeauth/plugin-rbac';
+
+const yaml = loadRbacYaml('./holeauth.rbac.yml', {
+  watch: process.env.NODE_ENV === 'development',
+});
+
+const plugin = rbac({
+  groups: yaml.snapshot.groups,
+  adapter: rbacAdapter,
+});
+
+yaml.onReload((snapshot) => {
+  console.log('[RBAC] Config reloaded:', snapshot.groups.length, 'groups');
+  plugin.reload(snapshot.groups);
+});
+
+// Clean up when your app shuts down
+process.on('SIGTERM', () => yaml.close());
+```
+
+## Validation Errors
+
+The loader uses Zod for validation. Common errors:
+
+- **No default group**: At least one group must have `default: true`.
+- **Multiple defaults**: Only one group can be the default (configurable via `multipleDefaults` option).
+- **Inheritance cycle**: Groups form a circular inheritance chain.
+- **Unknown parent**: A group inherits from a non-existent group ID.
+- **Invalid permission syntax**: Permission nodes must match `/^!?[A-Za-z0-9_\-]+(\.([A-Za-z0-9_\-]+|\*))*\*?$|^\*$/`.
+
+## See Also
+
+<Cards>
+  <Card title="@holeauth/plugin-rbac" href="index" description="Core RBAC plugin documentation" />
+  <Card title="@holeauth/rbac-drizzle" href="drizzle" description="Database adapter for user-group assignments" />
+  <Card title="Getting Started: RBAC" href="/getting-started/core/rbac" description="Complete setup guide" />
+</Cards>
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/plugin-idp" href="/packages/plugin-idp" description="OpenID Connect / OAuth 2.0 Identity Provider" />
+</Cards>

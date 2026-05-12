@@ -1,0 +1,430 @@
+---
+title: Context and server setup
+description: Build the tRPC context with automatic session refresh and wire it into your framework.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Context and server setup
+
+This guide walks through setting up a tRPC server with holeauth, including the context factory, authenticated procedures, and framework-specific route handlers.
+
+<Steps>
+  <Step>
+    ### Install packages
+
+    <Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+      <Tab value="pnpm">
+```bash
+pnpm add @holeauth/trpc @trpc/server @trpc/client @trpc/react-query @tanstack/react-query
+```
+</Tab>
+      <Tab value="npm">
+```bash
+npm install @holeauth/trpc @trpc/server @trpc/client @trpc/react-query @tanstack/react-query
+```
+</Tab>
+      <Tab value="yarn">
+```bash
+yarn add @holeauth/trpc @trpc/server @trpc/client @trpc/react-query @tanstack/react-query
+```
+</Tab>
+      <Tab value="bun">
+```bash
+bun add @holeauth/trpc @trpc/server @trpc/client @trpc/react-query @tanstack/react-query
+```
+</Tab>
+    </Tabs>
+
+    If you use a data transformer like `superjson`:
+
+    <Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+      <Tab value="pnpm">
+```bash
+pnpm add superjson
+```
+</Tab>
+      <Tab value="npm">
+```bash
+npm install superjson
+```
+</Tab>
+      <Tab value="yarn">
+```bash
+yarn add superjson
+```
+</Tab>
+      <Tab value="bun">
+```bash
+bun add superjson
+```
+</Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ### Build the tRPC context
+
+    The context factory depends on your framework. Each framework has a dedicated helper that handles cookie parsing and `Set-Cookie` header forwarding.
+
+    <Tabs items={['Next.js App Router', 'Next.js Pages Router', 'Express', 'Hono']}>
+      <Tab value="Next.js App Router">
+```ts title="lib/trpc/server.ts"
+import { createHoleauthContext } from '@holeauth/trpc';
+import { initTRPC, TRPCError } from '@trpc/server';
+import superjson from 'superjson';
+import { auth } from '../auth';
+
+export const createTrpcContext = createHoleauthContext(auth);
+export type TrpcContext = Awaited<ReturnType<typeof createTrpcContext>>;
+
+const t = initTRPC.context<TrpcContext>().create({ transformer: superjson });
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+
+const enforceSession = t.middleware(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session, userId: ctx.session.sub! } });
+});
+
+export const authProcedure = publicProcedure.use(enforceSession);
+```
+      </Tab>
+      <Tab value="Next.js Pages Router">
+```ts title="lib/trpc/server.ts"
+import { createHoleauthPagesContext } from '@holeauth/nextjs-pages-router';
+import { initTRPC, TRPCError } from '@trpc/server';
+import superjson from 'superjson';
+import { auth } from '../auth';
+
+export const createTrpcContext = createHoleauthPagesContext(auth);
+export type TrpcContext = Awaited<ReturnType<typeof createTrpcContext>>;
+
+const t = initTRPC.context<TrpcContext>().create({ transformer: superjson });
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+
+const enforceSession = t.middleware(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session, userId: ctx.session.sub! } });
+});
+
+export const authProcedure = publicProcedure.use(enforceSession);
+```
+      </Tab>
+      <Tab value="Express">
+```ts title="lib/trpc/server.ts"
+import { createHoleauthExpressContext } from '@holeauth/express';
+import { initTRPC, TRPCError } from '@trpc/server';
+import superjson from 'superjson';
+import { auth } from '../auth';
+
+export const createTrpcContext = createHoleauthExpressContext(auth);
+export type TrpcContext = Awaited<ReturnType<typeof createTrpcContext>>;
+
+const t = initTRPC.context<TrpcContext>().create({ transformer: superjson });
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+
+const enforceSession = t.middleware(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session, userId: ctx.session.sub! } });
+});
+
+export const authProcedure = publicProcedure.use(enforceSession);
+```
+      </Tab>
+      <Tab value="Hono">
+```ts title="lib/trpc/server.ts"
+import { createHoleauthHonoContext } from '@holeauth/hono';
+import { initTRPC, TRPCError } from '@trpc/server';
+import superjson from 'superjson';
+import { auth } from '../auth';
+
+export const createTrpcContext = createHoleauthHonoContext(auth);
+export type TrpcContext = Awaited<ReturnType<typeof createTrpcContext>>;
+
+const t = initTRPC.context<TrpcContext>().create({ transformer: superjson });
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+
+const enforceSession = t.middleware(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session, userId: ctx.session.sub! } });
+});
+
+export const authProcedure = publicProcedure.use(enforceSession);
+```
+      </Tab>
+    </Tabs>
+
+    <Callout type="info">
+      The `createHoleauthContext` function (from `@holeauth/trpc`) is specifically designed for the fetch adapter. For other frameworks, use the dedicated context factories from their respective packages.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Create a router
+
+    Define your procedures using the exported `router`, `publicProcedure`, and `authProcedure`.
+
+```ts title="lib/trpc/router.ts"
+import { z } from 'zod';
+import { router, publicProcedure, authProcedure } from './server';
+
+export const appRouter = router({
+  hello: publicProcedure
+    .input(z.object({ name: z.string() }))
+    .query(({ input }) => {
+      return { message: `Hello, ${input.name}!` };
+    }),
+
+  me: authProcedure.query(({ ctx }) => {
+    return { userId: ctx.userId, email: ctx.session.email };
+  }),
+
+  updateProfile: authProcedure
+    .input(z.object({ displayName: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // Update user profile in database
+      return { success: true, displayName: input.displayName };
+    }),
+});
+
+export type AppRouter = typeof appRouter;
+```
+  </Step>
+
+  <Step>
+    ### Mount the route handler
+
+    Wire the router into your framework's HTTP server.
+
+    <Tabs items={['Next.js App Router', 'Next.js Pages Router', 'Express', 'Hono']}>
+      <Tab value="Next.js App Router">
+```ts title="app/api/trpc/[trpc]/route.ts"
+import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
+import { appRouter } from '@/lib/trpc/router';
+import { createTrpcContext } from '@/lib/trpc/server';
+
+export const runtime = 'nodejs';
+
+const handler = (req: Request) =>
+  fetchRequestHandler({
+    endpoint: '/api/trpc',
+    req,
+    router: appRouter,
+    createContext: createTrpcContext,
+    onError({ error, path }) {
+      console.error(`[tRPC] ${path ?? '<unknown>'}:`, error.code, error.message);
+    },
+  });
+
+export { handler as GET, handler as POST };
+```
+      </Tab>
+      <Tab value="Next.js Pages Router">
+```ts title="pages/api/trpc/[trpc].ts"
+import { createNextApiHandler } from '@trpc/server/adapters/next';
+import { appRouter } from '@/lib/trpc/router';
+import { createTrpcContext } from '@/lib/trpc/server';
+
+export default createNextApiHandler({
+  router: appRouter,
+  createContext: createTrpcContext,
+  onError({ error, path }) {
+    console.error(`[tRPC] ${path ?? '<unknown>'}:`, error.code, error.message);
+  },
+});
+```
+      </Tab>
+      <Tab value="Express">
+```ts title="server.ts"
+import express from 'express';
+import { createExpressMiddleware } from '@trpc/server/adapters/express';
+import { appRouter } from './lib/trpc/router';
+import { createTrpcContext } from './lib/trpc/server';
+
+const app = express();
+
+app.use(
+  '/api/trpc',
+  createExpressMiddleware({
+    router: appRouter,
+    createContext: createTrpcContext,
+    onError({ error, path }) {
+      console.error(`[tRPC] ${path ?? '<unknown>'}:`, error.code, error.message);
+    },
+  }),
+);
+
+app.listen(3000, () => {
+  console.log('Server listening on http://localhost:3000');
+});
+```
+      </Tab>
+      <Tab value="Hono">
+```ts title="index.ts"
+import { Hono } from 'hono';
+import { trpcServer } from '@hono/trpc-server';
+import { appRouter } from './lib/trpc/router';
+import { createTrpcContext } from './lib/trpc/server';
+
+const app = new Hono();
+
+app.use(
+  '/api/trpc/*',
+  trpcServer({
+    router: appRouter,
+    createContext: createTrpcContext,
+    onError({ error, path }) {
+      console.error(`[tRPC] ${path ?? '<unknown>'}:`, error.code, error.message);
+    },
+  }),
+);
+
+export default app;
+```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ### Set up the client (React)
+
+    Create a tRPC client with TanStack Query.
+
+```tsx title="lib/trpc/client.tsx"
+'use client';
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { httpBatchLink } from '@trpc/client';
+import { createTRPCReact } from '@trpc/react-query';
+import superjson from 'superjson';
+import type { AppRouter } from './router';
+import { useState } from 'react';
+
+export const trpc = createTRPCReact<AppRouter>();
+
+export function TrpcProvider({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+  const [trpcClient] = useState(() =>
+    trpc.createClient({
+      links: [
+        httpBatchLink({
+          url: '/api/trpc',
+          transformer: superjson,
+        }),
+      ],
+    }),
+  );
+
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </trpc.Provider>
+  );
+}
+```
+
+Wrap your app root with the provider:
+
+```tsx title="app/layout.tsx"
+import { TrpcProvider } from '@/lib/trpc/client';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <TrpcProvider>{children}</TrpcProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+Now you can call procedures from any client component:
+
+```tsx title="app/page.tsx"
+'use client';
+
+import { trpc } from '@/lib/trpc/client';
+
+export default function Home() {
+  const { data: session } = trpc.me.useQuery();
+
+  if (!session) return <p>Not logged in</p>;
+  return <p>Welcome, {session.email}</p>;
+}
+```
+  </Step>
+</Steps>
+
+## Context object shape
+
+The context injected by `createHoleauthContext` (and its framework-specific variants) has the following shape:
+
+<TypeTable
+  type={{
+    auth: {
+      description: 'The full, typed holeauth instance (including plugin namespaces like auth.rbac).',
+      type: 'HoleauthInstance',
+      required: true,
+    },
+    session: {
+      description: 'Resolved session for the current request, or null when unauthenticated.',
+      type: 'SessionData | null',
+      required: true,
+    },
+    refreshed: {
+      description: 'Whether a silent token rotation happened during this request.',
+      type: 'boolean',
+      required: true,
+    },
+    req: {
+      description: 'The incoming Web API Request object.',
+      type: 'Request',
+      required: true,
+    },
+    resHeaders: {
+      description: 'The outgoing Headers object where Set-Cookie headers are appended during refresh.',
+      type: 'Headers',
+      required: true,
+    },
+  }}
+/>
+
+<Callout type="info">
+  Framework-specific context factories (Pages Router, Express, Hono) include additional fields like `req`, `res`, or `c` (Hono context). Refer to the respective package documentation for full type definitions.
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card
+    title="Refresh Rotation"
+    href="/integrations/trpc/refresh-rotation"
+    description="Learn how transparent token rotation works in tRPC procedures."
+  />
+  <Card
+    title="RBAC Procedures"
+    href="/integrations/trpc/rbac-procedures"
+    description="Gate procedures on permissions using makePermissionProcedure."
+  />
+</Cards>

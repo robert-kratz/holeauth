@@ -1,0 +1,91 @@
+/*
+ * globals.css — docs root layout stylesheet (loaded after fumadocs-ui/style.css).
+ *
+ * The landing/marketing page lives in apps/landing now. This file only
+ * carries the Fumadocs dark-mode palette overrides + a few minor tweaks.
+ * No Tailwind compilation happens here.
+ */
+
+/* ── Landing CSS custom properties (available on all pages via :root) ─────── */
+:root {
+  --color-bg: #0a0a0b;
+  --color-bg-soft: #111114;
+  --color-bg-elev: #15151a;
+  --color-ink: #ededed;
+  --color-ink-dim: #b8b8c0;
+  --color-muted: #6e6e78;
+  --color-line: rgba(255, 255, 255, 0.06);
+  --color-line-strong: rgba(255, 255, 255, 0.12);
+  --color-accent-from: #c1ae7c;
+  --color-accent-mid: #dd5e98;
+  --color-accent-to: #6c3a5c;
+  --color-accent-1: #c1ae7c;
+  --color-accent-2: #e16f7c;
+  --color-accent-3: #dd5e98;
+  --color-accent-4: #cc4bc2;
+  --color-accent-5: #6c3a5c;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+/* ── Fumadocs dark-mode overrides — match landing page palette ────────────── */
+/*
+ * These override the .dark variables defined inside fumadocs-ui/style.css.
+ * globals.css is imported AFTER fumadocs-ui/style.css in layout.tsx so
+ * these non-layered rules correctly win the cascade.
+ */
+.dark {
+  /* Backgrounds */
+  --color-fd-background: #0a0a0b;
+  --color-fd-foreground: #ededed;
+  --color-fd-muted: #111114;
+  --color-fd-muted-foreground: #b8b8c0;
+  --color-fd-popover: #15151a;
+  --color-fd-popover-foreground: #ededed;
+  --color-fd-card: #111114;
+  --color-fd-card-foreground: #ededed;
+  /* Borders — thin, no opacity gimmick, exactly like the landing navbar border */
+  --color-fd-border: rgba(255, 255, 255, 0.06);
+  /* Primary = white-ish for active/selected states */
+  --color-fd-primary: #ededed;
+  --color-fd-primary-foreground: #0a0a0b;
+  --color-fd-secondary: #15151a;
+  --color-fd-secondary-foreground: #ededed;
+  /* Accent = subtle hover fill (same whitespace feel as landing) */
+  --color-fd-accent: rgba(255, 255, 255, 0.05);
+  --color-fd-accent-foreground: #ededed;
+  --color-fd-ring: rgba(255, 255, 255, 0.15);
+  --color-fd-overlay: rgba(0, 0, 0, 0.45);
+}
+
+/* Sidebar uses a slightly lighter muted for contrast (keep fumadocs default ratio) */
+.dark #nd-sidebar {
+  --color-fd-muted: #111114;
+  --color-fd-secondary: #15151a;
+  --color-fd-muted-foreground: #b8b8c0;
+  background: #0a0a0b;
+}
+
+/* ── Strip shadows, keep minimal border-radius ────────────────────────────── */
+.dark #nd-sidebar *,
+.dark [data-radix-popper-content-wrapper] *,
+.dark [data-slot='card'] {
+  box-shadow: none !important;
+}
+
+/* Docs body — anti-aliasing to match landing page feel */
+.dark body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Sidebar footer links hover state */
+.sidebar-footer-link:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ededed;
+}
+

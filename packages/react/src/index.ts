@@ -765,6 +765,97 @@ export function usePasskeyLogin() {
   return { login, loading, error };
 }
 
+/** Public, JSON-safe shape of a registered passkey for the current user. */
+export interface PasskeySummary {
+  id: string;
+  credentialId: string;
+  deviceName: string | null;
+  transports: string[] | null;
+  /** ISO-8601 string when the credential was created (server-formatted). */
+  createdAt: string | null;
+}
+
+/**
+ * Fetches the current user's registered passkeys via `${basePath}/passkey/list`.
+ * Returns `{ passkeys, loading, error, refresh }`. Auto-fetches on mount and
+ * whenever the session changes.
+ */
+export function usePasskeyList(): {
+  passkeys: PasskeySummary[] | null;
+  loading: boolean;
+  error: { message: string } | null;
+  refresh: () => Promise<void>;
+} {
+  const { basePath, cookiePrefix, session } = useInternal();
+  const [passkeys, setPasskeys] = useState<PasskeySummary[] | null>(null);
+  const { loading, setLoading, error, setError } = useMutationState();
+
+  const load = useCallback(async () => {
+    if (!session) {
+      setPasskeys(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await holeauthFetch(`${basePath}/passkey/list`, { cookiePrefix });
+      if (!res.ok) {
+        setError(await parseErr(res));
+        setPasskeys(null);
+        return;
+      }
+      const body = (await res.json()) as { passkeys: PasskeySummary[] };
+      setPasskeys(body.passkeys);
+    } finally {
+      setLoading(false);
+    }
+  }, [basePath, cookiePrefix, session, setLoading, setError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return { passkeys, loading, error, refresh: load };
+}
+
+/**
+ * Returns a `delete(credentialId)` mutation that removes a passkey via
+ * `${basePath}/passkey/delete`. Requires a valid CSRF cookie (auto-attached
+ * by `holeauthFetch`).
+ */
+export function usePasskeyDelete(): {
+  delete: (credentialId: string) => Promise<{ ok: true } | { ok: false }>;
+  loading: boolean;
+  error: { message: string } | null;
+} {
+  const { basePath, cookiePrefix } = useInternal();
+  const { loading, setLoading, error, setError } = useMutationState();
+
+  const del = useCallback(
+    async (credentialId: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await holeauthFetch(`${basePath}/passkey/delete`, {
+          method: 'POST',
+          body: JSON.stringify({ credentialId }),
+          cookiePrefix,
+        });
+        if (!res.ok) {
+          setError(await parseErr(res));
+          return { ok: false as const };
+        }
+        return { ok: true as const };
+      } finally {
+        setLoading(false);
+      }
+    },
+    [basePath, cookiePrefix, setLoading, setError],
+  );
+
+  return { delete: del, loading, error };
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // SSO
 // ─────────────────────────────────────────────────────────────────────────

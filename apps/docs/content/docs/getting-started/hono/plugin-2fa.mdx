@@ -1,0 +1,368 @@
+---
+title: Two-factor authentication
+description: Add TOTP-based two-factor authentication with recovery codes to your Hono application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Two-factor authentication
+
+This guide walks you through adding TOTP-based two-factor authentication to your Hono application. Users will enroll by scanning a QR code with an authenticator app, then verify a six-digit code on every sign-in. Recovery codes are generated once during enrollment for account recovery.
+
+<Callout type="info">
+  This guide assumes you have completed the [core Hono setup](/getting-started/hono).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-2fa @holeauth/2fa-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-2fa @holeauth/2fa-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-2fa @holeauth/2fa-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-2fa @holeauth/2fa-drizzle
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+  If you are using a headless adapter, skip `@holeauth/2fa-drizzle` and implement the `TwoFactorAdapter` interface yourself. See [`@holeauth/plugin-2fa`](/packages/plugin-2fa#TwoFactorAdapter) for the contract.
+</Callout>
+</Step>
+
+<Step>
+### Extend your database schema
+
+Import the 2FA table factory and add it to your schema:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,13-14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createTwoFactorTables } from '@holeauth/2fa-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const twoFa = createTwoFactorTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,13-14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createTwoFactorTables } from '@holeauth/2fa-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const twoFa = createTwoFactorTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,13-14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createTwoFactorTables } from '@holeauth/2fa-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const twoFa = createTwoFactorTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` to apply the migration.
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts" {4,5,9,23-28}
+import { createHonoAuth } from '@holeauth/hono';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth, twoFa } from '@/db/schema';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/pg';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const twoFactorAdapter = createTwoFactorAdapter({ db, tables: twoFa.tables });
+
+export const auth = createHonoAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    twofa({
+      adapter: twoFactorAdapter,
+      issuer: 'MyApp',
+      recoveryCodeCount: 10,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts" {4,5,9,23-28}
+import { createHonoAuth } from '@holeauth/hono';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '@/db/client';
+import { holeauth, twoFa } from '@/db/schema';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/mysql';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const twoFactorAdapter = createTwoFactorAdapter({ db, tables: twoFa.tables });
+
+export const auth = createHonoAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    twofa({
+      adapter: twoFactorAdapter,
+      issuer: 'MyApp',
+      recoveryCodeCount: 10,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts" {4,5,9,23-28}
+import { createHonoAuth } from '@holeauth/hono';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '@/db/client';
+import { holeauth, twoFa } from '@/db/schema';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/sqlite';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const twoFactorAdapter = createTwoFactorAdapter({ db, tables: twoFa.tables });
+
+export const auth = createHonoAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    twofa({
+      adapter: twoFactorAdapter,
+      issuer: 'MyApp',
+      recoveryCodeCount: 10,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Adapter that persists TOTP secrets and recovery codes.',
+      type: 'TwoFactorAdapter',
+      required: true,
+    },
+    issuer: {
+      description: 'Issuer name shown in authenticator apps.',
+      type: 'string',
+      required: true,
+    },
+    recoveryCodeCount: {
+      description: 'Number of recovery codes to generate on enrollment.',
+      type: 'number',
+      default: '10',
+    },
+  }}
+/>
+</Step>
+
+<Step>
+### New routes
+
+The plugin automatically registers the following routes under `/api/auth`:
+
+- `POST /api/auth/2fa/enable` — generates a TOTP secret and returns a QR code URI + recovery codes
+- `POST /api/auth/2fa/confirm` — confirms enrollment by verifying a six-digit code
+- `POST /api/auth/2fa/disable` — disables 2FA for the current user
+- `POST /api/auth/2fa/verify` — verifies a pending 2FA challenge during sign-in
+
+See [`@holeauth/plugin-2fa`](/packages/plugin-2fa) for detailed request and response schemas.
+</Step>
+
+<Step>
+### Sign-in flow with 2FA
+
+When a user with 2FA enabled signs in, the login endpoint returns a pending state instead of tokens:
+
+```json
+{
+  "ok": true,
+  "pending": true,
+  "pluginId": "2fa",
+  "userId": "abc123",
+  "data": null
+}
+```
+
+The client must then call `POST /api/auth/2fa/verify` with the six-digit code from the authenticator app. On success, the server issues session tokens.
+
+<Callout type="warn">
+  Recovery codes are single-use. Store them hashed with bcrypt or Argon2. Never persist them in plain text.
+</Callout>
+</Step>
+</Steps>
+
+## Example: enrolling 2FA from a Hono handler
+
+```ts title="index.ts"
+import { Hono } from 'hono';
+import { auth } from './lib/auth';
+import { getSession } from '@holeauth/hono';
+
+const app = new Hono();
+
+app.route('/api/auth', auth.app);
+
+app.post('/api/2fa/enroll', async (c) => {
+  const session = await getSession(c, auth);
+  if (!session) return c.json({ error: 'Unauthorized' }, 401);
+
+  const body = await c.req.json();
+  const result = await auth.twofa.enable(session.user.id);
+
+  return c.json({
+    secret: result.secret,
+    qrCodeUri: result.qrCodeUri,
+    recoveryCodes: result.recoveryCodes,
+  });
+});
+
+export default app;
+```
+
+<Callout type="info">
+  For a full enrollment workflow, see the [two-factor authentication guide](/guides/two-factor).
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Add passkeys"
+    description="Enable passwordless biometric login with WebAuthn."
+    href="/getting-started/hono/plugin-passkey"
+  />
+  <Card
+    title="Add roles and permissions"
+    description="Control access with RBAC and YAML-based permissions."
+    href="/getting-started/hono/plugin-rbac"
+  />
+  <Card
+    title="Two-factor authentication guide"
+    description="Deep dive into TOTP enrollment, verification, and recovery."
+    href="/guides/two-factor"
+  />
+</Cards>

@@ -25,7 +25,7 @@
     "@holeauth/adapter-drizzle": "workspace:*",
     "@holeauth/core": "workspace:*",
     "@holeauth/idp-drizzle": "workspace:*",
-    "@holeauth/nextjs": "workspace:*",
+    "@holeauth/nextjs-app-router": "workspace:*",
     "@holeauth/passkey-drizzle": "workspace:*",
     "@holeauth/plugin-2fa": "workspace:*",
     "@holeauth/plugin-idp": "workspace:*",

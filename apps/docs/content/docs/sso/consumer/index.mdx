@@ -1,0 +1,133 @@
+---
+title: SSO Consumer overview
+description: Sign users in via external OAuth 2.0 and OpenID Connect providers like Google, GitHub, Discord, and Microsoft.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# SSO Consumer overview
+
+The SSO Consumer is built into [`@holeauth/core/sso`](/packages/core) — no separate plugin required. It allows users to sign in via external identity providers (Google, GitHub, Discord, Microsoft, or any generic OIDC provider) instead of creating a password.
+
+## How it works
+
+1. User clicks "Sign in with Google" (or another provider).
+2. Your app redirects to the provider's authorization endpoint.
+3. User approves the OAuth consent screen (on the provider's site).
+4. Provider redirects back to your app with an authorization code.
+5. Your app exchanges the code for an access token and user profile.
+6. holeauth creates or links a user account and issues a session.
+
+## Built-in providers
+
+| Provider | Protocol | ID | Default scopes |
+| --- | --- | --- | --- |
+| Google | OIDC | `google` | `openid`, `email`, `profile` |
+| GitHub | OAuth2 | `github` | `read:user`, `user:email` |
+| Discord | OAuth2 | `discord` | `identify`, `email` |
+| Microsoft | OIDC | `microsoft` | `openid`, `email`, `profile` |
+| Generic OIDC | OIDC | custom | `openid`, `email`, `profile` |
+
+<Callout type="info">
+  GitHub and Discord are OAuth 2.0 providers (not OIDC). holeauth fetches the user profile from their REST APIs and normalizes it into the same shape as OIDC providers. This is transparent to your application code.
+</Callout>
+
+## Registered routes
+
+When you wire providers into `defineHoleauth`, the framework adapter (e.g., `@holeauth/nextjs`) automatically registers these routes:
+
+- `GET /api/auth/sso/:provider/authorize` — Redirects to the provider's authorization endpoint
+- `GET /api/auth/sso/:provider/callback` — Handles the OAuth callback and issues a session
+
+Replace `:provider` with the provider ID (`google`, `github`, etc.).
+
+<Callout type="warn">
+  If you use a custom `basePath` in `defineHoleauth` (e.g., `/auth`), the routes are mounted at `/auth/sso/:provider/authorize` and `/auth/sso/:provider/callback`.
+</Callout>
+
+## Configuration
+
+Wire providers into `defineHoleauth`:
+
+```ts title="lib/auth.ts" {4-11}
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+import { GoogleProvider, GithubProvider } from '@holeauth/core/sso';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db, schema.holeauth),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      redirectUri: 'http://localhost:3000/api/auth/sso/google/callback',
+    }),
+    GithubProvider({
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      redirectUri: 'http://localhost:3000/api/auth/sso/github/callback',
+    }),
+  ],
+});
+```
+
+## Sign-in button
+
+```tsx title="app/login/page.tsx"
+export default function LoginPage() {
+  return (
+    <div>
+      <h1>Sign in</h1>
+      <a href="/api/auth/sso/google/authorize">
+        <button>Sign in with Google</button>
+      </a>
+      <a href="/api/auth/sso/github/authorize">
+        <button>Sign in with GitHub</button>
+      </a>
+    </div>
+  );
+}
+```
+
+When the user clicks the button, they are redirected to the provider's OAuth consent screen. After approval, the provider redirects to `/api/auth/sso/:provider/callback`, which exchanges the code, creates or links a user, and issues a holeauth session.
+
+## Account linking
+
+If a user signs in with Google and their email matches an existing password account, holeauth will:
+- **Throw `AccountConflictError`** by default (safe mode).
+- **Auto-link** the accounts if `allowDangerousEmailAccountLinking: true` is set in `defineHoleauth` **and** the provider verified the email address.
+
+<Callout type="warn">
+  Email-based account linking is **dangerous** if the provider does not verify email addresses. An attacker could create a Google account with `victim@example.com`, sign in via OAuth, and gain access to the victim's holeauth account. Only enable `allowDangerousEmailAccountLinking` if you trust the providers you integrate.
+</Callout>
+
+## Distinguish provider vs. consumer
+
+`@holeauth/plugin-idp` (covered in [Provider](/sso/provider)) is the **opposite** of the SSO Consumer:
+- **Provider** = you issue tokens to other apps (you are the authorization server).
+- **Consumer** = you accept tokens from other providers (you are the client / relying party).
+
+A single holeauth instance can run both simultaneously.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Sign in with Google"
+    href="/sso/consumer/google"
+    description="Configure Google OAuth 2.0 and OIDC for your holeauth app"
+  />
+  <Card
+    title="Sign in with GitHub"
+    href="/sso/consumer/github"
+    description="Integrate GitHub OAuth 2.0 for developer-friendly sign-in"
+  />
+  <Card
+    title="Generic OIDC"
+    href="/sso/consumer/generic-oidc"
+    description="Connect to any OIDC provider (Keycloak, Auth0, Okta, holeauth-as-IDP)"
+  />
+</Cards>

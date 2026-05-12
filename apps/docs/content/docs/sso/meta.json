@@ -1,0 +1,10 @@
+{
+  "title": "SSO",
+  "pages": [
+    "index",
+    "---Provider (you issue tokens)---",
+    "provider",
+    "---Consumer (you accept tokens)---",
+    "consumer"
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "title": "SSO Consumer",
+  "pages": ["index", "google", "github", "discord", "microsoft", "generic-oidc"]
+}

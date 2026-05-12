@@ -4,16 +4,11 @@ const withMDX = createMDX();
 
 /** @type {import('next').NextConfig} */
 const config = {
-  reactStrictMode: true,
-  output: 'export',
-  images: { unoptimized: true },
-  basePath: process.env.DOCS_BASE_PATH ?? '',
-  trailingSlash: true,
-  // Fumadocs generates a `.source/` virtual module whose inferred types reference
-  // private fumadocs-mdx types. This trips Next.js' built-in type checker without
-  // affecting runtime. The docs app is a static-export site; we skip its type
-  // check during `next build` and rely on `pnpm typecheck` at the package level.
-  typescript: { ignoreBuildErrors: true },
+  // All routes in this app are served under /docs on the shared domain.
+  // Traefik's PathPrefix(/docs) rule routes both pages (/docs/...) and
+  // static assets (/docs/_next/static/...) to this container cleanly.
+  basePath: '/docs',
+  output: 'standalone',
 };
 
 export default withMDX(config);

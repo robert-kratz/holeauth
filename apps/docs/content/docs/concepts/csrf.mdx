@@ -1,0 +1,173 @@
+---
+title: CSRF protection
+description: Double-submit cookie pattern and cross-site request forgery defense
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# CSRF Protection
+
+holeauth uses the double-submit cookie pattern to defend against cross-site request forgery (CSRF) attacks. Every mutating request (POST, PUT, DELETE, PATCH) must include a CSRF token in both a cookie and a custom header.
+
+## How It Works
+
+When a user signs in or refreshes their session, holeauth generates a random CSRF token and sets it in a cookie named `holeauth.csrf`. Unlike the access and refresh tokens, this cookie is **not** marked `HttpOnly`—it is readable by client JavaScript.
+
+To make a mutating request, the client must:
+
+1. Read the `holeauth.csrf` cookie value from `document.cookie`.
+2. Send that value in the `x-csrf-token` HTTP header.
+
+The server compares the cookie value and the header value using constant-time string comparison. If they match, the request proceeds. If they do not match or either is missing, the server returns `403 Forbidden`.
+
+<Callout type="info">
+  Why does this work? An attacker can trick your browser into sending a POST request (via `<form>` or `fetch`), but they cannot read the CSRF cookie from your domain due to the same-origin policy. Without the cookie value, they cannot forge the matching header.
+</Callout>
+
+## Cookie Attributes
+
+The CSRF cookie is set with these attributes:
+
+<TypeTable
+  type={{
+    name: {
+      description: 'Cookie name.',
+      type: 'string',
+      default: '"holeauth.csrf"',
+    },
+    httpOnly: {
+      description: 'Whether the cookie is inaccessible to JavaScript.',
+      type: 'boolean',
+      default: 'false',
+    },
+    secure: {
+      description: 'Whether the cookie requires HTTPS.',
+      type: 'boolean',
+      default: 'true (in production)',
+    },
+    sameSite: {
+      description: 'SameSite attribute.',
+      type: '"lax" | "strict" | "none"',
+      default: '"lax"',
+    },
+    path: {
+      description: 'Cookie path.',
+      type: 'string',
+      default: '"/"',
+    },
+  }}
+/>
+
+The `httpOnly: false` attribute is intentional—the client must be able to read the cookie to echo it in the header.
+
+## Header Name
+
+The expected header name is:
+
+```ts
+x-csrf-token
+```
+
+This name is exported as `CSRF_HEADER` from `@holeauth/core/cookies`:
+
+```ts title="lib/csrf.ts"
+import { CSRF_HEADER } from '@holeauth/core/cookies';
+
+const token = document.cookie
+  .split('; ')
+  .find((row) => row.startsWith('holeauth.csrf='))
+  ?.split('=')[1];
+
+await fetch('/api/auth/signout', {
+  method: 'POST',
+  headers: { [CSRF_HEADER]: token || '' },
+});
+```
+
+## When CSRF Is Required
+
+CSRF validation is enforced on all mutating HTTP methods:
+
+- `POST`
+- `PUT`
+- `PATCH`
+- `DELETE`
+
+Safe methods (`GET`, `HEAD`, `OPTIONS`) do not require the CSRF token.
+
+<Callout type="warn">
+  If you build a custom route handler that calls holeauth flows (like `auth.signOut`), you must manually extract and validate the CSRF token. The Next.js route handler exported by `@holeauth/nextjs` does this automatically.
+</Callout>
+
+## Implementation Details
+
+The CSRF token is generated using the Web Crypto API:
+
+```ts title="packages/core/src/cookies/csrf.ts"
+export function generateCsrfToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let out = '';
+  for (const b of bytes) out += b64urlChars[b % 64];
+  return out;
+}
+```
+
+The comparison is constant-time to prevent timing attacks:
+
+```ts title="packages/core/src/cookies/csrf.ts"
+export function verifyCsrf(
+  cookieValue: string | undefined,
+  headerValue: string | undefined,
+): boolean {
+  if (!cookieValue || !headerValue) return false;
+  if (cookieValue.length !== headerValue.length) return false;
+  let diff = 0;
+  for (let i = 0; i < cookieValue.length; i++) {
+    diff |= cookieValue.charCodeAt(i) ^ headerValue.charCodeAt(i);
+  }
+  return diff === 0;
+}
+```
+
+## Client Example with React
+
+The `@holeauth/react` package provides a `useCsrf` hook that automatically reads the cookie:
+
+```tsx title="components/sign-out-button.tsx"
+'use client';
+
+import { useCsrf } from '@holeauth/react';
+
+export function SignOutButton() {
+  const csrf = useCsrf();
+
+  const handleSignOut = async () => {
+    await fetch('/api/auth/signout', {
+      method: 'POST',
+      headers: { 'x-csrf-token': csrf },
+    });
+  };
+
+  return <button onClick={handleSignOut}>Sign out</button>;
+}
+```
+
+## Disabling CSRF (Not Recommended)
+
+There is no built-in way to disable CSRF protection. If you need to call holeauth endpoints from a non-browser client (for example, a mobile app or a server-to-server integration), you should:
+
+1. Build a separate API endpoint that does not require CSRF.
+2. Use an API key or bearer token for authentication instead of cookies.
+3. Never expose the cookie-based endpoints to untrusted origins.
+
+## Next
+
+<Cards>
+  <Card
+    title="Events"
+    description="Learn about the audit log event stream."
+    href="/concepts/events"
+  />
+</Cards>

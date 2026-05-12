@@ -1,0 +1,498 @@
+---
+title: Become an OIDC provider
+description: Run an OAuth 2.0 and OpenID Connect identity provider to issue access tokens and ID tokens to other applications.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Become an OIDC provider
+
+This guide walks you through setting up your Express application as an OAuth 2.0 and OpenID Connect identity provider using `@holeauth/plugin-idp`. Your application will issue access tokens and ID tokens to other applications, expose an OIDC discovery endpoint, serve a JWKS, and support refresh-token rotation.
+
+<Callout type="info">
+  This is the **provider** (server) side — your app issues tokens to other apps. If you want to **consume** an external identity provider (sign in with Google, GitHub, etc.), see [Sign in with Google, GitHub, OIDC](/getting-started/express/sso-consumer).
+</Callout>
+
+<Callout type="info">
+  This guide assumes you have completed the [core Express setup](/getting-started/express).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-idp @holeauth/idp-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-idp @holeauth/idp-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-idp @holeauth/idp-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-idp @holeauth/idp-drizzle
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+  If you are using a headless adapter, skip `@holeauth/idp-drizzle` and implement the `IdpAdapter` interface yourself. See [`@holeauth/plugin-idp`](/packages/plugin-idp#IdpAdapter) for the contract.
+</Callout>
+</Step>
+
+<Step>
+### Extend your database schema
+
+Import the IDP table factory and add it to your schema:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,13-14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createIdpTables } from '@holeauth/idp-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const idpSchema = createIdpTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,13-14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createIdpTables } from '@holeauth/idp-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const idpSchema = createIdpTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,13-14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createIdpTables } from '@holeauth/idp-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const idpSchema = createIdpTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+The IDP schema includes tables for:
+
+- `teams` — multi-tenant app ownership
+- `team_members` — users with `owner` or `developer` roles per team
+- `apps` — OAuth 2.0 client registrations (public / confidential, allowed scopes, redirect URIs, PKCE policy)
+- `authorization_codes` — short-lived codes issued during the authorization flow
+- `refresh_tokens` — opaque refresh tokens with family-based rotation
+- `consents` — remembered user × app × scope-set consent decisions
+- `signing_keys` — JWKs for RS256 / ES256 token signing with automatic rotation
+
+Run `drizzle-kit generate` and `drizzle-kit push` to apply the migration.
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts" {4,5,9,23-29}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '../db/client';
+import { holeauth, idpSchema } from '../db/schema';
+import { idp } from '@holeauth/plugin-idp';
+import { createIdpAdapter } from '@holeauth/idp-drizzle/pg';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const idpAdapter = createIdpAdapter({ db, tables: idpSchema.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    idp({
+      adapter: idpAdapter,
+      issuer: `${process.env.APP_URL}/api/auth`,
+      scopesSupported: ['openid', 'profile', 'email', 'offline_access'],
+      signingAlg: 'RS256',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts" {4,5,9,23-29}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '../db/client';
+import { holeauth, idpSchema } from '../db/schema';
+import { idp } from '@holeauth/plugin-idp';
+import { createIdpAdapter } from '@holeauth/idp-drizzle/mysql';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const idpAdapter = createIdpAdapter({ db, tables: idpSchema.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    idp({
+      adapter: idpAdapter,
+      issuer: `${process.env.APP_URL}/api/auth`,
+      scopesSupported: ['openid', 'profile', 'email', 'offline_access'],
+      signingAlg: 'RS256',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts" {4,5,9,23-29}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '../db/client';
+import { holeauth, idpSchema } from '../db/schema';
+import { idp } from '@holeauth/plugin-idp';
+import { createIdpAdapter } from '@holeauth/idp-drizzle/sqlite';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const idpAdapter = createIdpAdapter({ db, tables: idpSchema.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    idp({
+      adapter: idpAdapter,
+      issuer: `${process.env.APP_URL}/api/auth`,
+      scopesSupported: ['openid', 'profile', 'email', 'offline_access'],
+      signingAlg: 'RS256',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'The adapter returned by `createIdpAdapter`. Handles persistence of teams, apps, authorization codes, refresh tokens, consents, and signing keys.',
+      type: 'IdpAdapter',
+      required: true,
+    },
+    issuer: {
+      description: 'The issuer URL for the OIDC provider. Must match the base path where the auth router is mounted (e.g. `https://example.com/api/auth`). Used in JWTs and the discovery document.',
+      type: 'string',
+      required: true,
+    },
+    scopesSupported: {
+      description: 'Array of OAuth scopes your IDP supports. Must include `openid`. Add `profile`, `email`, `offline_access` as needed.',
+      type: 'string[]',
+      default: "['openid', 'profile', 'email']",
+    },
+    signingAlg: {
+      description: 'Algorithm for signing JWTs. `RS256` (RSA) is recommended for production. `ES256` (ECDSA) is also supported.',
+      type: '"RS256" | "ES256"',
+      default: '"RS256"',
+    },
+  }}
+/>
+
+<Callout type="warn">
+  The `issuer` URL must be publicly accessible and match the origin of your application. Relying Parties will fetch the OIDC discovery document from `{issuer}/.well-known/openid-configuration`.
+</Callout>
+</Step>
+
+<Step>
+### Available routes
+
+The IDP plugin registers the following OIDC-compliant endpoints on the holeauth router:
+
+<TypeTable
+  type={{
+    'GET /api/auth/.well-known/openid-configuration': {
+      description: 'OIDC discovery document. Lists all endpoints, supported scopes, response types, and JWKS URI.',
+      type: 'endpoint',
+    },
+    'GET /api/auth/.well-known/jwks.json': {
+      description: 'JSON Web Key Set (JWKS) containing the public keys used to verify ID tokens and access tokens.',
+      type: 'endpoint',
+    },
+    'GET /api/auth/authorize': {
+      description: 'OAuth 2.0 authorization endpoint. Redirects users to your login page (or consent screen if already authenticated).',
+      type: 'endpoint',
+    },
+    'POST /api/auth/token': {
+      description: 'Token endpoint. Exchanges authorization codes or refresh tokens for access tokens and ID tokens.',
+      type: 'endpoint',
+    },
+    'GET /api/auth/userinfo': {
+      description: 'OIDC UserInfo endpoint. Returns user profile claims. Requires a valid access token.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/revoke': {
+      description: 'Token revocation endpoint. Revokes refresh tokens.',
+      type: 'endpoint',
+    },
+  }}
+/>
+
+<Callout type="info">
+  All OIDC endpoints are automatically registered when the `idp` plugin is wired. No additional route configuration is required.
+</Callout>
+</Step>
+
+<Step>
+### Register an OAuth client app
+
+To allow other applications to use your IDP, register them as OAuth clients. You can do this programmatically via the IDP adapter or through a management UI you build.
+
+Example: registering a client via the adapter:
+
+```ts title="scripts/register-client.ts"
+import { db } from '../db/client';
+import { idpSchema } from '../db/schema';
+import { createIdpAdapter } from '@holeauth/idp-drizzle/pg';
+
+const adapter = createIdpAdapter({ db, tables: idpSchema.tables });
+
+async function main() {
+  // Create a team (required for app ownership)
+  const team = await adapter.createTeam({
+    name: 'My Team',
+    ownerId: 'user-id-of-owner',
+  });
+
+  // Register the app
+  const app = await adapter.createApp({
+    teamId: team.id,
+    name: 'My Client App',
+    clientId: 'my-client-app',
+    clientSecret: 'super-secret', // Store hashed in production
+    redirectUris: ['http://localhost:4000/callback'],
+    allowedScopes: ['openid', 'profile', 'email'],
+    confidential: true,
+    pkcePolicy: 'optional',
+  });
+
+  console.log('Registered app:', app);
+}
+
+main();
+```
+
+<Callout type="warn">
+  Store client secrets hashed, never in plain text. Use bcrypt or argon2 to hash the secret before persisting it.
+</Callout>
+</Step>
+</Steps>
+
+## How it works
+
+When the IDP plugin is registered:
+
+1. Holeauth generates an RSA or ECDSA key pair (depending on `signingAlg`) and stores it in the `signing_keys` table.
+2. The OIDC discovery document is served at `/.well-known/openid-configuration`.
+3. The JWKS (public keys) is served at `/.well-known/jwks.json`.
+4. When a client app redirects a user to `/api/auth/authorize?client_id=...&redirect_uri=...&response_type=code&scope=openid`:
+   - Holeauth checks if the user is authenticated. If not, redirects to your login page with a `returnTo` parameter.
+   - If authenticated, checks the `consents` table for a prior consent decision.
+   - If no consent exists, shows a consent screen (you must build this UI).
+   - Once consented, issues an authorization code and redirects back to the client app `redirect_uri`.
+5. The client app exchanges the code for tokens at `POST /api/auth/token`.
+6. Holeauth validates the code, issues an access token (JWT) and ID token (JWT), and optionally a refresh token (opaque).
+7. The client app can fetch user profile data from `/api/auth/userinfo` using the access token.
+
+See [OIDC Specification](https://openid.net/specs/openid-connect-core-1_0.html) for the full protocol details.
+
+## Configuration reference
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Adapter implementing the `IdpAdapter` interface. Handles persistence of teams, apps, authorization codes, refresh tokens, consents, and signing keys.',
+      type: 'IdpAdapter',
+      required: true,
+    },
+    issuer: {
+      description: 'The issuer URL for the OIDC provider. Must be publicly accessible and match the base path where the auth router is mounted.',
+      type: 'string',
+      required: true,
+    },
+    scopesSupported: {
+      description: 'Array of OAuth scopes your IDP supports. Must include `openid`. Standard scopes: `profile`, `email`, `offline_access`.',
+      type: 'string[]',
+      default: "['openid', 'profile', 'email']",
+    },
+    signingAlg: {
+      description: 'Algorithm for signing JWTs. `RS256` (RSA with SHA-256) is recommended for production. `ES256` (ECDSA with P-256 curve) is also supported.',
+      type: '"RS256" | "ES256"',
+      default: '"RS256"',
+    },
+    authorizationCodeTtl: {
+      description: 'Lifetime of authorization codes in seconds. Short-lived by design (typically 60-300 seconds).',
+      type: 'number',
+      default: '300',
+    },
+    accessTokenTtl: {
+      description: 'Lifetime of access tokens (JWTs) in seconds.',
+      type: 'number',
+      default: '900',
+    },
+    idTokenTtl: {
+      description: 'Lifetime of ID tokens (JWTs) in seconds.',
+      type: 'number',
+      default: '3600',
+    },
+    refreshTokenTtl: {
+      description: 'Lifetime of refresh tokens in seconds. Long-lived (typically days or weeks).',
+      type: 'number',
+      default: '2592000',
+    },
+    keyRotationIntervalMs: {
+      description: 'Interval in milliseconds to rotate signing keys. Old keys are retained for signature validation until all tokens signed with them expire.',
+      type: 'number',
+      default: '86400000',
+    },
+  }}
+/>
+
+## Building a consent screen
+
+Holeauth does not provide a consent screen UI. You must build one yourself. When a user is redirected to `/api/auth/authorize` and no consent exists, holeauth will redirect to your consent URL (configurable via the `consentUrl` option in the plugin config) with query parameters:
+
+- `client_id` — the OAuth client requesting consent
+- `scope` — space-separated scopes requested
+- `state` — CSRF token (must be echoed back)
+- `redirect_uri` — where to redirect after consent
+
+Your consent screen should:
+
+1. Display the app name and requested scopes.
+2. Prompt the user to allow or deny.
+3. On allow, call `POST /api/auth/consent` with `{ clientId, scope, state }` (you will need to implement this endpoint or use the IDP API directly).
+4. Redirect back to the authorization endpoint with the `state` parameter.
+
+See [`@holeauth/plugin-idp`](/packages/plugin-idp) for the full consent flow API.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="SSO Consumer"
+    href="/getting-started/express/sso-consumer"
+    description="Sign in with Google, GitHub, or any OIDC provider."
+  />
+  <Card
+    title="Hono"
+    href="/getting-started/hono"
+    description="Set up holeauth in a Hono application."
+  />
+  <Card
+    title="IDP Plugin API"
+    href="/packages/plugin-idp"
+    description="Full reference for the IDP plugin and adapter contract."
+  />
+</Cards>

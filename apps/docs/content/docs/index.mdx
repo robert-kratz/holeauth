@@ -1,46 +1,92 @@
 ---
 title: Introduction
-description: A modular, edge-native authentication ecosystem for modern TypeScript applications.
+description: A modular, edge-native authentication ecosystem for modern TypeScript applications
 ---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # holeauth
 
-**holeauth** is a modular, edge-native authentication ecosystem for modern TypeScript applications. It ships production-grade auth primitives behind a clean adapter pattern — you bring the database, holeauth brings the cryptography, the token lifecycle, and the integration glue.
+holeauth is a modular, edge-native authentication ecosystem for modern TypeScript applications. It provides production-grade auth primitives behind a clean adapter pattern—you bring your database, holeauth brings cryptography, token lifecycle management, and framework integration.
 
-## Highlights
+The core is framework-agnostic with runtime-detected primitives that work on Node.js, Bun, and edge runtimes. First-class Next.js integration is available today with route handlers and middleware for the App Router.
 
-- **Edge-first** — powered by [`jose`](https://github.com/panva/jose) and WebCrypto with a runtime-detected Argon2id / PBKDF2 password hasher.
-- **Adapter-based** — holeauth never touches your database directly. Implement a small set of interfaces, or use a reference adapter.
-- **Framework-agnostic core** — first-class Next.js (App Router) handlers and middleware today; Vue and Svelte on the roadmap.
-- **Secure by default** — rotating refresh tokens with reuse detection, `httpOnly` access cookies, double-submit CSRF, constant-time comparisons, mandatory audit logging.
-- **Full auth toolkit** — email / password, TOTP 2FA with recovery codes, WebAuthn passkeys, OIDC (Google) and OAuth2 (GitHub), account linking, numeric OTP helpers, and 19 observable event types.
+Every authentication flow—from password sign-in to WebAuthn ceremonies—is built on a composable plugin architecture. Enable only the features you need: two-factor authentication, passkeys, role-based access control, SSO consumer, or even become an OpenID Connect identity provider yourself.
 
-## Packages
+## Features
 
-| Package | Purpose |
-| --- | --- |
-| [`@holeauth/core`](/docs/packages/core) | Primitives: JWT, sessions, password, TOTP/OTP, OIDC/OAuth2, WebAuthn, events, adapters. |
-| [`@holeauth/nextjs`](/docs/packages/nextjs) | App Router route handler, middleware, cookie helpers. |
-| [`@holeauth/react`](/docs/packages/react) | `HoleauthProvider`, `useSession`, `useAuth` hooks. |
-| [`@holeauth/adapter-drizzle`](/docs/packages/adapter-drizzle) | Drizzle ORM reference adapter (pg, mysql, sqlite). |
-| [`@holeauth/plugin-2fa`](/docs/packages/plugin-2fa) | TOTP two-factor authentication with recovery codes. |
-| [`@holeauth/plugin-passkey`](/docs/packages/plugin-passkey) | WebAuthn passkey registration and login. |
-| [`@holeauth/plugin-rbac`](/docs/packages/plugin-rbac) | Role-based access control (groups + permission nodes). |
-| [`@holeauth/plugin-idp`](/docs/packages/plugin-idp) | OpenID Connect / OAuth 2.0 identity provider. |
+<Cards>
+  <Card
+    title="Two-factor authentication"
+    description="TOTP with recovery codes, QR generation, and challenge flows."
+    href="/packages/plugin-2fa"
+  />
+  <Card
+    title="Passkeys and WebAuthn"
+    description="Passwordless registration and authentication using FIDO2."
+    href="/packages/plugin-passkey"
+  />
+  <Card
+    title="RBAC and Groups"
+    description="Role-based permissions with YAML definitions and runtime reloads."
+    href="/packages/plugin-rbac"
+  />
+  <Card
+    title="SSO Consumer"
+    description="Sign in via Google, GitHub, or any OpenID Connect / OAuth 2.0 provider."
+    href="/sso"
+  />
+  <Card
+    title="OIDC Provider"
+    description="Become an authorization server issuing access tokens to other apps."
+    href="/packages/plugin-idp"
+  />
+  <Card
+    title="tRPC Integration"
+    description="Auth-aware context, transparent session refresh, and RBAC procedures."
+    href="/integrations/trpc"
+  />
+  <Card
+    title="Edge-ready"
+    description="Runs on Vercel Edge, Cloudflare Workers, Node.js, and Bun."
+    href="/concepts/sessions"
+  />
+  <Card
+    title="Drizzle Adapters"
+    description="First-class Postgres, MySQL, and SQLite support with type-safe schema factories."
+    href="/packages/adapter-drizzle"
+  />
+  <Card
+    title="Headless React UI"
+    description="Unstyled hooks for session state, sign-in, register, and RBAC checks."
+    href="/packages/react"
+  />
+</Cards>
 
-## What can you build?
+## Security Model
 
-- Classic **email + password** authentication with argon2 hashing.
-- **Two-factor authentication** (TOTP) with recovery codes and a `pending2fa` transition step.
-- **WebAuthn passkeys** for passwordless sign-in and second factor.
-- **Single Sign-On** with Google (OIDC + PKCE) and GitHub (OAuth2), or your own provider.
-- **Session management** with rotating refresh tokens, family tracking, and reuse detection.
-- **CSRF-protected** mutation endpoints using a double-submit cookie pattern.
-- **Audit logging** and observability via a typed event stream.
+holeauth is built with security at its foundation:
 
-## Next steps
+- Rotating refresh tokens with family tracking and automatic reuse detection
+- Double-submit CSRF protection for all mutating endpoints
+- Argon2id password hashing with runtime fallback to PBKDF2 on edge
+- Constant-time string comparisons for tokens and passwords
+- Mandatory audit logging for every authentication event
+- HttpOnly cookies for access and refresh tokens
 
-- Follow the [Getting Started](/docs/getting-started) guide to wire holeauth into a Next.js app.
-- Read [Core Concepts](/docs/concepts) for the mental model.
-- Jump into the [Guides](/docs/guides) for end-to-end flows.
-- Browse the [Configuration reference](/docs/configuration) for every option.
+All cryptographic operations use Web Crypto API primitives and the battle-tested jose library for JWT signing and verification.
+
+## Next
+
+<Cards>
+  <Card
+    title="Concepts"
+    description="Understand sessions, token rotation, CSRF, events, and adapters."
+    href="/concepts"
+  />
+  <Card
+    title="Getting Started"
+    description="Wire holeauth into a Next.js app in under five minutes."
+    href="/getting-started"
+  />
+</Cards>

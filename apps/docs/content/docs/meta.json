@@ -2,15 +2,14 @@
   "title": "holeauth",
   "pages": [
     "index",
+    "---Learn---",
+    "concepts",
     "getting-started",
-    "---Packages---",
-    "packages",
-    "---Guides---",
-    "guides",
-    "---Getting Started (per package)---",
-    "getting-started",
+    "---Extend---",
+    "plugins",
     "---Reference---",
-    "api",
-    "configuration"
+    "packages",
+    "sso",
+    "integrations"
   ]
 }

@@ -1,0 +1,48 @@
+---
+title: Concepts
+description: Core authentication concepts that power holeauth
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Concepts
+
+holeauth is built on a small set of composable primitives. Understanding these concepts will help you integrate, debug, and extend your authentication flows.
+
+<Cards>
+  <Card
+    title="Sessions"
+    description="Access tokens, refresh tokens, and session lifecycle management."
+    href="/concepts/sessions"
+  />
+  <Card
+    title="Token rotation"
+    description="Refresh token families, rotation-on-use, and reuse detection."
+    href="/concepts/token-rotation"
+  />
+  <Card
+    title="CSRF protection"
+    description="Double-submit cookie pattern for cross-site request forgery defense."
+    href="/concepts/csrf"
+  />
+  <Card
+    title="Events"
+    description="Observable audit log stream covering all authentication flows."
+    href="/concepts/events"
+  />
+  <Card
+    title="Adapters"
+    description="Database-agnostic persistence layer and the BaseAdapter contract."
+    href="/concepts/adapters"
+  />
+</Cards>
+
+## Next
+
+<Cards>
+  <Card
+    title="Sessions"
+    description="Learn how holeauth manages access and refresh tokens."
+    href="/concepts/sessions"
+  />
+</Cards>

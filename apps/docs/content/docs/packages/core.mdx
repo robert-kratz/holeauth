@@ -1,6 +1,6 @@
 ---
-title: '@holeauth/core'
-description: Framework-agnostic primitives — JWT, sessions, password, OTP, passkey, SSO, cookies, events.
+title: "@holeauth/core"
+description: Edge-native auth primitives for JWT, sessions, password hashing, OTP, SSO, adapters, plugins, events, and errors.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -10,11 +10,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # @holeauth/core
 
-The foundation package. Every other holeauth package depends on it.
+Edge-native authentication primitives. This package provides JWT signing and verification, session management with refresh-token rotation, password hashing with Argon2, OTP generation and verification, SSO consumer providers, adapter interfaces, plugin system, event bus, and error classes.
 
-<Callout type="info">
-  TOTP / 2FA functions (`generateSecret`, `verifyTotp`, `buildOtpauthUrl`, `generateRecoveryCodes`) are **not** in `@holeauth/core`. They live in [`@holeauth/plugin-2fa`](/docs/packages/plugin-2fa).
-</Callout>
+## Installation
 
 <Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
   <Tab value="pnpm">
@@ -39,165 +37,648 @@ bun add @holeauth/core
 </Tab>
 </Tabs>
 
-## Barrel exports
+## Quick example
 
-```ts
-import {
-  defineHoleauth,
-  // types
-  type HoleauthConfig,
-  type HoleauthInstance,
-  type IssuedTokens,
-  type SessionData,
-  type AdapterUser,
-  // errors
-  HoleauthError,
-  InvalidTokenError,
-  SessionExpiredError,
-} from '@holeauth/core';
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from './db';
 
-// namespaced subpath modules
-import * as jwt from '@holeauth/core/jwt';
-import * as session from '@holeauth/core/session';
-import * as password from '@holeauth/core/password';
-import * as otp from '@holeauth/core/otp';
-import * as cookies from '@holeauth/core/cookies';
-import * as events from '@holeauth/core/events';
-import * as flows from '@holeauth/core/flows';
-import * as sso from '@holeauth/core/sso';
-import * as adapters from '@holeauth/core/adapters';
-import * as plugins from '@holeauth/core/plugins';
-import * as errors from '@holeauth/core/errors';
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  session: {
+    accessTokenTTL: '15m',
+    refreshTokenTTL: '7d',
+  },
+});
 ```
 
-## `defineHoleauth(config)`
+## defineHoleauth
 
-Creates a framework-agnostic `HoleauthInstance`:
+Creates a configured auth instance with adapters, plugins, and settings. This is the primary entry point for all holeauth integrations.
 
 ```ts
-interface HoleauthInstance {
-  config: HoleauthConfig;
+function defineHoleauth(config: HoleauthConfig): HoleauthInstance;
+```
 
-  register(input: { email: string; password: string; name?: string }): Promise<AdapterUser>;
-  signIn(input: { email: string; password: string; ip?: string; userAgent?: string }): Promise<SignInResult>;
-  signOut(input: { accessToken?: string; refreshToken?: string }): Promise<void>;
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Adapter for users, sessions, accounts, verification tokens, and audit logs.',
+      type: 'HoleauthAdapter',
+      required: true,
+    },
+    secrets: {
+      description: 'JWT signing secret and optional CSRF secret.',
+      type: '{ jwtSecret: string; csrfSecret?: string }',
+      required: true,
+    },
+    session: {
+      description: 'Session configuration: access and refresh token TTLs, rotation, cookie settings.',
+      type: 'SessionConfig',
+    },
+    password: {
+      description: 'Password hashing configuration (Argon2 parameters).',
+      type: 'PasswordConfig',
+    },
+    otp: {
+      description: 'OTP configuration: secret length, algorithm, digits, window.',
+      type: 'OtpConfig',
+    },
+    sso: {
+      description: 'SSO consumer configuration: base URL, providers.',
+      type: 'SsoConfig',
+    },
+    plugins: {
+      description: 'Array of plugin instances (2FA, passkey, RBAC, IDP).',
+      type: 'readonly HoleauthPlugin[]',
+    },
+    basePath: {
+      description: 'Base path for all auth routes.',
+      type: 'string',
+      default: '"/api/auth"',
+    },
+    events: {
+      description: 'Event bus configuration (listeners for audit, logging, hooks).',
+      type: 'EventsConfig',
+    },
+  }}
+/>
 
-  refresh(input: { refreshToken: string; ip?: string; userAgent?: string }): Promise<IssuedTokens>;
-  getSession(accessToken?: string): Promise<SessionData | null>;
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from './db';
 
-  twofa: {
-    setup(userId: string): Promise<{ secret: string; otpauthUrl: string; recoveryCodes: string[] }>;
-    verify(input: { pendingToken: string; code: string; ip?: string; userAgent?: string }): Promise<{ user: AdapterUser; tokens: IssuedTokens }>;
-    disable(userId: string, code: string): Promise<void>;
-  };
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  session: {
+    accessTokenTTL: '15m',
+    refreshTokenTTL: '7d',
+  },
+  password: {
+    timeCost: 2,
+    memoryCost: 19456,
+  },
+  basePath: '/api/auth',
+});
+```
 
-  sso: {
-    authorize(providerId: string): Promise<{ url: string; state: string; codeVerifier: string; nonce?: string }>;
-    callback(providerId: string, input: { code: string; state: string; codeVerifier: string; ip?: string; userAgent?: string }): Promise<{ user: AdapterUser; tokens: IssuedTokens }>;
-  };
+The returned `HoleauthInstance` exposes:
 
-  passkey: {
-    registerOptions(userId: string): Promise<{ options: unknown; challenge: string }>;
-    registerVerify(userId: string, input: { response: unknown; expectedChallenge: string; deviceName?: string }): Promise<void>;
-    loginOptions(userId?: string): Promise<{ options: unknown; challenge: string }>;
-    loginVerify(input: { response: unknown; expectedChallenge: string; ip?: string; userAgent?: string }): Promise<{ user: AdapterUser; tokens: IssuedTokens }>;
-  };
+- `getSession(accessToken)` — Validate and decode an access token
+- `flows.*` — High-level auth flows (register, signIn, signOut, refresh)
+- `jwt.*` — JWT signing and verification
+- `session.*` — Session CRUD (issue, rotate, revoke, validate)
+- `password.*` — Password hashing and verification
+- `otp.*` — OTP generation and verification
+- `sso.*` — SSO consumer methods (authorize, callback)
+- `adapters.*` — Adapter interfaces for custom implementations
+- `cookies.*` — Cookie configuration helpers
+- `events.*` — Event emitter and listener registration
+- `errors.*` — Error classes (InvalidCredentialsError, InvalidTokenError, etc.)
+- Plugin APIs when plugins are registered
+
+## @holeauth/core/jwt
+
+JWT signing and verification using JOSE (HS256).
+
+### sign
+
+Sign a JWT payload with a secret.
+
+```ts
+function sign(
+  payload: JWTPayload,
+  secret: string | Uint8Array,
+  opts?: SignOptions,
+): Promise<string>;
+```
+
+<TypeTable
+  type={{
+    payload: {
+      description: 'JWT payload (claims).',
+      type: 'JWTPayload',
+      required: true,
+    },
+    secret: {
+      description: 'Secret key for signing (HS256).',
+      type: 'string | Uint8Array',
+      required: true,
+    },
+    opts: {
+      description: 'Optional JWT standard claims.',
+      type: 'SignOptions',
+    },
+  }}
+/>
+
+<TypeTable
+  type={{
+    issuer: {
+      description: 'Issuer claim (iss).',
+      type: 'string',
+    },
+    audience: {
+      description: 'Audience claim (aud).',
+      type: 'string',
+    },
+    subject: {
+      description: 'Subject claim (sub).',
+      type: 'string',
+    },
+    expiresIn: {
+      description: 'Expiration time (exp) as a duration string (e.g., "15m") or seconds.',
+      type: 'string | number',
+    },
+    jti: {
+      description: 'JWT ID claim (jti).',
+      type: 'string',
+    },
+  }}
+/>
+
+```ts title="lib/auth.ts"
+import { sign } from '@holeauth/core/jwt';
+
+const token = await sign(
+  { userId: 'user_123', role: 'admin' },
+  process.env.JWT_SECRET!,
+  { expiresIn: '1h', issuer: 'https://example.com' },
+);
+```
+
+### verify
+
+Verify and decode a JWT.
+
+```ts
+function verify<T extends JWTPayload = JWTPayload>(
+  token: string,
+  secret: string | Uint8Array,
+): Promise<T>;
+```
+
+Throws `InvalidTokenError` if the signature is invalid or the token is expired.
+
+```ts title="middleware.ts"
+import { verify } from '@holeauth/core/jwt';
+
+try {
+  const payload = await verify(token, process.env.JWT_SECRET!);
+  console.log(payload.userId);
+} catch (error) {
+  // Invalid or expired token
 }
 ```
 
-Full config reference: [Configuration](/docs/configuration).
+### decode
 
-## `jwt`
-
-HS256 signing and verification backed by [`jose`](https://github.com/panva/jose).
+Decode a JWT without verification (unsafe — use only for inspection).
 
 ```ts
-await jwt.sign(payload, secret, { expiresIn: '15m', issuer, audience, subject, jti });
-await jwt.verify<Payload>(token, secret);
-jwt.decode<Payload>(token); // throws InvalidTokenError on malformed input
+function decode<T extends JWTPayload = JWTPayload>(token: string): T;
 ```
 
-## `password`
+<Callout type="warn">
+  This function does NOT verify the signature. Only use it for debugging or when the token was already verified upstream.
+</Callout>
 
-Runtime-agnostic password hashing.
+## @holeauth/core/session
+
+Session CRUD: issue, rotate, revoke, validate.
+
+### issueSession
+
+Create a new session with an access token and refresh token.
 
 ```ts
-const hashed = await password.hash('correct-horse-battery-staple');
-// 'argon2id$...' on Node with argon2 installed
-// 'pbkdf2-sha256$100000$<salt>$<hash>' elsewhere
-
-await password.verify('correct-horse-battery-staple', hashed); // true
+function issueSession(
+  config: HoleauthConfig,
+  input: IssueInput,
+): Promise<{ accessToken: string; refreshToken: string; session: SessionData }>;
 ```
 
-## `session`
+<TypeTable
+  type={{
+    userId: {
+      description: 'User ID for the session.',
+      type: 'string',
+      required: true,
+    },
+    userAgent: {
+      description: 'User agent string from the request.',
+      type: 'string',
+    },
+    ip: {
+      description: 'IP address of the client.',
+      type: 'string',
+    },
+    metadata: {
+      description: 'Additional session metadata (e.g., device ID, location).',
+      type: 'Record<string, unknown>',
+    },
+  }}
+/>
 
-Low-level session primitives. Usually you call `HoleauthInstance.refresh` / `getSession` rather than these directly.
+```ts title="app/api/auth/signin/route.ts"
+import { issueSession } from '@holeauth/core/session';
+import { auth } from '@/lib/auth';
+
+const { accessToken, refreshToken, session } = await issueSession(auth, {
+  userId: user.id,
+  userAgent: req.headers.get('user-agent') ?? undefined,
+  ip: req.headers.get('x-forwarded-for') ?? undefined,
+});
+```
+
+### rotateRefresh
+
+Rotate a refresh token into a new access token and optionally a new refresh token.
 
 ```ts
-await session.issueSession(cfg, { userId, ip, userAgent });
-await session.validateSession(cfg, accessToken);
-await session.rotateRefresh(cfg, refreshToken, { ip, userAgent });
-await session.revokeSession(cfg, sessionId);
-await session.revokeByRefresh(cfg, refreshToken);
-await session.revokeAllForUser(cfg, userId);
+function rotateRefresh(
+  config: HoleauthConfig,
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string; session: SessionData }>;
 ```
 
-> **Note:** TOTP functions (`generateSecret`, `verifyTotp`, `buildOtpauthUrl`, `generateRecoveryCodes`) are exported from [`@holeauth/plugin-2fa`](/docs/packages/plugin-2fa), not from `@holeauth/core`. `@holeauth/core` does not have a `totp` namespace.
+Throws `InvalidTokenError` if the refresh token is invalid or revoked. Implements reuse detection: if the same refresh token is used twice, the entire session family is revoked.
 
-## `otp`
+```ts title="app/api/auth/refresh/route.ts"
+import { rotateRefresh } from '@holeauth/core/session';
+import { auth } from '@/lib/auth';
 
-Numeric OTP helpers for email / SMS flows (delivery is your responsibility).
+try {
+  const { accessToken, refreshToken, session } = await rotateRefresh(auth, oldRefreshToken);
+  // Set new cookies
+} catch (error) {
+  // Revoke session family, clear cookies
+}
+```
+
+### validateSession
+
+Verify an access token and return the decoded session data.
 
 ```ts
-const code = otp.generateNumericOtp(6); // '472911'
-const challenge = otp.createChallenge(600, 6);
-otp.isExpired(challenge);
+function validateSession(
+  config: HoleauthConfig,
+  accessToken: string,
+): Promise<SessionData | null>;
 ```
 
-## `cookies`
+Returns `null` if the token is invalid or expired. Does not throw.
 
-Cookie spec, CSRF helpers:
+```ts title="middleware.ts"
+import { validateSession } from '@holeauth/core/session';
+import { auth } from '@/lib/auth';
+
+const session = await validateSession(auth, accessToken);
+if (!session) {
+  return new Response('Unauthorized', { status: 401 });
+}
+```
+
+### revokeSession
+
+Revoke a single session by session ID.
 
 ```ts
-cookies.generateCsrfToken();
-cookies.verifyCsrf(cookieValue, headerValue);
-cookies.buildCookie(cfg, { kind: 'access', value });
-cookies.serializeCookie(spec);
-cookies.deleteCookie(cfg, 'refresh');
-cookies.cookieName(cfg, 'access'); // 'holeauth.access'
+function revokeSession(
+  config: HoleauthConfig,
+  sessionId: string,
+): Promise<void>;
 ```
 
-## `events`
+### revokeByRefresh
 
-Type definitions and an in-memory emitter:
+Revoke a session by refresh token hash.
 
 ```ts
-import type { HoleauthEvent, HoleauthEventType } from '@holeauth/core/events';
+function revokeByRefresh(
+  config: HoleauthConfig,
+  refreshToken: string,
+): Promise<void>;
 ```
 
-## `sso`
+### revokeAllForUser
 
-Provider helpers and low-level SSO flows:
+Revoke all sessions for a user (e.g., on password change or account compromise).
 
 ```ts
-import { GoogleProvider, GithubProvider, authorize, callback } from '@holeauth/core/sso';
+function revokeAllForUser(
+  config: HoleauthConfig,
+  userId: string,
+): Promise<void>;
 ```
 
-See the [SSO guide](/docs/guides/sso).
+### getSessionOrRefresh
 
-## `passkey`
+High-level helper: validate the current access token or rotate the refresh token if expired.
 
-Low-level WebAuthn functions that power the Next.js handlers. See the [Passkeys guide](/docs/guides/passkeys).
+```ts
+function getSessionOrRefresh(
+  config: HoleauthConfig,
+  input: GetSessionOrRefreshInput,
+): Promise<GetSessionOrRefreshResult>;
+```
 
-## `adapters`
+<TypeTable
+  type={{
+    accessToken: {
+      description: 'Current access token (from cookie or header).',
+      type: 'string | null',
+      required: true,
+    },
+    refreshToken: {
+      description: 'Current refresh token (from cookie).',
+      type: 'string | null',
+      required: true,
+    },
+  }}
+/>
 
-Type definitions only — for implementing your own adapter. See the [Adapters reference](/docs/api/adapters).
+Returns:
+
+```ts
+{
+  session: SessionData | null;
+  newAccessToken?: string;
+  newRefreshToken?: string;
+}
+```
+
+```ts title="middleware.ts"
+import { getSessionOrRefresh } from '@holeauth/core/session';
+import { auth } from '@/lib/auth';
+
+const result = await getSessionOrRefresh(auth, {
+  accessToken: cookies.get('holeauth.access'),
+  refreshToken: cookies.get('holeauth.refresh'),
+});
+
+if (result.newAccessToken) {
+  // Set new cookies
+}
+```
+
+### getSessionOrRefreshFromRequest
+
+Web Fetch API helper: extract access and refresh tokens from a Request object and rotate if needed.
+
+```ts
+function getSessionOrRefreshFromRequest(
+  config: HoleauthConfig,
+  request: Request,
+): Promise<RequestRefreshResult>;
+```
+
+Returns:
+
+```ts
+{
+  session: SessionData | null;
+  newAccessToken?: string;
+  newRefreshToken?: string;
+}
+```
+
+## @holeauth/core/password
+
+Password hashing and verification using Argon2id.
+
+### hash
+
+Hash a password with Argon2id.
+
+```ts
+function hash(password: string, opts?: HashOptions): Promise<string>;
+```
+
+<TypeTable
+  type={{
+    timeCost: {
+      description: 'Number of iterations.',
+      type: 'number',
+      default: '2',
+    },
+    memoryCost: {
+      description: 'Memory usage in KiB.',
+      type: 'number',
+      default: '19456',
+    },
+    parallelism: {
+      description: 'Degree of parallelism.',
+      type: 'number',
+      default: '1',
+    },
+  }}
+/>
+
+```ts title="app/api/auth/register/route.ts"
+import { hash } from '@holeauth/core/password';
+
+const passwordHash = await hash(password, { timeCost: 2, memoryCost: 19456 });
+```
+
+### verify
+
+Verify a password against a hash.
+
+```ts
+function verify(hash: string, password: string): Promise<boolean>;
+```
+
+```ts title="app/api/auth/signin/route.ts"
+import { verify } from '@holeauth/core/password';
+
+const valid = await verify(user.passwordHash, password);
+if (!valid) {
+  throw new InvalidCredentialsError('Invalid email or password');
+}
+```
+
+## @holeauth/core/otp
+
+One-time password (OTP) generation and verification for email/SMS verification tokens and password reset tokens.
+
+### generateOTP
+
+Generate a random OTP token.
+
+```ts
+function generateOTP(opts?: OtpOptions): string;
+```
+
+<TypeTable
+  type={{
+    length: {
+      description: 'Token length in characters.',
+      type: 'number',
+      default: '32',
+    },
+    alphabet: {
+      description: 'Character set for the token.',
+      type: 'string',
+      default: '"a-zA-Z0-9"',
+    },
+  }}
+/>
+
+```ts title="app/api/auth/forgot-password/route.ts"
+import { generateOTP } from '@holeauth/core/otp';
+
+const token = generateOTP({ length: 32 });
+```
+
+### verifyOTP
+
+Verify an OTP token (constant-time comparison).
+
+```ts
+function verifyOTP(provided: string, expected: string): boolean;
+```
+
+```ts title="app/api/auth/reset-password/route.ts"
+import { verifyOTP } from '@holeauth/core/otp';
+
+const valid = verifyOTP(userProvidedToken, storedToken);
+if (!valid) {
+  throw new InvalidTokenError('Invalid or expired token');
+}
+```
+
+## @holeauth/core/sso
+
+SSO consumer: authorize and callback flows for Google, GitHub, Discord, Microsoft, and generic OIDC providers.
+
+### authorize
+
+Start the OAuth authorization flow by redirecting the user to the provider.
+
+```ts
+function authorize(
+  providerId: string,
+  config: SsoConfig,
+): { redirectUrl: string; state: string; codeVerifier?: string };
+```
+
+```ts title="app/api/auth/authorize/[provider]/route.ts"
+import { authorize } from '@holeauth/core/sso';
+import { auth } from '@/lib/auth';
+
+const { redirectUrl, state, codeVerifier } = authorize('google', auth.sso);
+// Store state and codeVerifier in a cookie
+// Redirect to redirectUrl
+```
+
+### callback
+
+Handle the OAuth callback and exchange the authorization code for an access token.
+
+```ts
+function callback(
+  providerId: string,
+  input: { code: string; state: string; codeVerifier?: string },
+  config: SsoConfig,
+): Promise<{ providerAccountId: string; email: string; accessToken: string; refreshToken?: string }>;
+```
+
+```ts title="app/api/auth/callback/[provider]/route.ts"
+import { callback } from '@holeauth/core/sso';
+import { auth } from '@/lib/auth';
+
+const result = await callback('google', {
+  code: searchParams.get('code')!,
+  state: searchParams.get('state')!,
+  codeVerifier: cookies.get('holeauth.pkce'),
+}, auth.sso);
+
+// Find or create user with result.providerAccountId and result.email
+```
+
+### Providers
+
+Built-in SSO consumer providers (no separate package required):
+
+- `GoogleProvider({ clientId, clientSecret, redirectUri })` — Google OAuth 2.0
+- `GithubProvider({ clientId, clientSecret, redirectUri })` — GitHub OAuth 2.0
+- `DiscordProvider({ clientId, clientSecret, redirectUri })` — Discord OAuth 2.0
+- `MicrosoftProvider({ clientId, clientSecret, redirectUri, tenant? })` — Microsoft OAuth 2.0
+- `OIDCProvider({ clientId, clientSecret, redirectUri, issuer, scopes? })` — Generic OIDC
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { GoogleProvider, GithubProvider } from '@holeauth/core/sso';
+
+export const auth = defineHoleauth({
+  // ...
+  sso: {
+    baseUrl: process.env.NEXT_PUBLIC_BASE_URL!,
+    providers: [
+      GoogleProvider({
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback/google`,
+      }),
+      GithubProvider({
+        clientId: process.env.GITHUB_CLIENT_ID!,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+        redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback/github`,
+      }),
+    ],
+  },
+});
+```
+
+<Callout type="info">
+  SSO consumer functionality is built into `@holeauth/core/sso`. No separate `plugin-idp-consumer` package is required. The framework adapters (Next.js, Express, Hono) automatically register the `/authorize/:provider` and `/callback/:provider` routes.
+</Callout>
+
+## See also
 
 <Cards>
-  <Card title="Configuration" href="/docs/configuration" description="Every option for defineHoleauth." />
-  <Card title="@holeauth/nextjs" href="/docs/packages/nextjs" description="App Router handler and middleware." />
-  <Card title="@holeauth/plugin-2fa" href="/docs/packages/plugin-2fa" description="TOTP and recovery codes." />
-  <Card title="@holeauth/plugin-passkey" href="/docs/packages/plugin-passkey" description="WebAuthn passkeys." />
-  <Card title="@holeauth/plugin-rbac" href="/docs/packages/plugin-rbac" description="Role-based access control." />
-  <Card title="@holeauth/plugin-idp" href="/docs/packages/plugin-idp" description="OIDC/OAuth2 identity provider." />
+  <Card
+    title="Adapter pattern"
+    href="/concepts/adapters"
+    description="Learn how adapters decouple holeauth from your database."
+  />
+  <Card
+    title="Session management"
+    href="/concepts/sessions"
+    description="Understand refresh-token rotation and reuse detection."
+  />
+  <Card
+    title="Events and audit"
+    href="/concepts/events"
+    description="Hook into auth lifecycle events for logging and integrations."
+  />
+  <Card
+    title="CSRF protection"
+    href="/concepts/csrf"
+    description="How holeauth implements double-submit cookie CSRF protection."
+  />
+</Cards>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="@holeauth/adapter-drizzle"
+    href="/packages/adapter-drizzle"
+    description="Integrate Drizzle ORM with holeauth core for user, session, and audit storage."
+  />
+  <Card
+    title="@holeauth/nextjs-app-router"
+    href="/packages/nextjs-app-router"
+    description="Wire holeauth into a Next.js App Router app with route handlers and middleware."
+  />
 </Cards>

@@ -1,0 +1,503 @@
+---
+title: Two-factor authentication
+description: Add TOTP-based two-factor authentication with recovery codes to your Next.js Pages Router application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Two-factor authentication
+
+This guide walks you through adding TOTP-based two-factor authentication to your Next.js Pages Router project. Users will enroll by scanning a QR code with an authenticator app, then verify a six-digit code on every sign-in. Recovery codes are generated once during enrollment for account recovery.
+
+<Callout type="info">
+  This guide assumes you have completed the [core Next.js Pages Router setup](/getting-started/nextjs-pages-router).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-2fa @holeauth/2fa-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-2fa @holeauth/2fa-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-2fa @holeauth/2fa-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-2fa @holeauth/2fa-drizzle
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+  If you are using a headless adapter, skip `@holeauth/2fa-drizzle` and implement the `TwoFactorAdapter` interface yourself. See [`@holeauth/plugin-2fa`](/packages/plugin-2fa#TwoFactorAdapter) for the contract.
+</Callout>
+</Step>
+
+<Step>
+### Extend your database schema
+
+Import the 2FA table factory and add it to your schema:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,13-14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createTwoFactorTables } from '@holeauth/2fa-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const twoFa = createTwoFactorTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,13-14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createTwoFactorTables } from '@holeauth/2fa-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const twoFa = createTwoFactorTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,13-14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createTwoFactorTables } from '@holeauth/2fa-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const twoFa = createTwoFactorTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` to apply the migration.
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts" {4,5,9,23-28}
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth, twoFa } from '@/db/schema';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/pg';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const twoFactorAdapter = createTwoFactorAdapter({ db, tables: twoFa.tables });
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    twofa({
+      adapter: twoFactorAdapter,
+      issuer: 'MyApp',
+      recoveryCodeCount: 10,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts" {4,5,9,23-28}
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '@/db/client';
+import { holeauth, twoFa } from '@/db/schema';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/mysql';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const twoFactorAdapter = createTwoFactorAdapter({ db, tables: twoFa.tables });
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    twofa({
+      adapter: twoFactorAdapter,
+      issuer: 'MyApp',
+      recoveryCodeCount: 10,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts" {4,5,9,23-28}
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '@/db/client';
+import { holeauth, twoFa } from '@/db/schema';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/sqlite';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const twoFactorAdapter = createTwoFactorAdapter({ db, tables: twoFa.tables });
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    twofa({
+      adapter: twoFactorAdapter,
+      issuer: 'MyApp',
+      recoveryCodeCount: 10,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Drizzle-backed 2FA adapter. Required.',
+      type: 'TwoFactorAdapter',
+      required: true,
+    },
+    issuer: {
+      description: 'Issuer name shown in authenticator apps (the label before the email in the QR code).',
+      type: 'string',
+      default: '"holeauth"',
+    },
+    recoveryCodeCount: {
+      description: 'Number of recovery codes to generate during enrollment.',
+      type: 'number',
+      default: '10',
+    },
+    pendingTtlSeconds: {
+      description: 'Lifetime of the pending challenge token issued after sign-in when 2FA is enabled.',
+      type: 'number',
+      default: '300',
+    },
+    rateLimiter: {
+      description: 'Rate limiter consulted before verify, activate, and disable operations. Defaults to an in-memory limiter (5 attempts / 5 minutes).',
+      type: 'TwoFactorRateLimiter',
+    },
+  }}
+/>
+
+The plugin exposes a type-safe API at `auth.twofa`:
+
+```ts
+auth.twofa.setup(userId: string): Promise<{ secret, otpauthUrl, qrCodeDataUrl }>
+auth.twofa.activate(userId: string, code: string): Promise<{ recoveryCodes: string[] }>
+auth.twofa.verify({ pendingToken, code, ip?, userAgent? }): Promise<{ user, tokens }>
+auth.twofa.disable(userId: string, code: string): Promise<void>
+auth.twofa.isEnabled(userId: string): Promise<boolean>
+```
+</Step>
+
+<Step>
+### Add the enrollment flow
+
+Create an API route to initiate enrollment:
+
+```ts title="pages/api/2fa/setup.ts"
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getServerSidePropsSession } from '@holeauth/nextjs-pages-router';
+import { auth } from '@/lib/auth';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const session = await getServerSidePropsSession({ req } as never, auth.config);
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const { secret, otpauthUrl, qrCodeDataUrl } = await auth.twofa.setup(session.userId);
+  return res.status(200).json({ secret, otpauthUrl, qrCodeDataUrl });
+}
+```
+
+Create an API route to activate 2FA:
+
+```ts title="pages/api/2fa/activate.ts"
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getServerSidePropsSession } from '@holeauth/nextjs-pages-router';
+import { auth } from '@/lib/auth';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const session = await getServerSidePropsSession({ req } as never, auth.config);
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const { code } = req.body;
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ error: 'Code is required' });
+  }
+
+  const { recoveryCodes } = await auth.twofa.activate(session.userId, code);
+  return res.status(200).json({ recoveryCodes });
+}
+```
+
+Create a client component to render the enrollment flow:
+
+```tsx title="components/enable-2fa.tsx"
+'use client';
+import { useState } from 'react';
+
+export function Enable2FA() {
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [secret, setSecret] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+
+  async function handleSetup() {
+    const res = await fetch('/api/2fa/setup', { method: 'POST' });
+    const data = await res.json();
+    setQrCode(data.qrCodeDataUrl);
+    setSecret(data.secret);
+  }
+
+  async function handleActivate() {
+    const res = await fetch('/api/2fa/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json();
+    if (data.recoveryCodes) {
+      setRecoveryCodes(data.recoveryCodes);
+    }
+  }
+
+  if (recoveryCodes) {
+    return (
+      <div>
+        <h2>Recovery codes</h2>
+        <p>Save these codes in a safe place. Each code can be used once.</p>
+        <ul>
+          {recoveryCodes.map((c, i) => (
+            <li key={i}>{c}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  if (qrCode) {
+    return (
+      <div>
+        <h2>Scan QR code</h2>
+        <img src={qrCode} alt="QR code" />
+        <p>Secret: {secret}</p>
+        <input
+          type="text"
+          placeholder="Enter 6-digit code"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+        <button onClick={handleActivate}>Activate</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2>Enable two-factor authentication</h2>
+      <button onClick={handleSetup}>Get started</button>
+    </div>
+  );
+}
+```
+
+Use the component in a page:
+
+```tsx title="pages/settings/2fa.tsx"
+import { Enable2FA } from '@/components/enable-2fa';
+
+export default function TwoFactorPage() {
+  return (
+    <div>
+      <h1>Two-factor authentication</h1>
+      <Enable2FA />
+    </div>
+  );
+}
+```
+</Step>
+
+<Step>
+### Handle the challenge flow
+
+When a user with 2FA enabled signs in, they receive a pending token. Use it to verify the TOTP code:
+
+```tsx title="pages/login/verify.tsx"
+'use client';
+import { useState } from 'react';
+import { useRouter } from 'next/router';
+
+export default function VerifyPage() {
+  const router = useRouter();
+  const [code, setCode] = useState('');
+
+  async function handleVerify() {
+    const res = await fetch('/api/auth/2fa/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    if (res.ok) {
+      router.push('/dashboard');
+    }
+  }
+
+  return (
+    <div>
+      <h1>Enter your 6-digit code</h1>
+      <input
+        type="text"
+        placeholder="000000"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+      />
+      <button onClick={handleVerify}>Verify</button>
+    </div>
+  );
+}
+```
+</Step>
+</Steps>
+
+## How it works
+
+When a user signs in with 2FA enabled, the plugin issues a pending token instead of full session tokens. The pending token is short-lived and cannot be used for authenticated requests. The user must verify a TOTP code or recovery code to exchange the pending token for full session tokens.
+
+<Callout type="warn">
+  Recovery codes are single-use and must be hashed in the database. Never store them in plain text. The plugin uses bcrypt by default.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Passkeys"
+    href="/getting-started/nextjs-pages-router/plugin-passkey"
+    description="Add WebAuthn / FIDO2 passwordless authentication."
+  />
+  <Card
+    title="Roles and permissions"
+    href="/getting-started/nextjs-pages-router/plugin-rbac"
+    description="Implement role-based access control with YAML config."
+  />
+</Cards>

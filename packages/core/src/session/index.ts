@@ -8,3 +8,7 @@ export {
   type GetSessionOrRefreshInput,
   type GetSessionOrRefreshResult,
 } from './get-or-refresh.js';
+export {
+  getSessionOrRefreshFromRequest,
+  type RequestRefreshResult,
+} from './request.js';

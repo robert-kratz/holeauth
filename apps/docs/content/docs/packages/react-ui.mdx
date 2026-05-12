@@ -1,0 +1,288 @@
+---
+title: "@holeauth/react-ui"
+description: Headless, polymorphic UI components for sign-in, sign-up, password reset, two-factor, passkey setup, and SSO.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/react-ui
+
+Headless, polymorphic UI components for holeauth. Provides pre-built forms for sign-in, sign-up, password reset, two-factor verification, and passkey management. All components are unstyled and accept an `as` prop for custom rendering.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/react-ui @holeauth/react
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/react-ui @holeauth/react
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/react-ui @holeauth/react
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/react-ui @holeauth/react
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+  This package depends on `@holeauth/react` for hooks and session state. Ensure `<HoleauthProvider>` is in your component tree.
+</Callout>
+
+## Quick example
+
+```tsx title="app/login/page.tsx"
+import { SignInForm } from '@holeauth/react-ui';
+
+export default function LoginPage() {
+  return (
+    <SignInForm.Root onSuccess={() => window.location.href = '/dashboard'}>
+      <SignInForm.Email placeholder="Email" />
+      <SignInForm.Password placeholder="Password" />
+      <SignInForm.Submit>Sign In</SignInForm.Submit>
+      <SignInForm.Error />
+    </SignInForm.Root>
+  );
+}
+```
+
+## Compound forms
+
+### SignInForm
+
+Sign-in form with email, password, passkey, and challenge (2FA) support.
+
+```tsx
+import { SignInForm } from '@holeauth/react-ui';
+
+<SignInForm.Root onSuccess={(session) => console.log(session)}>
+  <SignInForm.Email placeholder="Email" required />
+  <SignInForm.Password placeholder="Password" required />
+  <SignInForm.Submit>Sign In</SignInForm.Submit>
+  <SignInForm.PasskeyButton>Sign in with Passkey</SignInForm.PasskeyButton>
+  <SignInForm.Error />
+  <SignInForm.Pending />
+</SignInForm.Root>
+```
+
+<TypeTable
+  type={{
+    onSuccess: {
+      description: 'Callback when sign-in completes.',
+      type: '(session: ClientSession) => void',
+    },
+    onPendingChallenge: {
+      description: 'Callback when a challenge (2FA) is required.',
+      type: '(challenge: PendingChallenge) => void',
+    },
+  }}
+/>
+
+**Components:**
+
+- `SignInForm.Root` — Form wrapper
+- `SignInForm.Email` — Email input
+- `SignInForm.Password` — Password input
+- `SignInForm.Submit` — Submit button
+- `SignInForm.PasskeyButton` — Passkey login button
+- `SignInForm.Error` — Error message display
+- `SignInForm.Pending` — Pending challenge message
+
+### SignUpForm
+
+Sign-up form with email, password, and optional name.
+
+```tsx
+import { SignUpForm } from '@holeauth/react-ui';
+
+<SignUpForm.Root onSuccess={() => console.log('Registered')}>
+  <SignUpForm.Field name="email" type="email" placeholder="Email" required />
+  <SignUpForm.Field name="name" placeholder="Name" />
+  <SignUpForm.Field name="password" type="password" placeholder="Password" required />
+  <SignUpForm.Submit>Sign Up</SignUpForm.Submit>
+  <SignUpForm.Error />
+</SignUpForm.Root>
+```
+
+### PasswordResetRequestForm
+
+Password reset request form (sends email).
+
+```tsx
+import { PasswordResetRequestForm } from '@holeauth/react-ui';
+
+<PasswordResetRequestForm.Root onSuccess={() => console.log('Email sent')}>
+  <PasswordResetRequestForm.Email placeholder="Email" required />
+  <PasswordResetRequestForm.Submit>Send Reset Link</PasswordResetRequestForm.Submit>
+  <PasswordResetRequestForm.Error />
+  <PasswordResetRequestForm.Success />
+</PasswordResetRequestForm.Root>
+```
+
+### PasswordChangeForm
+
+Password change form (authenticated users).
+
+```tsx
+import { PasswordChangeForm } from '@holeauth/react-ui';
+
+<PasswordChangeForm.Root onSuccess={() => console.log('Password changed')}>
+  <PasswordChangeForm.Field name="currentPassword" type="password" placeholder="Current Password" required />
+  <PasswordChangeForm.Field name="newPassword" type="password" placeholder="New Password" required />
+  <PasswordChangeForm.Submit>Change Password</PasswordChangeForm.Submit>
+  <PasswordChangeForm.Error />
+  <PasswordChangeForm.Success />
+</PasswordChangeForm.Root>
+```
+
+### TwoFactorVerifyForm
+
+Two-factor verification form (for pending challenges).
+
+```tsx
+import { TwoFactorVerifyForm } from '@holeauth/react-ui';
+
+<TwoFactorVerifyForm.Root
+  pendingToken={challenge.token}
+  onSuccess={(session) => console.log(session)}
+>
+  <TwoFactorVerifyForm.Code placeholder="6-digit code" required />
+  <TwoFactorVerifyForm.Submit>Verify</TwoFactorVerifyForm.Submit>
+  <TwoFactorVerifyForm.Error />
+</TwoFactorVerifyForm.Root>
+```
+
+### PasskeySetup
+
+Passkey management component (list, register, delete).
+
+```tsx
+import { PasskeySetup } from '@holeauth/react-ui';
+
+<PasskeySetup.Root>
+  <PasskeySetup.List />
+  <PasskeySetup.RegisterButton>Add Passkey</PasskeySetup.RegisterButton>
+  <PasskeySetup.DeleteButton credentialId="...">Delete</PasskeySetup.DeleteButton>
+  <PasskeySetup.Error />
+</PasskeySetup.Root>
+```
+
+## Atomic components
+
+### SignOutButton
+
+Sign-out button with loading state.
+
+```tsx
+import { SignOutButton } from '@holeauth/react-ui';
+
+<SignOutButton onSuccess={() => window.location.href = '/'}>
+  Sign Out
+</SignOutButton>
+```
+
+### PasskeyLoginButton
+
+Passkey login button with WebAuthn ceremony.
+
+```tsx
+import { PasskeyLoginButton } from '@holeauth/react-ui';
+
+<PasskeyLoginButton onSuccess={(session) => console.log(session)}>
+  Sign in with Passkey
+</PasskeyLoginButton>
+```
+
+### SsoButton
+
+SSO provider button (redirects to OAuth flow).
+
+```tsx
+import { SsoButton } from '@holeauth/react-ui';
+
+<SsoButton providerId="google">
+  Sign in with Google
+</SsoButton>
+```
+
+## Polymorphic props
+
+All components accept an `as` prop to render as a custom element.
+
+```tsx
+import { SignInForm } from '@holeauth/react-ui';
+
+<SignInForm.Root as="div" className="custom-form">
+  <SignInForm.Email as="input" className="custom-input" />
+  <SignInForm.Submit as="button" className="custom-button">
+    Sign In
+  </SignInForm.Submit>
+</SignInForm.Root>
+```
+
+## Hook access
+
+Every compound form exposes its state via a custom hook.
+
+```tsx
+import { useSignInForm } from '@holeauth/react-ui';
+
+function CustomSignInForm() {
+  const form = useSignInForm({
+    onSuccess: (session) => console.log(session),
+  });
+
+  return (
+    <form onSubmit={form.handleSubmit}>
+      <input {...form.emailProps} />
+      <input {...form.passwordProps} />
+      <button type="submit" disabled={form.loading}>
+        Sign In
+      </button>
+      {form.error && <p>{form.error.message}</p>}
+    </form>
+  );
+}
+```
+
+## See also
+
+<Cards>
+  <Card
+    title="@holeauth/react"
+    href="/packages/react"
+    description="Underlying hooks used by these components."
+  />
+  <Card
+    title="Sign-in guide"
+    href="/guides/email-password"
+    description="Email and password authentication guide."
+  />
+</Cards>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="plugin-2fa"
+    href="/packages/plugin-2fa"
+    description="Add two-factor authentication (TOTP) to your app."
+  />
+  <Card
+    title="plugin-passkey"
+    href="/packages/plugin-passkey"
+    description="Add passkey (WebAuthn) authentication to your app."
+  />
+</Cards>

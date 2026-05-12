@@ -1,0 +1,28 @@
+services:
+  landing:
+    build:
+      # Build context must be the monorepo root so pnpm can resolve workspace packages.
+      context: ../..
+      dockerfile: apps/landing/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      # Absolute URL of the docs site. Used by landing navbar/footer/CTAs to
+      # cross-link into the Fumadocs host.
+      NEXT_PUBLIC_DOCS_URL: "${NEXT_PUBLIC_DOCS_URL:-https://${SERVICE_FQDN_DOCS_3001:-docs.holeauth.dev}}"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.landing.rule=Host(`${SERVICE_FQDN_LANDING_3000}`)
+      - traefik.http.routers.landing.entrypoints=https
+      - traefik.http.routers.landing.tls=true
+      - traefik.http.routers.landing.tls.certresolver=letsencrypt
+      - traefik.http.services.landing.loadbalancer.server.port=3000
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

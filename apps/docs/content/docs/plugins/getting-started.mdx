@@ -1,0 +1,681 @@
+---
+title: Getting started
+description: Build your first holeauth plugin in eight steps and tour every extension point with runnable code.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+# Getting started
+
+This guide walks you through building a complete plugin from scratch. We will start with a minimal plugin scaffold and grow it step by step to use every extension point the plugin system exposes: API surface, hooks, routes, adapters, events, dependencies, and lifecycle. By the end, you will have built an `activityLog` plugin that tracks authentication events and exposes a queryable HTTP endpoint.
+
+<Steps>
+
+<Step>
+
+### Scaffold the minimum viable plugin
+
+Create a new plugin file that registers with holeauth. A plugin must have an `id` and an `api` function:
+
+```ts title="lib/plugins/activity-log.ts"
+import { definePlugin } from '@holeauth/core/plugins';
+import type { PluginContext } from '@holeauth/core/plugins';
+
+export const activityLog = () =>
+  definePlugin({
+    id: 'activityLog' as const,
+    api: (ctx: PluginContext) => ({}),
+  });
+```
+
+Wire the plugin into your auth instance:
+
+```ts title="lib/auth.ts" {3,8}
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { activityLog } from './plugins/activity-log.js';
+import { db } from '@/db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  plugins: [activityLog()] as const,
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+});
+
+export type Auth = typeof auth;
+```
+
+<Callout type="info">
+The `as const` tuple ensures TypeScript infers the literal plugin ids so `auth[plugin.id]` has full IntelliSense.
+</Callout>
+
+Your plugin is now registered. `auth.activityLog` exists as an empty object.
+
+</Step>
+
+<Step>
+
+### Expose a typed API surface
+
+Extend the `api` function to return a method that queries activity logs. For now, use an in-memory store:
+
+```ts title="lib/plugins/activity-log.ts" {1-7,13-23}
+interface Entry {
+  userId: string;
+  type: 'signIn' | 'signOut' | 'register';
+  timestamp: number;
+}
+
+const store: Entry[] = [];
+
+export const activityLog = () =>
+  definePlugin({
+    id: 'activityLog' as const,
+    api: (ctx: PluginContext) => ({
+      /**
+       * List all activity entries for a user.
+       * Returns entries in chronological order (oldest first).
+       */
+      async list(userId: string): Promise<Entry[]> {
+        return store
+          .filter((e) => e.userId === userId)
+          .sort((a, b) => a.timestamp - b.timestamp);
+      },
+    }),
+  });
+```
+
+Now call the API from a server action or API route:
+
+```ts title="app/actions/get-activity.ts"
+'use server';
+
+import { auth } from '@/lib/auth';
+
+export async function getActivity(userId: string) {
+  const entries = await auth.activityLog.list(userId);
+  return entries;
+}
+```
+
+The method `auth.activityLog.list` is fully typed with IntelliSense.
+
+Read more about the API surface in [API Surface](/plugins/api-surface).
+
+</Step>
+
+<Step>
+
+### React to core flows with hooks
+
+Populate the activity log by hooking into core authentication flows. Add `signIn.after`, `signOut.after`, and `register.after` hooks:
+
+```ts title="lib/plugins/activity-log.ts" {14-43}
+import { definePlugin } from '@holeauth/core/plugins';
+import type { PluginContext } from '@holeauth/core/plugins';
+
+interface Entry {
+  userId: string;
+  type: 'signIn' | 'signOut' | 'register';
+  timestamp: number;
+}
+
+const store: Entry[] = [];
+
+export const activityLog = () =>
+  definePlugin({
+    id: 'activityLog' as const,
+    hooks: {
+      register: {
+        async after(user, ctx) {
+          store.push({
+            userId: user.id,
+            type: 'register',
+            timestamp: Date.now(),
+          });
+        },
+      },
+      signIn: {
+        async after(result, ctx) {
+          store.push({
+            userId: result.user.id,
+            type: 'signIn',
+            timestamp: Date.now(),
+          });
+        },
+      },
+      signOut: {
+        async after(data, ctx) {
+          if (data.userId) {
+            store.push({
+              userId: data.userId,
+              type: 'signOut',
+              timestamp: Date.now(),
+            });
+          }
+        },
+      },
+    },
+    api: (ctx: PluginContext) => ({
+      async list(userId: string): Promise<Entry[]> {
+        return store
+          .filter((e) => e.userId === userId)
+          .sort((a, b) => a.timestamp - b.timestamp);
+      },
+    }),
+  });
+```
+
+<Callout type="info">
+`after` hooks run post-success and cannot abort flows. Exceptions are caught, logged, and emitted as `plugin.error` events. `before` hooks can throw to abort a flow. The `signIn.challenge` hook returns a `ChallengeResult` to halt sign-in and require follow-up verification.
+</Callout>
+
+Every time a user registers, signs in, or signs out, the plugin now records the event.
+
+Read more about hooks in [Hooks](/plugins/hooks).
+
+</Step>
+
+<Step>
+
+### Mount HTTP routes
+
+Expose the activity log over HTTP. Plugin routes are auto-mounted under the same basePath as core routes:
+
+```ts title="lib/plugins/activity-log.ts" {14-35}
+import { definePlugin } from '@holeauth/core/plugins';
+import type { PluginContext, PluginRouteContext } from '@holeauth/core/plugins';
+
+interface Entry {
+  userId: string;
+  type: 'signIn' | 'signOut' | 'register';
+  timestamp: number;
+}
+
+const store: Entry[] = [];
+
+export const activityLog = () =>
+  definePlugin({
+    id: 'activityLog' as const,
+    routes: [
+      {
+        method: 'GET',
+        path: '/activity-log',
+        requireAuth: true,
+        async handler(rctx: PluginRouteContext) {
+          const session = await rctx.getSession();
+          if (!session) {
+            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+              status: 401,
+              headers: { 'Content-Type': 'application/json', ...Object.fromEntries(rctx.responseHeaders) },
+            });
+          }
+          const entries = store.filter((e) => e.userId === session.userId);
+          return new Response(JSON.stringify(entries), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...Object.fromEntries(rctx.responseHeaders) },
+          });
+        },
+      },
+    ],
+    hooks: {
+      register: {
+        async after(user, ctx) {
+          store.push({ userId: user.id, type: 'register', timestamp: Date.now() });
+        },
+      },
+      signIn: {
+        async after(result, ctx) {
+          store.push({ userId: result.user.id, type: 'signIn', timestamp: Date.now() });
+        },
+      },
+      signOut: {
+        async after(data, ctx) {
+          if (data.userId) {
+            store.push({ userId: data.userId, type: 'signOut', timestamp: Date.now() });
+          }
+        },
+      },
+    },
+    api: (ctx: PluginContext) => ({
+      async list(userId: string): Promise<Entry[]> {
+        return store.filter((e) => e.userId === userId).sort((a, b) => a.timestamp - b.timestamp);
+      },
+    }),
+  });
+```
+
+Fetch the route from a Next.js client component:
+
+```tsx title="app/components/activity-feed.tsx"
+'use client';
+
+import { useEffect, useState } from 'react';
+
+interface Entry {
+  userId: string;
+  type: 'signIn' | 'signOut' | 'register';
+  timestamp: number;
+}
+
+export function ActivityFeed() {
+  const [entries, setEntries] = useState<Entry[]>([]);
+
+  useEffect(() => {
+    fetch('/api/auth/activity-log')
+      .then((res) => res.json())
+      .then((data) => setEntries(data))
+      .catch(console.error);
+  }, []);
+
+  return (
+    <ul>
+      {entries.map((e, i) => (
+        <li key={i}>
+          {e.type} at {new Date(e.timestamp).toLocaleString()}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+<Callout type="warn">
+Plugin route paths must not collide with [core route paths](/plugins/routes#reserved-paths) or other plugin routes. The registry validates all routes at startup and throws if a collision is detected.
+</Callout>
+
+Read more about routes in [Routes](/plugins/routes).
+
+</Step>
+
+<Step>
+
+### Replace the in-memory store with a plugin adapter
+
+Promote the in-memory store to a proper adapter interface so consumers can swap in a Drizzle implementation.
+
+Define the adapter interface:
+
+```ts title="lib/plugins/activity-log.ts" {1-11,17-21,29-34,47-60,70-82}
+interface Entry {
+  userId: string;
+  type: 'signIn' | 'signOut' | 'register';
+  timestamp: number;
+}
+
+export interface ActivityLogAdapter {
+  append(entry: Entry): Promise<void>;
+  listByUser(userId: string): Promise<Entry[]>;
+}
+
+import { definePlugin } from '@holeauth/core/plugins';
+import type { PluginContext, PluginRouteContext } from '@holeauth/core/plugins';
+
+export const activityLog = () =>
+  definePlugin({
+    id: 'activityLog' as const,
+    routes: [
+      {
+        method: 'GET',
+        path: '/activity-log',
+        requireAuth: true,
+        async handler(rctx: PluginRouteContext) {
+          const adapter = rctx.plugin.getPluginAdapter<ActivityLogAdapter>('activityLog');
+          if (!adapter) {
+            return new Response(JSON.stringify({ error: 'ActivityLog adapter not configured' }), {
+              status: 500,
+              headers: { 'Content-Type': 'application/json', ...Object.fromEntries(rctx.responseHeaders) },
+            });
+          }
+          const session = await rctx.getSession();
+          if (!session) {
+            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+              status: 401,
+              headers: { 'Content-Type': 'application/json', ...Object.fromEntries(rctx.responseHeaders) },
+            });
+          }
+          const entries = await adapter.listByUser(session.userId);
+          return new Response(JSON.stringify(entries), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...Object.fromEntries(rctx.responseHeaders) },
+          });
+        },
+      },
+    ],
+    hooks: {
+      register: {
+        async after(user, ctx) {
+          const adapter = ctx.getPluginAdapter<ActivityLogAdapter>('activityLog');
+          if (!adapter) {
+            ctx.logger.warn('ActivityLog adapter not configured; skipping register hook');
+            return;
+          }
+          await adapter.append({ userId: user.id, type: 'register', timestamp: Date.now() });
+        },
+      },
+      signIn: {
+        async after(result, ctx) {
+          const adapter = ctx.getPluginAdapter<ActivityLogAdapter>('activityLog');
+          if (!adapter) return;
+          await adapter.append({ userId: result.user.id, type: 'signIn', timestamp: Date.now() });
+        },
+      },
+      signOut: {
+        async after(data, ctx) {
+          const adapter = ctx.getPluginAdapter<ActivityLogAdapter>('activityLog');
+          if (!adapter || !data.userId) return;
+          await adapter.append({ userId: data.userId, type: 'signOut', timestamp: Date.now() });
+        },
+      },
+    },
+    api: (ctx: PluginContext) => {
+      const adapter = ctx.getPluginAdapter<ActivityLogAdapter>('activityLog');
+      if (!adapter) {
+        throw new Error('ActivityLog plugin requires an adapter. Supply it via pluginAdapters.activityLog.');
+      }
+      return {
+        async list(userId: string): Promise<Entry[]> {
+          return adapter.listByUser(userId);
+        },
+      };
+    },
+  });
+```
+
+Create an in-memory adapter implementation:
+
+```ts title="lib/plugins/activity-log-adapter-memory.ts"
+import type { ActivityLogAdapter } from './activity-log.js';
+
+interface Entry {
+  userId: string;
+  type: 'signIn' | 'signOut' | 'register';
+  timestamp: number;
+}
+
+export function createInMemoryActivityLogAdapter(): ActivityLogAdapter {
+  const store: Entry[] = [];
+
+  return {
+    async append(entry: Entry) {
+      store.push(entry);
+    },
+    async listByUser(userId: string) {
+      return store.filter((e) => e.userId === userId).sort((a, b) => a.timestamp - b.timestamp);
+    },
+  };
+}
+```
+
+Wire the adapter in `defineHoleauth`:
+
+```ts title="lib/auth.ts" {4,11-13}
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { activityLog } from './plugins/activity-log.js';
+import { createInMemoryActivityLogAdapter } from './plugins/activity-log-adapter-memory.js';
+import { db } from '@/db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  plugins: [activityLog()] as const,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  pluginAdapters: {
+    activityLog: createInMemoryActivityLogAdapter(),
+  },
+});
+
+export type Auth = typeof auth;
+```
+
+<Callout type="info">
+This is exactly how built-in plugins like `@holeauth/plugin-2fa` work with `@holeauth/2fa-drizzle`. The plugin defines the adapter interface; separate packages provide Drizzle (or Prisma, or Mongo) implementations.
+</Callout>
+
+Read more about adapters in [Adapter](/plugins/adapter).
+
+</Step>
+
+<Step>
+
+### Emit and subscribe to events
+
+Emit custom events when activity is recorded and subscribe to plugin error events for observability.
+
+Emit a namespaced event from within hooks:
+
+```ts title="lib/plugins/activity-log.ts" {7-10,16-19,24-27}
+hooks: {
+  register: {
+    async after(user, ctx) {
+      const adapter = ctx.getPluginAdapter<ActivityLogAdapter>('activityLog');
+      if (!adapter) return;
+      await adapter.append({ userId: user.id, type: 'register', timestamp: Date.now() });
+      await ctx.events.emit({
+        type: 'activityLog.recorded',
+        data: { userId: user.id, type: 'register' },
+      });
+    },
+  },
+  signIn: {
+    async after(result, ctx) {
+      const adapter = ctx.getPluginAdapter<ActivityLogAdapter>('activityLog');
+      if (!adapter) return;
+      await adapter.append({ userId: result.user.id, type: 'signIn', timestamp: Date.now() });
+      await ctx.events.emit({
+        type: 'activityLog.recorded',
+        data: { userId: result.user.id, type: 'signIn' },
+      });
+    },
+  },
+  signOut: {
+    async after(data, ctx) {
+      const adapter = ctx.getPluginAdapter<ActivityLogAdapter>('activityLog');
+      if (!adapter || !data.userId) return;
+      await adapter.append({ userId: data.userId, type: 'signOut', timestamp: Date.now() });
+      await ctx.events.emit({
+        type: 'activityLog.recorded',
+        data: { userId: data.userId, type: 'signOut' },
+      });
+    },
+  },
+},
+```
+
+Subscribe to events in a separate file:
+
+```ts title="lib/audit-bridge.ts"
+import { auth } from './auth.js';
+
+auth.events.on('activityLog.recorded', async (event) => {
+  console.log('[audit]', event.type, event.data);
+});
+
+auth.events.on('plugin.error', async (event) => {
+  console.error('[plugin error]', event.data);
+});
+```
+
+<Callout type="info">
+Custom event types are emitted as `any` by default. Downstream apps can declare their own event types using TypeScript module augmentation if strict typing is needed. Core emits well-known events like `user.registered`, `user.signed_in`, `session.created`, and `plugin.error`.
+</Callout>
+
+The `plugin.error` event is emitted by core when an `after` hook throws. Subscribe to it for centralized error logging.
+
+Read more about events in [Events](/concepts/events).
+
+</Step>
+
+<Step>
+
+### Order with another plugin via dependsOn
+
+If another plugin depends on your plugin, declare the dependency via `dependsOn` and retrieve the API safely in `onInit`.
+
+Imagine a `riskScore` plugin that needs the activity log ready:
+
+```ts title="lib/plugins/risk-score.ts"
+import { definePlugin } from '@holeauth/core/plugins';
+import type { PluginContext } from '@holeauth/core/plugins';
+import type { activityLog } from './activity-log.js';
+
+export const riskScore = () =>
+  definePlugin({
+    id: 'riskScore' as const,
+    dependsOn: ['activityLog'] as const,
+    api: (ctx: PluginContext) => ({
+      async calculate(userId: string): Promise<number> {
+        const activityLogApi = ctx.getPlugin<ReturnType<ReturnType<typeof activityLog>['api']>>('activityLog');
+        const entries = await activityLogApi.list(userId);
+        return entries.filter((e) => e.type === 'signIn').length > 10 ? 100 : 50;
+      },
+    }),
+    onInit: (ctx: PluginContext) => {
+      const activityLogApi = ctx.getPlugin<ReturnType<ReturnType<typeof activityLog>['api']>>('activityLog');
+      ctx.logger.info('riskScore plugin initialized with activityLog:', activityLogApi);
+    },
+  });
+```
+
+Wire both plugins:
+
+```ts title="lib/auth.ts" {4,9}
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { activityLog } from './plugins/activity-log.js';
+import { riskScore } from './plugins/risk-score.js';
+import { createInMemoryActivityLogAdapter } from './plugins/activity-log-adapter-memory.js';
+import { db } from '@/db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  plugins: [activityLog(), riskScore()] as const,
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  pluginAdapters: {
+    activityLog: createInMemoryActivityLogAdapter(),
+  },
+});
+
+export type Auth = typeof auth;
+```
+
+The plugin registry uses topological sort to load plugins in dependency order. Three errors can occur:
+
+1. **Duplicate id:** `holeauth: duplicate plugin id "activityLog"`
+2. **Missing dependency:** `holeauth: plugin "riskScore" depends on missing plugin "activityLog"`
+3. **Cycle detected:** `holeauth: plugin dependsOn graph has a cycle`
+
+<Callout type="warn">
+Do not call `ctx.getPlugin` for dependencies inside `api(ctx)` — it runs too early. Use `onInit` instead, which is called after all plugin APIs are wired.
+</Callout>
+
+Read more about dependencies in [Dependencies](/plugins/dependencies).
+
+</Step>
+
+<Step>
+
+### Clean up with onShutdown
+
+If your plugin manages resources (database connections, timers, file handles), clean them up in `onShutdown`:
+
+```ts title="lib/plugins/activity-log.ts" {5-9}
+export const activityLog = () =>
+  definePlugin({
+    id: 'activityLog' as const,
+    // ...existing hooks, routes, api...
+    onShutdown: async () => {
+      const adapter = ctx.getPluginAdapter<ActivityLogAdapter>('activityLog');
+      if (adapter && 'flush' in adapter && typeof adapter.flush === 'function') {
+        await adapter.flush();
+      }
+    },
+  });
+```
+
+Invoke shutdown in your server teardown handler (e.g. Next.js middleware or a graceful shutdown hook):
+
+```ts title="lib/shutdown.ts"
+import { auth } from './auth.js';
+
+process.on('SIGTERM', async () => {
+  await auth.shutdown?.();
+  process.exit(0);
+});
+```
+
+<Callout type="info">
+`onShutdown` is consumer-controlled and best-effort. The `HoleauthInstance.shutdown` method exists only if at least one plugin defines `onShutdown`. Use `ctx.logger` rather than `console.*` for all plugin logging.
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Recap
+
+Each step exercised a different part of the plugin system:
+
+<TypeTable
+  type={{
+    'Step 1': {
+      description: 'Scaffold with definePlugin and wire into defineHoleauth.',
+      type: 'HoleauthPlugin.id, definePlugin',
+    },
+    'Step 2': {
+      description: 'Expose a typed public API merged into auth[plugin.id].',
+      type: 'HoleauthPlugin.api, PluginsApi<Plugins>',
+    },
+    'Step 3': {
+      description: 'Hook into core flows with before/after/challenge handlers.',
+      type: 'HoleauthPlugin.hooks, RegisterHookInput, signIn.after, signOut.after',
+    },
+    'Step 4': {
+      description: 'Mount HTTP routes under the same basePath as core routes.',
+      type: 'HoleauthPlugin.routes, PluginRoute, PluginRouteContext',
+    },
+    'Step 5': {
+      description: 'Introduce a plugin adapter for persistent storage.',
+      type: 'HoleauthConfig.pluginAdapters, PluginContext.getPluginAdapter',
+    },
+    'Step 6': {
+      description: 'Emit and subscribe to namespaced events.',
+      type: 'PluginContext.events, PluginEvents, plugin.error',
+    },
+    'Step 7': {
+      description: 'Declare dependencies and use onInit to safely retrieve other plugins.',
+      type: 'HoleauthPlugin.dependsOn, HoleauthPlugin.onInit, PluginContext.getPlugin',
+    },
+    'Step 8': {
+      description: 'Clean up resources with onShutdown and ctx.logger.',
+      type: 'HoleauthPlugin.onShutdown, PluginContext.logger',
+    },
+  }}
+/>
+
+You have now built a complete plugin that exercises every extension point. The patterns you learned here apply to all plugin development, from simple integrations to production-ready packages like `@holeauth/plugin-2fa` and `@holeauth/plugin-passkey`.
+
+## Next
+
+<Cards>
+  <Card
+    title="Build a publishable plugin"
+    href="/plugins/tutorial"
+    description="Step-by-step tutorial building a magic link sign-in plugin with full packaging."
+  />
+  <Card
+    title="Architecture"
+    href="/plugins/architecture"
+    description="Deep dive into where and how plugins plug in to the holeauth lifecycle."
+  />
+  <Card
+    title="Hooks Reference"
+    href="/plugins/hooks"
+    description="Complete reference of all available hooks with input/output types."
+  />
+</Cards>

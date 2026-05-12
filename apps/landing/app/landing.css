@@ -1,0 +1,161 @@
+@import 'tailwindcss';
+
+@source '../components/landing/**/*.{ts,tsx}';
+@source '../components/features/**/*.{ts,tsx}';
+@source './**/*.{ts,tsx}';
+
+@theme {
+  --color-bg: #0a0a0b;
+  --color-bg-soft: #111114;
+  --color-bg-elev: #15151a;
+  --color-ink: #ededed;
+  --color-ink-dim: #b8b8c0;
+  --color-muted: #6e6e78;
+  --color-line: rgba(255, 255, 255, 0.06);
+  --color-line-strong: rgba(255, 255, 255, 0.12);
+  --color-accent-from: #c1ae7c;
+  --color-accent-mid: #dd5e98;
+  --color-accent-to: #6c3a5c;
+  --color-accent-1: #c1ae7c;
+  --color-accent-2: #e16f7c;
+  --color-accent-3: #dd5e98;
+  --color-accent-4: #cc4bc2;
+  --color-accent-5: #6c3a5c;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.landing-root {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings:
+    'cv11' on,
+    'ss01' on;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+.landing-root .gradient-text {
+  background: linear-gradient(
+    100deg,
+    #c1ae7c 0%,
+    #e16f7c 25%,
+    #dd5e98 50%,
+    #cc4bc2 75%,
+    #6c3a5c 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.landing-root .gradient-border {
+  position: relative;
+}
+.landing-root .gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    140deg,
+    rgba(193, 174, 124, 0.6),
+    rgba(221, 94, 152, 0.4) 60%,
+    transparent
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.landing-root .grid-bg {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.landing-root details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.landing-root details > summary::-webkit-details-marker {
+  display: none;
+}
+.landing-root details[open] > summary .faq-chevron {
+  transform: rotate(180deg);
+}
+.landing-root .faq-chevron {
+  transition: transform 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-root * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ── Page fade-in ─────────────────────────────────────────────────────────── */
+@keyframes landing-fadein {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes landing-risein {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* Applied to the Three.js canvas wrapper */
+.landing-root .scene-fadein {
+  animation: landing-fadein 2.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Applied to individual hero elements with custom delay via style prop */
+.landing-root .hero-risein {
+  animation: landing-risein 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Scroll indicator ─────────────────────────────────────────────────────── */
+@keyframes scroll-dot {
+  0%   { transform: translateY(0);   opacity: 1; }
+  60%  { transform: translateY(8px); opacity: 0.2; }
+  100% { transform: translateY(0);   opacity: 1; }
+}
+@keyframes scroll-chevron {
+  0%, 100% { transform: translateY(0);   opacity: 0.35; }
+  50%       { transform: translateY(4px); opacity: 0.8; }
+}
+
+.landing-root .scroll-dot {
+  animation: scroll-dot 2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.landing-root .scroll-chevron {
+  animation: scroll-chevron 2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* ── Shiki code blocks ────────────────────────────────────────────────────
+ * Strip Shiki's inline background so the surrounding card colour shows
+ * through; normalise padding to match the Quickstart editor on the landing.
+ */
+.landing-root .shiki-block pre,
+.landing-root .shiki-block code {
+  background: transparent !important;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.landing-root .shiki-block pre {
+  margin: 0;
+  padding: 1.1rem 1.25rem;
+  overflow-x: auto;
+}

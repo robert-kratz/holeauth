@@ -1,0 +1,4 @@
+{
+  "title": "OIDC Provider",
+  "pages": ["index", "setup", "authorization-code", "jwks-rotation", "consent", "revocation"]
+}

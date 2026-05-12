@@ -1,0 +1,368 @@
+---
+title: Sign in with Google, GitHub, and OIDC
+description: Add OAuth 2.0 and OpenID Connect social login as a Relying Party in your Hono application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Sign in with Google, GitHub, and OIDC
+
+This guide walks you through adding OAuth 2.0 and OpenID Connect as a Relying Party (consumer) in your Hono application. Your application will redirect users to an external identity provider (Google, GitHub, Auth0, Keycloak, or any OIDC-compliant provider), then receive an authorization code and exchange it for user profile data.
+
+<Callout type="info">
+  This is the **consumer** side — your app is the Relying Party. If you want to **become** an OIDC provider and issue tokens to other applications, see [Become an OIDC provider](/getting-started/hono/sso-provider).
+</Callout>
+
+<Callout type="info">
+  This guide assumes you have completed the [core Hono setup](/getting-started/hono).
+</Callout>
+
+SSO consumer functionality is built into `@holeauth/core/sso` — no separate plugin installation is required.
+
+<Steps>
+<Step>
+### Configure providers
+
+The `createHonoAuth` function accepts a `providers` array. Each provider is created by calling a factory function exported from `@holeauth/core/sso`.
+
+<Tabs items={['Google', 'GitHub', 'Discord', 'Microsoft', 'Generic OIDC']}>
+  <Tab value="Google">
+```ts title="lib/auth.ts" {2,4-10,18}
+import { createHonoAuth } from '@holeauth/hono';
+import { GoogleProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  GoogleProvider({
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/google`,
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createHonoAuth({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="GitHub">
+```ts title="lib/auth.ts" {2,8-12,18}
+import { createHonoAuth } from '@holeauth/hono';
+import { GithubProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  GithubProvider({
+    clientId: process.env.GITHUB_CLIENT_ID!,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/github`,
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createHonoAuth({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="Discord">
+```ts title="lib/auth.ts" {2,8-12,18}
+import { createHonoAuth } from '@holeauth/hono';
+import { DiscordProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  DiscordProvider({
+    clientId: process.env.DISCORD_CLIENT_ID!,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/discord`,
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createHonoAuth({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="Microsoft">
+```ts title="lib/auth.ts" {2,8-13,18}
+import { createHonoAuth } from '@holeauth/hono';
+import { MicrosoftProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  MicrosoftProvider({
+    clientId: process.env.MICROSOFT_CLIENT_ID!,
+    clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/microsoft`,
+    tenant: process.env.MICROSOFT_TENANT ?? 'common',
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createHonoAuth({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="Generic OIDC">
+```ts title="lib/auth.ts" {2,8-16,18}
+import { createHonoAuth } from '@holeauth/hono';
+import { OIDCProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  OIDCProvider({
+    id: 'keycloak',
+    clientId: process.env.OIDC_CLIENT_ID!,
+    clientSecret: process.env.OIDC_CLIENT_SECRET!,
+    issuer: process.env.OIDC_ISSUER!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/keycloak`,
+    scopes: ['openid', 'profile', 'email'],
+    userInfoMapper: (user) => ({ id: user.sub, email: user.email, name: user.name }),
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createHonoAuth({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+</Step>
+
+<Step>
+### Add environment variables
+
+<TypeTable
+  type={{
+    GOOGLE_CLIENT_ID: {
+      description: 'OAuth 2.0 client ID from the Google Cloud Console.',
+      type: 'string',
+    },
+    GOOGLE_CLIENT_SECRET: {
+      description: 'OAuth 2.0 client secret from the Google Cloud Console.',
+      type: 'string',
+    },
+    GITHUB_CLIENT_ID: {
+      description: 'OAuth app client ID from GitHub Developer Settings.',
+      type: 'string',
+    },
+    GITHUB_CLIENT_SECRET: {
+      description: 'OAuth app client secret from GitHub Developer Settings.',
+      type: 'string',
+    },
+    OIDC_ISSUER: {
+      description: 'OpenID Connect issuer URL (e.g. https://keycloak.example.com/realms/master).',
+      type: 'string',
+    },
+  }}
+/>
+
+```bash title=".env"
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+```
+</Step>
+
+<Step>
+### New routes
+
+Once providers are configured, holeauth automatically registers these routes:
+
+- `GET /api/auth/signin/{providerId}` — redirects to the provider's authorization endpoint
+- `GET /api/auth/callback/{providerId}` — handles the OAuth 2.0 callback and issues session tokens
+
+Replace `{providerId}` with `google`, `github`, `discord`, `microsoft`, or your custom OIDC provider ID.
+</Step>
+
+<Step>
+### Initiate sign-in
+
+To start the OAuth flow, redirect the user to `/api/auth/signin/{providerId}`:
+
+```ts title="index.ts"
+import { Hono } from 'hono';
+import { auth } from './lib/auth';
+
+const app = new Hono();
+
+app.route('/api/auth', auth.app);
+
+app.get('/login', (c) => {
+  return c.html(`
+    <h1>Sign In</h1>
+    <a href="/api/auth/signin/google">Sign in with Google</a><br>
+    <a href="/api/auth/signin/github">Sign in with GitHub</a>
+  `);
+});
+
+export default app;
+```
+
+The user will be redirected to the provider, then back to `/api/auth/callback/{providerId}`. Holeauth issues session cookies and redirects to the root path or a URL stored in the `redirect_to` query parameter.
+</Step>
+</Steps>
+
+## Account linking
+
+If a user signs in with an OAuth provider using an email address that already exists in your database, holeauth will:
+
+- **By default**: reject the sign-in with a `DUPLICATE_EMAIL` error.
+- **If `allowDangerousEmailAccountLinking: true`**: automatically link the OAuth account to the existing user.
+
+<Callout type="warn">
+  Email-based account linking is only safe if the OAuth provider verifies email addresses. Unverified providers (e.g. some OIDC setups) allow attackers to claim any email and hijack accounts. Only enable this if you trust the provider.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Become an OIDC provider"
+    description="Issue access tokens to other applications."
+    href="/getting-started/hono/sso-provider"
+  />
+  <Card
+    title="SSO guide"
+    description="Deep dive into OAuth 2.0, OIDC, and custom provider setup."
+    href="/guides/sso"
+  />
+  <Card
+    title="Core SSO API"
+    description="Complete API reference for all provider factories."
+    href="/packages/core#sso"
+  />
+</Cards>

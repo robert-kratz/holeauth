@@ -1,24 +1,127 @@
 ---
 title: Packages
-description: What each holeauth package exports and when to use it.
+description: Reference for every holeauth package, organized by category.
 ---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Packages
 
-holeauth is a small monorepo of focused packages. Install only what you need.
+Holeauth is distributed as a collection of npm packages. Core packages provide authentication primitives, framework adapters expose auth routes and server-helpers, React packages provide client components and hooks, and plugins add optional features like two-factor authentication, passkeys, role-based access control, and SSO.
 
-| Package | Install when |
-| --- | --- |
-| [`@holeauth/core`](/docs/packages/core) | Always — primitives for every other package. |
-| [`@holeauth/nextjs`](/docs/packages/nextjs) | You are on Next.js App Router. |
-| [`@holeauth/react`](/docs/packages/react) | You want `useSession` / `useAuth` hooks. |
-| [`@holeauth/adapter-drizzle`](/docs/packages/adapter-drizzle) | You persist users & sessions with Drizzle ORM (pg / mysql / sqlite). |
-| [`@holeauth/2fa-drizzle`](/docs/packages/2fa-drizzle) | Drizzle tables + adapter for `@holeauth/plugin-2fa`. |
-| [`@holeauth/passkey-drizzle`](/docs/packages/passkey-drizzle) | Drizzle tables + adapter for `@holeauth/plugin-passkey`. |
-| [`@holeauth/rbac-drizzle`](/docs/packages/rbac-drizzle) | Drizzle tables + adapter for `@holeauth/plugin-rbac`. |
-| [`@holeauth/idp-drizzle`](/docs/packages/idp-drizzle) | Drizzle tables + adapter for `@holeauth/plugin-idp`. |
-| [`@holeauth/plugin-2fa`](/docs/packages/plugin-2fa) | TOTP 2FA plugin with recovery codes. |
-| [`@holeauth/plugin-passkey`](/docs/packages/plugin-passkey) | WebAuthn passkey plugin. |
-| [`@holeauth/plugin-rbac`](/docs/packages/plugin-rbac) | RBAC plugin — groups, permissions, YAML-driven or dynamic. |
-| [`@holeauth/plugin-idp`](/docs/packages/plugin-idp) | OIDC / OAuth 2.0 identity provider plugin. |
-| [`@holeauth/rbac-yaml`](/docs/packages/rbac-yaml) | YAML loader + hot-reload for RBAC group definitions. |
+## Core and adapters
+
+<Cards>
+  <Card
+    title="@holeauth/core"
+    href="/packages/core"
+    description="Edge-native auth primitives: JWT, sessions, password hashing, OTP, SSO, adapter interfaces, plugin system, event bus, error classes."
+  />
+  <Card
+    title="@holeauth/adapter-drizzle"
+    href="/packages/adapter-drizzle"
+    description="Drizzle factory-based adapters for users, sessions, accounts, verification tokens, and audit logs. Supports Postgres, MySQL, and SQLite."
+  />
+</Cards>
+
+## Framework bindings
+
+<Cards>
+  <Card
+    title="@holeauth/nextjs-app-router"
+    href="/packages/nextjs-app-router"
+    description="Next.js App Router bindings: route handler, middleware, server helpers, RSC session utilities."
+  />
+  <Card
+    title="@holeauth/nextjs-pages-router"
+    href="/packages/nextjs-pages-router"
+    description="Next.js Pages Router bindings: API route handler, getServerSideProps helpers, withAuth HOF, tRPC context factory."
+  />
+  <Card
+    title="@holeauth/express"
+    href="/packages/express"
+    description="Express router, session middleware, getSession helper, tRPC context factory."
+  />
+  <Card
+    title="@holeauth/hono"
+    href="/packages/hono"
+    description="Hono sub-app, session middleware, getSession helper. Edge-ready."
+  />
+</Cards>
+
+## React
+
+<Cards>
+  <Card
+    title="@holeauth/react"
+    href="/packages/react"
+    description="Client provider and hooks: useSession, useAuth, useSignIn, useSignUp, useSignOut, useRbac, usePasskey, use2fa, usePasswordReset, useInvite, useAuditLog, useAuthenticated, useCsrf."
+  />
+  <Card
+    title="@holeauth/react-ui"
+    href="/packages/react-ui"
+    description="Headless, polymorphic UI components for sign-in, sign-up, password reset, two-factor, passkey setup, and SSO."
+  />
+</Cards>
+
+## Plugins
+
+<Cards>
+  <Card
+    title="plugin-2fa"
+    href="/packages/plugin-2fa"
+    description="Two-factor authentication (TOTP) with QR generation, recovery codes, and sign-in challenge flow."
+  />
+  <Card
+    title="plugin-passkey"
+    href="/packages/plugin-passkey"
+    description="Passkey (WebAuthn / FIDO2) registration and login with credential management."
+  />
+  <Card
+    title="plugin-rbac"
+    href="/packages/plugin-rbac"
+    description="Role-based access control: groups, permissions, YAML-backed configuration, runtime reload, guards."
+  />
+  <Card
+    title="plugin-idp"
+    href="/packages/plugin-idp"
+    description="Thin headless façade to run an OAuth 2.0 / OpenID Connect Identity Provider (SSO server)."
+  />
+  <Card
+    title="SSO Consumer"
+    href="/packages/plugin-idp-consumer"
+    description="Built-in SSO consumer (no separate package). Supports Google, GitHub, Discord, Microsoft, and generic OIDC."
+  />
+</Cards>
+
+## Plugin Drizzle adapters
+
+These packages provide database adapters (table factories and CRUD helpers) for the plugin features above:
+
+| Package | Purpose | Supported Databases |
+| --- | --- | --- |
+| `@holeauth/2fa-drizzle` | TOTP secrets, recovery codes | Postgres, MySQL, SQLite |
+| `@holeauth/passkey-drizzle` | Passkey credentials | Postgres, MySQL, SQLite |
+| `@holeauth/rbac-drizzle` | Groups, permissions, user-group assignments | Postgres, MySQL, SQLite |
+| `@holeauth/idp-drizzle` | IDP client registry, authorization codes, refresh tokens | Postgres, MySQL, SQLite |
+
+## Utilities
+
+| Package | Purpose | Install when |
+| --- | --- | --- |
+| `@holeauth/rbac-yaml` | YAML loader for RBAC configuration | Using plugin-rbac with file-based config |
+
+## Next steps
+
+<Cards>
+  <Card
+    title="@holeauth/core"
+    href="/packages/core"
+    description="Start with the core package reference to understand auth primitives and adapter interfaces."
+  />
+  <Card
+    title="@holeauth/adapter-drizzle"
+    href="/packages/adapter-drizzle"
+    description="Integrate Drizzle ORM with holeauth core for user, session, and audit storage."
+  />
+</Cards>

@@ -1,0 +1,568 @@
+---
+title: Next.js Pages Router
+description: Set up email and password authentication with sessions, CSRF protection, and secure cookie handling in a Next.js Pages Router project.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Next.js Pages Router
+
+This guide walks you through integrating holeauth into a Next.js Pages Router project with Drizzle ORM. By the end, you will have email and password authentication, session management with automatic refresh-token rotation, and CSRF-protected endpoints.
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/core @holeauth/nextjs-pages-router @holeauth/adapter-drizzle @holeauth/react drizzle-orm
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/core @holeauth/nextjs-pages-router @holeauth/adapter-drizzle @holeauth/react drizzle-orm
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/core @holeauth/nextjs-pages-router @holeauth/adapter-drizzle @holeauth/react drizzle-orm
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/core @holeauth/nextjs-pages-router @holeauth/adapter-drizzle @holeauth/react drizzle-orm
+```
+</Tab>
+</Tabs>
+
+Add the database driver for your chosen dialect:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite', 'Headless']}>
+  <Tab value="Postgres">
+```bash
+pnpm add pg @types/pg
+```
+</Tab>
+  <Tab value="MySQL">
+```bash
+pnpm add mysql2
+```
+</Tab>
+  <Tab value="SQLite">
+```bash
+pnpm add better-sqlite3 @types/better-sqlite3
+```
+</Tab>
+  <Tab value="Headless">
+    <Callout type="info">
+      If you choose the headless adapter, you will implement the `BaseAdapter` interface yourself. Skip the `@holeauth/adapter-drizzle` and driver installs. See [Adapters](/concepts/adapters) for the full contract.
+    </Callout>
+  </Tab>
+</Tabs>
+</Step>
+
+<Step>
+### Create database schema
+
+Holeauth provides a table factory for each Drizzle dialect. Import the factory that matches your database, pass your existing users table, and export the resulting tables for use in migrations.
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite', 'Headless']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts"
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  emailVerified: timestamp('email_verified', { withTimezone: true, mode: 'date' }),
+  passwordHash: text('password_hash'),
+  name: text('name'),
+  image: text('image'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts"
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  emailVerified: timestamp('email_verified'),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  name: varchar('name', { length: 255 }),
+  image: varchar('image', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts"
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  emailVerified: integer('email_verified', { mode: 'timestamp' }),
+  passwordHash: text('password_hash'),
+  name: text('name'),
+  image: text('image'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="Headless">
+```ts title="db/schema.ts"
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  emailVerified: timestamp('email_verified', { withTimezone: true, mode: 'date' }),
+  passwordHash: text('password_hash'),
+  name: text('name'),
+  image: text('image'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+// Implement BaseAdapter yourself — no holeauth table factory needed.
+// See /docs/concepts/adapters for the full contract.
+```
+</Tab>
+</Tabs>
+
+Create and configure your database connection:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite', 'Headless']}>
+  <Tab value="Postgres">
+```ts title="db/client.ts"
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle(pool, { schema });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/client.ts"
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
+import * as schema from './schema';
+
+const connection = await mysql.createConnection(process.env.DATABASE_URL!);
+export const db = drizzle(connection, { schema, mode: 'default' });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/client.ts"
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+import * as schema from './schema';
+
+const sqlite = new Database(process.env.DATABASE_URL ?? 'sqlite.db');
+export const db = drizzle(sqlite, { schema });
+```
+</Tab>
+  <Tab value="Headless">
+```ts title="db/client.ts"
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle(pool, { schema });
+
+// You will also need to implement BaseAdapter for holeauth to use.
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` (or `migrate`) to create the tables.
+</Step>
+
+<Step>
+### Environment variables
+
+Create a `.env.local` file in your project root:
+
+<TypeTable
+  type={{
+    HOLEAUTH_SECRET: {
+      description: 'Secret used to sign JWTs. Must be at least 32 characters. Generate with `openssl rand -base64 32`.',
+      type: 'string',
+      required: true,
+    },
+    DATABASE_URL: {
+      description: 'Connection string for your database.',
+      type: 'string',
+      required: true,
+    },
+    APP_URL: {
+      description: 'Base URL of your application. Used for SSO redirects and password-reset emails.',
+      type: 'string',
+      default: '"http://localhost:3000"',
+    },
+  }}
+/>
+
+```bash title=".env.local"
+HOLEAUTH_SECRET="your-secret-here-minimum-32-chars"
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
+APP_URL="http://localhost:3000"
+```
+</Step>
+
+<Step>
+### Create the auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite', 'Headless']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts"
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  tokens: {
+    accessTtl: 60 * 15, // 15 minutes
+    refreshTtl: 60 * 60 * 24 * 30, // 30 days
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60, // 7 days
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts"
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts"
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="Headless">
+```ts title="lib/auth.ts"
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { db } from '@/db/client';
+import { users } from '@/db/schema';
+// Import your custom adapter implementation:
+import { myUserAdapter, mySessionAdapter, /* ... */ } from './adapters';
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: myUserAdapter,
+    session: mySessionAdapter,
+    account: myAccountAdapter,
+    auditLog: myAuditLogAdapter,
+    verificationToken: myVerificationTokenAdapter,
+    transaction: myTransactionAdapter,
+  },
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+</Step>
+
+<Step>
+### Mount the API route handler
+
+Create a catch-all API route to serve all auth endpoints:
+
+```ts title="pages/api/auth/[...holeauth].ts"
+import { auth } from '@/lib/auth';
+
+export default auth.handler;
+```
+
+This exposes the following routes:
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `POST /api/auth/refresh`
+- `GET /api/auth/session`
+- `POST /api/auth/change-password`
+- `POST /api/auth/request-password-reset`
+- `POST /api/auth/consume-password-reset`
+
+See [Core API](/packages/core) for full request and response schemas.
+</Step>
+
+<Step>
+### Add middleware (optional)
+
+If you want to protect routes server-side or perform automatic token refresh, add middleware. Middleware works the same way in Pages Router as in App Router:
+
+```ts title="middleware.ts"
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  // Example: redirect unauthenticated users away from /dashboard
+  const accessToken = request.cookies.get('holeauth.at')?.value;
+  if (!accessToken && request.nextUrl.pathname.startsWith('/dashboard')) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/dashboard/:path*'],
+};
+```
+
+<Callout type="info">
+  For full-featured middleware with automatic refresh and RBAC checks, see [`@holeauth/nextjs-pages-router/middleware`](/packages/nextjs-pages-router#middleware).
+</Callout>
+</Step>
+
+<Step>
+### Wrap your app in HoleauthProvider
+
+```tsx title="pages/_app.tsx"
+import { HoleauthProvider } from '@holeauth/react';
+import type { AppProps } from 'next/app';
+import '@/styles/globals.css';
+
+export default function App({ Component, pageProps }: AppProps) {
+  return (
+    <HoleauthProvider basePath="/api/auth" cookiePrefix="holeauth">
+      <Component {...pageProps} />
+    </HoleauthProvider>
+  );
+}
+```
+
+The provider makes session state available to all client components via hooks like [`useSession()`](/packages/react#useSession) and [`useAuth()`](/packages/react#useAuth).
+</Step>
+
+<Step>
+### Create a protected page
+
+Use `getServerSideProps` to read the session on the server:
+
+```tsx title="pages/index.tsx"
+import { GetServerSideProps } from 'next';
+import Link from 'next/link';
+import { getServerSidePropsSession } from '@holeauth/nextjs-pages-router';
+import { auth } from '@/lib/auth';
+import type { SessionData } from '@holeauth/core';
+
+interface HomeProps {
+  session: SessionData | null;
+}
+
+export default function HomePage({ session }: HomeProps) {
+  if (!session) {
+    return (
+      <div>
+        <h1>Welcome</h1>
+        <p>You are not signed in.</p>
+        <Link href="/login">Sign in</Link>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1>Welcome back</h1>
+      <p>User ID: {session.userId}</p>
+      <p>Expires: {new Date(session.expiresAt * 1000).toLocaleString()}</p>
+    </div>
+  );
+}
+
+export const getServerSideProps: GetServerSideProps<HomeProps> = async (ctx) => {
+  const session = await getServerSidePropsSession(ctx, auth.config);
+  return { props: { session } };
+};
+```
+
+For stricter guards with automatic redirect and RBAC checks, use [`withAuth`](/packages/nextjs-pages-router#withAuth):
+
+```tsx title="pages/dashboard.tsx"
+import { GetServerSideProps } from 'next';
+import { withAuth } from '@holeauth/nextjs-pages-router';
+import { auth } from '@/lib/auth';
+import type { SessionData } from '@holeauth/core';
+
+interface DashboardProps {
+  userId: string;
+  email: string;
+}
+
+export default function DashboardPage({ userId, email }: DashboardProps) {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <p>Email: {email}</p>
+      <p>User ID: {userId}</p>
+    </div>
+  );
+}
+
+export const getServerSideProps: GetServerSideProps<DashboardProps> = withAuth(
+  async (ctx, session) => {
+    const user = await auth.config.adapters.user.findById(session.userId);
+    return {
+      props: {
+        userId: session.userId,
+        email: user?.email ?? 'unknown',
+      },
+    };
+  },
+  auth.config,
+  { redirectTo: '/login' },
+);
+```
+</Step>
+</Steps>
+
+## Next steps
+
+You now have a working Next.js Pages Router project with email and password authentication, session management, and CSRF protection. Add advanced features:
+
+<Cards>
+  <Card
+    title="Two-factor authentication"
+    href="/getting-started/nextjs-pages-router/plugin-2fa"
+    description="Add TOTP-based 2FA with recovery codes."
+  />
+  <Card
+    title="Passkeys"
+    href="/getting-started/nextjs-pages-router/plugin-passkey"
+    description="Enable WebAuthn / FIDO2 passwordless login."
+  />
+  <Card
+    title="Roles and permissions"
+    href="/getting-started/nextjs-pages-router/plugin-rbac"
+    description="Implement role-based access control with YAML config."
+  />
+  <Card
+    title="Sign in with Google, GitHub, OIDC"
+    href="/getting-started/nextjs-pages-router/sso-consumer"
+    description="Add OAuth 2.0 / OpenID Connect as a Relying Party."
+  />
+  <Card
+    title="Become an OIDC provider"
+    href="/getting-started/nextjs-pages-router/sso-provider"
+    description="Issue access tokens to other applications."
+  />
+</Cards>

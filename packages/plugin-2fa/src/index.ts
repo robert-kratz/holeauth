@@ -237,7 +237,7 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
           const accessTtl = rctx.plugin.config.tokens?.accessTtl ?? 900;
           const refreshTtl = rctx.plugin.config.tokens?.refreshTtl ?? 2592000;
           rctx.setCookie({ name: `${prefix}.at`, value: tokens.accessToken, maxAge: accessTtl, httpOnly: true, path: '/' });
-          rctx.setCookie({ name: `${prefix}.rt`, value: tokens.refreshToken, maxAge: refreshTtl, httpOnly: true, path: '/api/auth' });
+          rctx.setCookie({ name: `${prefix}.rt`, value: tokens.refreshToken, maxAge: refreshTtl, httpOnly: true, path: '/' });
           rctx.setCookie({ name: `${prefix}.csrf`, value: tokens.csrfToken, maxAge: refreshTtl, httpOnly: false, path: '/' });
           rctx.setCookie({ name: `${prefix}.pending`, value: '', maxAge: 0, httpOnly: true, path: '/' });
           return new Response(

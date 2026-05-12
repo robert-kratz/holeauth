@@ -1,0 +1,463 @@
+---
+title: Sign in with Google, GitHub, and OIDC
+description: Add OAuth 2.0 and OpenID Connect social login as a Relying Party in your Next.js App Router application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Sign in with Google, GitHub, and OIDC
+
+This guide walks you through adding OAuth 2.0 and OpenID Connect as a Relying Party (consumer) in your Next.js App Router project. Your application will redirect users to an external identity provider (Google, GitHub, Auth0, Keycloak, or any OIDC-compliant provider), then receive an authorization code and exchange it for user profile data.
+
+<Callout type="info">
+  This is the **consumer** side — your app is the Relying Party. If you want to **become** an OIDC provider and issue tokens to other applications, see [Become an OIDC provider](/getting-started/nextjs-app-router/sso-provider).
+</Callout>
+
+<Callout type="info">
+  This guide assumes you have completed the [core Next.js App Router setup](/getting-started/nextjs-app-router).
+</Callout>
+
+SSO consumer functionality is built into `@holeauth/core/sso` — no separate plugin installation is required.
+
+<Steps>
+<Step>
+### Configure providers
+
+The `createAuthHandler` function accepts a `providers` array. Each provider is created by calling a factory function exported from `@holeauth/core/sso`.
+
+<Tabs items={['Google', 'GitHub', 'Discord', 'Microsoft', 'Generic OIDC']}>
+  <Tab value="Google">
+```ts title="lib/auth.ts" {2,4-10,18}
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { GoogleProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  GoogleProvider({
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/google`,
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createAuthHandler({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="GitHub">
+```ts title="lib/auth.ts" {2,8-12,18}
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { GithubProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  GithubProvider({
+    clientId: process.env.GITHUB_CLIENT_ID!,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/github`,
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createAuthHandler({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="Discord">
+```ts title="lib/auth.ts" {2,8-12,18}
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { DiscordProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  DiscordProvider({
+    clientId: process.env.DISCORD_CLIENT_ID!,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/discord`,
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createAuthHandler({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="Microsoft">
+```ts title="lib/auth.ts" {2,8-13,18}
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { MicrosoftProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  MicrosoftProvider({
+    clientId: process.env.MICROSOFT_CLIENT_ID!,
+    clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/microsoft`,
+    tenant: process.env.MICROSOFT_TENANT ?? 'common',
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createAuthHandler({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="Generic OIDC">
+```ts title="lib/auth.ts" {2,8-17,18}
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { OIDCProvider } from '@holeauth/core/sso';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth } from '@/db/schema';
+
+const providers = [
+  OIDCProvider({
+    id: 'keycloak',
+    name: 'Keycloak',
+    clientId: process.env.KEYCLOAK_CLIENT_ID!,
+    clientSecret: process.env.KEYCLOAK_CLIENT_SECRET!,
+    issuer: process.env.KEYCLOAK_ISSUER!,
+    redirectUri: `${process.env.APP_URL}/api/auth/callback/keycloak`,
+    scope: 'openid profile email',
+  }),
+];
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+
+export const auth = createAuthHandler({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  providers,
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    clientId: {
+      description: 'OAuth 2.0 client ID from the identity provider.',
+      type: 'string',
+      required: true,
+    },
+    clientSecret: {
+      description: 'OAuth 2.0 client secret.',
+      type: 'string',
+      required: true,
+    },
+    redirectUri: {
+      description: 'Redirect URI registered with the provider. Must match exactly.',
+      type: 'string',
+      required: true,
+    },
+    scope: {
+      description: 'Space-separated OAuth 2.0 scopes. Defaults to provider-specific recommended scopes.',
+      type: 'string',
+    },
+    issuer: {
+      description: 'OIDC issuer URL (for OIDCProvider only). The provider will fetch .well-known/openid-configuration.',
+      type: 'string',
+    },
+  }}
+/>
+</Step>
+
+<Step>
+### Add environment variables
+
+<Tabs items={['Google', 'GitHub', 'Discord', 'Microsoft', 'Generic OIDC']}>
+  <Tab value="Google">
+```bash title=".env.local"
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+APP_URL="http://localhost:3000"
+```
+
+Register your app in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials). Add `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI.
+</Tab>
+  <Tab value="GitHub">
+```bash title=".env.local"
+GITHUB_CLIENT_ID="your-github-client-id"
+GITHUB_CLIENT_SECRET="your-github-client-secret"
+APP_URL="http://localhost:3000"
+```
+
+Register your app in [GitHub Settings → Developer settings → OAuth Apps](https://github.com/settings/developers). Set the callback URL to `http://localhost:3000/api/auth/callback/github`.
+</Tab>
+  <Tab value="Discord">
+```bash title=".env.local"
+DISCORD_CLIENT_ID="your-discord-client-id"
+DISCORD_CLIENT_SECRET="your-discord-client-secret"
+APP_URL="http://localhost:3000"
+```
+
+Register your app in the [Discord Developer Portal](https://discord.com/developers/applications). Add `http://localhost:3000/api/auth/callback/discord` as a redirect URI.
+</Tab>
+  <Tab value="Microsoft">
+```bash title=".env.local"
+MICROSOFT_CLIENT_ID="your-microsoft-client-id"
+MICROSOFT_CLIENT_SECRET="your-microsoft-client-secret"
+MICROSOFT_TENANT="common"
+APP_URL="http://localhost:3000"
+```
+
+Register your app in the [Azure Portal](https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade). Add `http://localhost:3000/api/auth/callback/microsoft` as a redirect URI.
+</Tab>
+  <Tab value="Generic OIDC">
+```bash title=".env.local"
+KEYCLOAK_CLIENT_ID="your-keycloak-client-id"
+KEYCLOAK_CLIENT_SECRET="your-keycloak-client-secret"
+KEYCLOAK_ISSUER="https://your-keycloak-instance.com/realms/your-realm"
+APP_URL="http://localhost:3000"
+```
+
+The issuer URL must point to a valid OIDC discovery document at `${issuer}/.well-known/openid-configuration`.
+</Tab>
+</Tabs>
+</Step>
+
+<Step>
+### Create a sign-in button
+
+Build a client component that redirects the user to the provider authorization endpoint:
+
+```tsx title="app/login/sso-buttons.tsx"
+'use client';
+import { useRouter } from 'next/navigation';
+
+export function SsoButtons() {
+  const router = useRouter();
+
+  async function handleSsoLogin(provider: string) {
+    const res = await fetch(`/api/auth/sso/${provider}/authorize`, {
+      method: 'GET',
+      redirect: 'manual',
+    });
+    const data = await res.json();
+    if (data.redirectUrl) {
+      window.location.href = data.redirectUrl;
+    }
+  }
+
+  return (
+    <div>
+      <button onClick={() => handleSsoLogin('google')}>Sign in with Google</button>
+      <button onClick={() => handleSsoLogin('github')}>Sign in with GitHub</button>
+    </div>
+  );
+}
+```
+
+Or use a direct link:
+
+```tsx
+<a href="/api/auth/sso/google/authorize">Sign in with Google</a>
+```
+
+The `authorize` endpoint generates the OAuth 2.0 authorization URL, stores a CSRF state parameter in a cookie, and redirects the user to the provider.
+</Step>
+
+<Step>
+### Handle the callback
+
+Holeauth automatically registers a callback route at `/api/auth/callback/:provider` when you mount the route handler. The callback:
+
+1. Validates the `state` parameter against the CSRF cookie.
+2. Exchanges the authorization code for an access token.
+3. Fetches the user profile from the provider.
+4. Creates or links a user account in your database.
+5. Issues holeauth session tokens and redirects the user to your app.
+
+By default, the callback redirects to `/` on success. To customize the redirect, add a `redirectTo` query parameter to the authorize link:
+
+```tsx
+<a href="/api/auth/sso/google/authorize?redirectTo=/dashboard">Sign in with Google</a>
+```
+</Step>
+
+<Step>
+### Account linking
+
+When a user signs in via SSO and an account with the same email already exists, holeauth checks the `allowDangerousEmailAccountLinking` flag:
+
+- If `false` (default), the sign-in fails with a `LINKING_FORBIDDEN` error.
+- If `true`, the SSO account is linked to the existing user.
+
+<Callout type="warn">
+  Enabling `allowDangerousEmailAccountLinking` allows account takeover if the email provider does not verify email ownership. Only enable this if you trust the identity provider to verify emails or if you verify emails yourself before account creation.
+</Callout>
+
+To implement explicit user-initiated account linking:
+
+```ts title="app/actions/link-account.ts"
+'use server';
+import { auth } from '@/lib/auth';
+
+export async function linkGoogleAccount() {
+  const session = await auth.getSession();
+  if (!session) throw new Error('Unauthorized');
+
+  // Redirect user to authorize endpoint with a linking flag
+  return { redirectUrl: `/api/auth/sso/google/authorize?link=true&userId=${session.userId}` };
+}
+```
+
+Then modify your authorize route to accept the `link` query parameter and pass it to the callback. This is an advanced pattern — see [Account linking](/guides/account-linking) for a full implementation.
+</Step>
+</Steps>
+
+## How it works
+
+1. User clicks "Sign in with Google".
+2. Your app redirects to `https://accounts.google.com/o/oauth2/v2/auth?client_id=...&redirect_uri=...&state=...&scope=...`.
+3. User approves the consent screen.
+4. Google redirects to `http://localhost:3000/api/auth/callback/google?code=...&state=...`.
+5. Holeauth verifies the `state` parameter, exchanges the code for an access token, and fetches the user profile.
+6. Holeauth creates a user row (if new) or links the account (if `allowDangerousEmailAccountLinking: true` and email matches), creates a session, and sets access and refresh cookies.
+7. User is redirected to `/` (or the `redirectTo` query parameter).
+
+See [SSO](/guides/sso) for a detailed flow diagram and security considerations.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Become an OIDC provider"
+    href="/getting-started/nextjs-app-router/sso-provider"
+    description="Issue access tokens to other applications."
+  />
+  <Card
+    title="Account linking"
+    href="/guides/account-linking"
+    description="Let users link multiple SSO accounts to one profile."
+  />
+</Cards>

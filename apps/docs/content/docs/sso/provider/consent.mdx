@@ -1,0 +1,181 @@
+---
+title: Consent screen
+description: How the IdP plugin handles user consent for OAuth scopes and remembers decisions across sessions.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Consent screen
+
+When a user is redirected to `/oauth2/authorize`, the plugin checks whether they have already granted the requested scopes to the OAuth app. If not, it renders a **consent screen** asking the user to approve or deny the request.
+
+## When consent is required
+
+Consent is shown if:
+- The user has never authorized this app before, or
+- The app is requesting scopes that were not previously granted, or
+- The user's remembered consent was revoked
+
+If all requested scopes have been previously approved, the plugin skips the consent screen and issues an authorization code immediately.
+
+## Consent flow
+
+1. **User lands at `/oauth2/authorize`** with query parameters: `client_id`, `redirect_uri`, `scope`, `state`, `code_challenge`, etc.
+2. **Plugin checks session**: if unauthenticated, redirects to `/login?returnTo=<authorize-url>`.
+3. **Plugin checks remembered consent**: queries the `idp_consent` table for a row matching `userId` + `appId`.
+4. **If all requested scopes are approved**: issues code and redirects to `redirect_uri?code=...&state=...`.
+5. **Otherwise**: renders a consent page (HTML form) with:
+   - App name, logo, and description
+   - List of requested scopes with human-readable labels
+   - Approve and Deny buttons
+6. **User submits decision** via POST to `/oauth2/authorize/consent`.
+7. **Plugin records decision**: if approved, upserts a consent row with the granted scopes and issues the code. If denied, redirects to `redirect_uri?error=access_denied&state=...`.
+
+## Default consent page
+
+The plugin ships with a minimal consent page (rendered server-side). The HTML structure:
+
+```html
+<!DOCTYPE html>
+<html>
+<head><title>Authorize {appName}</title></head>
+<body>
+  <h1>Authorize {appName}</h1>
+  <p>{appDescription}</p>
+  <p>This app is requesting access to:</p>
+  <ul>
+    <li>openid — sign in with your account</li>
+    <li>profile — read your name and profile picture</li>
+    <li>email — read your email address</li>
+  </ul>
+  <form method="post" action="/oauth2/authorize/consent">
+    <input type="hidden" name="client_id" value="..." />
+    <input type="hidden" name="redirect_uri" value="..." />
+    <input type="hidden" name="scope" value="..." />
+    <input type="hidden" name="state" value="..." />
+    <input type="hidden" name="csrfToken" value="..." />
+    <button name="decision" value="approve">Approve</button>
+    <button name="decision" value="deny">Deny</button>
+  </form>
+</body>
+</html>
+```
+
+## Customizing the consent page
+
+Override the default HTML by providing a custom renderer:
+
+```ts title="lib/auth.ts" {5-6,17-28}
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+import { idp } from '@holeauth/plugin-idp';
+import { drizzleIdpAdapter } from '@holeauth/idp-drizzle/pg';
+import { renderCustomConsent } from '@/lib/custom-consent';
+import * as schema from '@/db/schema';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db, schema.holeauth),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    idp({
+      adapter: drizzleIdpAdapter(db, schema.idp),
+      issuer: process.env.OIDC_ISSUER!,
+    }),
+  ],
+});
+```
+
+```ts title="lib/custom-consent.ts"
+export function renderCustomConsent(props: {
+  appName: string;
+  appLogoUrl: string | null;
+  appDescription: string | null;
+  scopes: string[];
+  userEmail: string;
+  csrf: string;
+  actionPath: string;
+  params: Record<string, string>;
+}): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Authorize ${props.appName}</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 50px auto; }
+    .app-logo { width: 64px; height: 64px; border-radius: 8px; }
+    .scopes { list-style: none; padding: 0; }
+    .scopes li { padding: 8px; border-bottom: 1px solid #eee; }
+    .buttons { display: flex; gap: 12px; margin-top: 24px; }
+    button { padding: 12px 24px; font-size: 16px; cursor: pointer; }
+    .approve { background: #0070f3; color: white; border: none; }
+    .deny { background: #eee; color: #333; border: none; }
+  </style>
+</head>
+<body>
+  ${props.appLogoUrl ? `<img src="${props.appLogoUrl}" class="app-logo" />` : ''}
+  <h1>Authorize ${props.appName}</h1>
+  <p>${props.appDescription ?? ''}</p>
+  <p><strong>${props.userEmail}</strong>, this app is requesting:</p>
+  <ul class="scopes">
+    ${props.scopes.map((s) => `<li>${scopeLabel(s)}</li>`).join('')}
+  </ul>
+  <form method="post" action="${props.actionPath}">
+    ${Object.entries(props.params).map(([k, v]) => `<input type="hidden" name="${k}" value="${v}" />`).join('')}
+    <input type="hidden" name="csrfToken" value="${props.csrf}" />
+    <div class="buttons">
+      <button name="decision" value="approve" class="approve">Approve</button>
+      <button name="decision" value="deny" class="deny">Deny</button>
+    </div>
+  </form>
+</body>
+</html>
+`;
+}
+
+function scopeLabel(scope: string): string {
+  const labels: Record<string, string> = {
+    openid: 'Sign in with your account',
+    profile: 'Read your name and profile picture',
+    email: 'Read your email address',
+    offline_access: 'Access your account even when you are offline',
+  };
+  return labels[scope] ?? scope;
+}
+```
+
+<Callout type="warn">
+  The consent form **must** include a `csrfToken` hidden input. The plugin verifies this value against the httpOnly `holeauth.csrf` cookie. If the CSRF check fails, the request is rejected with `invalid_request`.
+</Callout>
+
+## Revoking consent
+
+Users can revoke consent via a settings page. Build a UI that calls the adapter directly:
+
+```ts title="app/settings/oauth-apps/route.ts"
+import { auth } from '@/lib/auth';
+import { validateCurrentRequest } from '@holeauth/nextjs/server';
+
+export async function POST(req: Request) {
+  const session = await validateCurrentRequest(auth);
+  if (!session) return new Response('Unauthorized', { status: 401 });
+
+  const { appId } = await req.json();
+  const idpPlugin = auth.getPlugin('idp');
+  await idpPlugin.adapter.consent.delete(session.userId, appId);
+
+  return new Response('Consent revoked', { status: 200 });
+}
+```
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Token revocation"
+    href="/sso/provider/revocation"
+    description="Implement RFC 7009 token revocation for refresh tokens and access tokens"
+  />
+</Cards>

@@ -87,7 +87,15 @@ export interface RbacApi {
   snapshot(): { groups: GroupDefinition[]; defaultGroupId: string };
 }
 
-export interface RbacPlugin extends HoleauthPlugin<typeof PLUGIN_ID, RbacApi> {}
+export interface RbacPlugin extends HoleauthPlugin<typeof PLUGIN_ID, RbacApi> {
+  /**
+   * Swap in a new group set at runtime (e.g. from YAML file-watch).
+   * Equivalent to `auth.rbac.reload(groups)` but accessible on the plugin
+   * object BEFORE the auth instance is created — useful for wiring hot-
+   * reload inside factory helpers like `rbacFromYaml()`.
+   */
+  reload(groups: GroupDefinition[]): void;
+}
 
 function buildGroupIndex(groups: GroupDefinition[]): {
   byId: Map<string, GroupDefinition>;
@@ -248,7 +256,7 @@ export function rbac(options: RbacOptions): RbacPlugin {
     },
   };
 
-  return definePlugin({
+  const pluginObj = definePlugin({
     id: PLUGIN_ID,
     version: '0.0.0',
     adapter: optAdapter,
@@ -382,4 +390,13 @@ export function rbac(options: RbacOptions): RbacPlugin {
       };
     },
   });
+
+  // Expose reload at the plugin level so external wiring (e.g. rbacFromYaml)
+  // can call it without needing the auth instance.
+  function pluginReload(groups: GroupDefinition[]): void {
+    index = buildGroupIndex(groups);
+    void cache.clear();
+  }
+
+  return Object.assign(pluginObj, { reload: pluginReload }) as RbacPlugin;
 }

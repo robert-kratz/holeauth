@@ -1,0 +1,387 @@
+---
+title: Typed API surface
+description: Expose plugin methods on auth[plugin.id] with full IntelliSense.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+# Typed API surface
+
+Every plugin defines an `api(ctx)` function that returns a typed object. This object is merged into the `HoleauthInstance` at `auth[plugin.id]`, giving full IntelliSense to consumers.
+
+## PluginsApi type
+
+Core's `PluginsApi<Plugins>` type maps each plugin's `id` to its `api` return type:
+
+```ts
+export type PluginsApi<Plugins extends readonly HoleauthPlugin<string, unknown>[]> = {
+  [P in Plugins[number] as P['id']]: ReturnType<P['api']>;
+};
+```
+
+This allows TypeScript to infer `auth[plugin.id]` without `declare module` augmentation, as long as the `plugins` array is marked `as const`.
+
+## Example: magic link plugin
+
+```ts title="lib/plugins/magicLink.ts"
+import { definePlugin, type PluginContext } from '@holeauth/core/plugins';
+
+export interface MagicLinkApi {
+  request(email: string): Promise<void>;
+  consume(token: string): Promise<{ userId: string; sessionId: string }>;
+}
+
+export const magicLink = () => definePlugin({
+  id: 'magicLink' as const,
+
+  api(ctx: PluginContext): MagicLinkApi {
+    return {
+      async request(email) {
+        const user = await ctx.core.getUserByEmail(email);
+        if (!user) throw new Error('User not found');
+        // TODO: generate token, send email
+        await ctx.events.emit({
+          type: 'magicLink.requested',
+          userId: user.id,
+          data: { email },
+        });
+      },
+
+      async consume(token) {
+        // TODO: verify token, extract userId
+        const userId = 'user_123'; // placeholder
+        const { user, tokens } = await ctx.core.completeSignIn(userId, {
+          method: 'magic_link',
+        });
+        await ctx.events.emit({
+          type: 'magicLink.consumed',
+          userId: user.id,
+          data: { sessionId: tokens.sessionId },
+        });
+        return { userId: user.id, sessionId: tokens.sessionId };
+      },
+    };
+  },
+});
+```
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { magicLink } from './plugins/magicLink';
+import { db } from './db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [magicLink()] as const,
+});
+
+// TypeScript infers auth.magicLink: MagicLinkApi
+await auth.magicLink.request('user@example.com'); // ✅ Fully typed
+```
+
+<Callout type="info">
+  The `as const` on the `plugins` array is **required** for type inference. Without it, TypeScript widens the array to `HoleauthPlugin[]` and loses literal id tracking.
+</Callout>
+
+## PluginContext
+
+The `ctx` argument passed to `api(ctx)` provides access to core helpers, other plugins, adapters, events, and the config.
+
+<TypeTable
+  type={{
+    config: {
+      description: 'Full HoleauthConfig (secrets, adapters, tokens, providers, plugins, pluginAdapters, etc.).',
+      type: 'HoleauthConfig',
+      required: true,
+    },
+    events: {
+      description: 'Event emitter handle (on, off, emit). Plugins should namespace events as <id>.<name>.',
+      type: 'PluginEvents',
+      required: true,
+    },
+    logger: {
+      description: 'Minimal logger surface (debug, info, warn, error). Plugins MUST NOT call console.* directly.',
+      type: 'PluginLogger',
+      required: true,
+    },
+    core: {
+      description: 'Curated core surface (getUserById, getUserByEmail, issueSession, completeSignIn, revokeSession, issueSignInResult).',
+      type: 'PluginCoreSurface',
+      required: true,
+    },
+    getPlugin: {
+      description: 'Retrieve another plugin\'s API by id. Throws if not found. Type-safe when used with dependsOn.',
+      type: '<T = unknown>(id: string) => T',
+      required: true,
+    },
+    getPluginAdapter: {
+      description: 'Retrieve this plugin\'s adapter from config.pluginAdapters[id]. Returns undefined if none was supplied.',
+      type: '<T = unknown>(id: string) => T | undefined',
+      required: true,
+    },
+  }}
+/>
+
+### PluginEvents
+
+<TypeTable
+  type={{
+    on: {
+      description: 'Subscribe to an event type. Returns an unsubscribe function.',
+      type: '(type: string, handler: (e: HoleauthEvent) => void | Promise<void>) => () => void',
+      required: true,
+    },
+    off: {
+      description: 'Unsubscribe a handler from an event type.',
+      type: '(type: string, handler: (e: HoleauthEvent) => void | Promise<void>) => void',
+      required: true,
+    },
+    emit: {
+      description: 'Emit a (persisted + observed) event. Plugins should namespace as <id>.<name>.',
+      type: '(e: HoleauthEvent) => Promise<void>',
+      required: true,
+    },
+  }}
+/>
+
+### PluginLogger
+
+<TypeTable
+  type={{
+    debug: {
+      description: 'Debug-level log (typically suppressed in production).',
+      type: '(msg: string, data?: unknown) => void',
+      required: true,
+    },
+    info: {
+      description: 'Informational log.',
+      type: '(msg: string, data?: unknown) => void',
+      required: true,
+    },
+    warn: {
+      description: 'Warning log.',
+      type: '(msg: string, data?: unknown) => void',
+      required: true,
+    },
+    error: {
+      description: 'Error log.',
+      type: '(msg: string, err?: unknown) => void',
+      required: true,
+    },
+  }}
+/>
+
+### PluginCoreSurface
+
+Curated core surface exposed to plugins. Deliberately narrower than `HoleauthInstance` to prevent plugins from ping-ponging through the public API.
+
+<TypeTable
+  type={{
+    getUserById: {
+      description: 'Retrieve a user by id. Returns null if not found.',
+      type: '(id: string) => Promise<AdapterUser | null>',
+      required: true,
+    },
+    getUserByEmail: {
+      description: 'Retrieve a user by email. Returns null if not found.',
+      type: '(email: string) => Promise<AdapterUser | null>',
+      required: true,
+    },
+    issueSession: {
+      description: 'Issue session tokens (accessToken, refreshToken, csrfToken) for a user. Does NOT run signIn hooks.',
+      type: '(input: { userId: string; ip?: string | null; userAgent?: string | null }) => Promise<IssuedTokens>',
+      required: true,
+    },
+    completeSignIn: {
+      description: 'Run signIn.after hooks for a given user + method, then issue tokens. Used by passkey / SSO to funnel through the same post-sign-in hook chain as password sign-in.',
+      type: '(userId: string, input: { method: string; ip?: string; userAgent?: string }) => Promise<{ user: AdapterUser; tokens: IssuedTokens }>',
+      required: true,
+    },
+    revokeSession: {
+      description: 'Revoke a session by id. Optionally pass userId for audit.',
+      type: '(sessionId: string, userId?: string) => Promise<void>',
+      required: true,
+    },
+    issueSignInResult: {
+      description: 'Shortcut for read-only code paths: pre-computes the SignInResult for a user (no challenge).',
+      type: '(user: AdapterUser, input: { ip?: string; userAgent?: string }) => Promise<SignInResult>',
+      required: true,
+    },
+  }}
+/>
+
+#### completeSignIn
+
+Non-password authentication methods (passkey, SSO, magic link) should funnel through `ctx.core.completeSignIn` to ensure `signIn.after` hooks run consistently:
+
+```ts
+const { user, tokens } = await ctx.core.completeSignIn(userId, {
+  method: 'magic_link', // or 'passkey', 'sso', etc.
+  ip: input.ip,
+  userAgent: input.userAgent,
+});
+```
+
+This guarantees that plugins like `@holeauth/plugin-rbac` (which assign roles in `signIn.after`) work for all sign-in methods, not just password.
+
+<Callout type="info">
+  `completeSignIn` internally calls `issueSession`, runs `session.onIssue` hooks, emits `user.signed_in`, and runs `signIn.after` hooks. Do not call `issueSession` directly unless you want to bypass hooks (rare).
+</Callout>
+
+## Cross-plugin API calls
+
+Plugins can call each other's APIs via `ctx.getPlugin<T>(id)`:
+
+```ts title="lib/plugins/analytics.ts"
+import { definePlugin, type PluginContext } from '@holeauth/core/plugins';
+import type { MagicLinkApi } from './magicLink';
+
+export const analytics = () => definePlugin({
+  id: 'analytics' as const,
+  dependsOn: ['magicLink'] as const,
+
+  api(ctx: PluginContext) {
+    const magicLink = ctx.getPlugin<MagicLinkApi>('magicLink');
+
+    return {
+      async trackMagicLinkRequest(email: string) {
+        await magicLink.request(email);
+        await ctx.events.emit({
+          type: 'analytics.magic_link_tracked',
+          data: { email },
+        });
+      },
+    };
+  },
+});
+```
+
+<Callout type="warn">
+  **Do not call `ctx.getPlugin()` inside `api(ctx)` for a plugin that depends on YOU.** The topo sort ensures dependencies are wired first, so calling a dependency is safe. Calling a dependent (reverse direction) will throw because its API has not been constructed yet. Use `onInit` if you need to reference dependents.
+</Callout>
+
+## Retrieving the plugin adapter
+
+Plugins retrieve their adapter via `ctx.getPluginAdapter<T>(id)`:
+
+```ts
+const adapter = ctx.getPluginAdapter<TwoFactorAdapter>('twofa');
+if (!adapter) {
+  throw new Error('TwoFactorAdapter not configured. Pass it via pluginAdapters.twofa.');
+}
+```
+
+The consumer wires adapters via `defineHoleauth({ pluginAdapters: { [id]: ... } })`:
+
+```ts title="lib/auth.ts"
+import { twofa } from '@holeauth/plugin-2fa';
+import { twoFactorDrizzleAdapter } from '@holeauth/2fa-drizzle/pg';
+import { db } from './db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [twofa({ issuer: 'MyApp' })] as const,
+  pluginAdapters: {
+    twofa: twoFactorDrizzleAdapter(db),
+  },
+});
+```
+
+See [Plugin adapters](/plugins/adapter) for full reference.
+
+## API design guidelines
+
+### Keep it imperative
+
+The API surface should expose imperative methods that abstract over adapter calls, validation, and flow orchestration. Consumers should not need to know about your adapter or internal state.
+
+```ts
+// ✅ Good
+api(ctx) {
+  return {
+    async setup(userId: string) { /* ... */ },
+    async verify(userId: string, code: string) { /* ... */ },
+    async disable(userId: string) { /* ... */ },
+  };
+}
+
+// ❌ Bad
+api(ctx) {
+  return {
+    adapter: ctx.getPluginAdapter('twofa'), // leaking adapter
+  };
+}
+```
+
+### Return typed results
+
+Avoid `any` or `unknown`. Return specific types so consumers get IntelliSense:
+
+```ts
+// ✅ Good
+api(ctx) {
+  return {
+    async setup(userId: string): Promise<{ secret: string; qrCodeDataUrl: string }> {
+      // ...
+    },
+  };
+}
+
+// ❌ Bad
+api(ctx) {
+  return {
+    async setup(userId: string): Promise<unknown> {
+      // ...
+    },
+  };
+}
+```
+
+### Throw typed errors
+
+Use `HoleauthError` for domain errors so consumers can catch and handle them:
+
+```ts
+import { HoleauthError } from '@holeauth/core/errors';
+
+api(ctx) {
+  return {
+    async verify(userId: string, code: string) {
+      const record = await adapter.getByUserId(userId);
+      if (!record) {
+        throw new HoleauthError('TWOFA_NOT_ENROLLED', '2FA not enrolled', 400);
+      }
+      // ...
+    },
+  };
+}
+```
+
+### Namespace events
+
+Plugin events should be namespaced as `<plugin.id>.<name>`:
+
+```ts
+await ctx.events.emit({
+  type: 'twofa.verified',
+  userId: user.id,
+  data: { method: 'totp' },
+});
+```
+
+This prevents collisions with core events and other plugins.
+
+## Next
+
+<Cards>
+  <Card
+    title="Plugin adapters"
+    href="/plugins/adapter"
+    description="How plugins contribute and retrieve their own adapters."
+  />
+</Cards>

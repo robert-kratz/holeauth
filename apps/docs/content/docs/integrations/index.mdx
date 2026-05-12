@@ -1,0 +1,32 @@
+---
+title: Integrations
+description: Connect holeauth to adjacent ecosystems without modifying core behavior.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Integrations
+
+Integrations sit alongside plugins — they wire holeauth into adjacent ecosystems like tRPC, providing auth-aware context, transparent refresh rotation, and RBAC-gated procedures without modifying core behavior.
+
+Unlike plugins which extend the auth instance itself, integrations provide helpers that bridge holeauth with other libraries and frameworks in your stack.
+
+## Available Integrations
+
+<Cards>
+  <Card
+    title="tRPC"
+    href="/integrations/trpc"
+    description="Auth-aware context, transparent token rotation, and RBAC-gated procedures for tRPC v11."
+  />
+</Cards>
+
+## Next Steps
+
+<Cards>
+  <Card
+    title="tRPC Integration"
+    href="/integrations/trpc"
+    description="Wire tRPC with automatic session refresh and permission-gated procedures."
+  />
+</Cards>

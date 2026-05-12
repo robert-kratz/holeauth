@@ -9,6 +9,8 @@ coverage
 !.env.example
 .DS_Store
 *.log
+*.tsbuildinfo
+*_output.txt
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json

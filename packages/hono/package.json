@@ -1,0 +1,60 @@
+{
+  "name": "@holeauth/hono",
+  "version": "0.0.1-alpha.0",
+  "description": "Hono bindings for holeauth.",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/hono"
+  },
+  "homepage": "https://robert-kratz.github.io/holeauth",
+  "bugs": "https://github.com/robert-kratz/holeauth/issues",
+  "keywords": [
+    "auth",
+    "hono",
+    "holeauth"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "echo 'lint skipped'",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@holeauth/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "hono": "^4"
+  },
+  "devDependencies": {
+    "@holeauth/tsconfig": "workspace:*",
+    "@types/node": "^20.16.10",
+    "hono": "^4.6.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

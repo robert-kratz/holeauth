@@ -1,65 +1,285 @@
 ---
-title: adapter-drizzle
-description: Drizzle ORM adapter for holeauth core — creates tables and adapters for users, sessions, accounts, and audit logs across pg, mysql, and sqlite.
+title: "@holeauth/adapter-drizzle"
+description: Drizzle ORM adapter for holeauth core tables (users, sessions, accounts, verification tokens, audit log) across PostgreSQL, MySQL, and SQLite.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
 import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
-import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
 
 # @holeauth/adapter-drizzle
 
-Drizzle ORM reference adapter for holeauth core. Generates all required holeauth tables (sessions, accounts, verification tokens, audit log) and returns a fully typed `HoleauthAdapterBundle` that plugs directly into `defineHoleauth`.
+Drizzle ORM adapter for holeauth core storage, supporting PostgreSQL, MySQL, and SQLite.
 
-Supports **PostgreSQL**, **MySQL**, and **SQLite**.
+<Callout type="info">
+  This package provides adapters for **core holeauth tables only** (users, sessions, accounts, verification tokens, audit log). For plugin-specific tables, see [@holeauth/2fa-drizzle](/packages/plugin-2fa/drizzle), [@holeauth/passkey-drizzle](/packages/plugin-passkey/drizzle), [@holeauth/rbac-drizzle](/packages/plugin-rbac/drizzle), and [@holeauth/idp-drizzle](/packages/plugin-idp/drizzle).
+</Callout>
+
+## Installation
 
 <Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
   <Tab value="pnpm">
 ```bash
-pnpm add @holeauth/adapter-drizzle drizzle-orm
+pnpm add @holeauth/adapter-drizzle
 ```
 </Tab>
   <Tab value="npm">
 ```bash
-npm install @holeauth/adapter-drizzle drizzle-orm
+npm install @holeauth/adapter-drizzle
 ```
 </Tab>
   <Tab value="yarn">
 ```bash
-yarn add @holeauth/adapter-drizzle drizzle-orm
+yarn add @holeauth/adapter-drizzle
 ```
 </Tab>
   <Tab value="bun">
 ```bash
-bun add @holeauth/adapter-drizzle drizzle-orm
+bun add @holeauth/adapter-drizzle
 ```
 </Tab>
 </Tabs>
 
-## Quick example (PostgreSQL)
+## Subpath Exports
+
+This package provides dialect-specific entry points. **There is no main entry point** — you must import from a subpath:
+
+- `@holeauth/adapter-drizzle/pg` — PostgreSQL
+- `@holeauth/adapter-drizzle/mysql` — MySQL
+- `@holeauth/adapter-drizzle/sqlite` — SQLite
+
+All three expose the same API: `createHoleauthTables` and `createHoleauthAdapters`.
+
+## Usage by Dialect
+
+<Tabs items={['PostgreSQL', 'MySQL', 'SQLite']}>
+  <Tab value="PostgreSQL">
+    ```ts title="db/schema.ts"
+    import { pgTable, text } from 'drizzle-orm/pg-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+
+    export const users = pgTable('users', {
+      id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+      email: text('email').notNull().unique(),
+      passwordHash: text('password_hash'),
+      name: text('name'),
+      image: text('image'),
+      emailVerified: text('email_verified').$type<boolean>().default(false),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    const adapters = createHoleauthAdapters({ db, tables });
+
+    export const auth = defineHoleauth({
+      adapter: adapters,
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+    });
+    ```
+  </Tab>
+  <Tab value="MySQL">
+    ```ts title="db/schema.ts"
+    import { mysqlTable, varchar, boolean } from 'drizzle-orm/mysql-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+
+    export const users = mysqlTable('users', {
+      id: varchar('id', { length: 191 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+      email: varchar('email', { length: 255 }).notNull().unique(),
+      passwordHash: varchar('password_hash', { length: 255 }),
+      name: varchar('name', { length: 255 }),
+      image: varchar('image', { length: 512 }),
+      emailVerified: boolean('email_verified').default(false),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    const adapters = createHoleauthAdapters({ db, tables });
+
+    export const auth = defineHoleauth({
+      adapter: adapters,
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+    });
+    ```
+  </Tab>
+  <Tab value="SQLite">
+    ```ts title="db/schema.ts"
+    import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+
+    export const users = sqliteTable('users', {
+      id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+      email: text('email').notNull().unique(),
+      passwordHash: text('password_hash'),
+      name: text('name'),
+      image: text('image'),
+      emailVerified: integer('email_verified', { mode: 'boolean' }).default(false),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    const adapters = createHoleauthAdapters({ db, tables });
+
+    export const auth = defineHoleauth({
+      adapter: adapters,
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## API Reference
+
+### createHoleauthTables()
+
+Creates Drizzle table definitions for holeauth core storage.
+
+```ts
+function createHoleauthTables<U extends UsersTable>(
+  options: CreateHoleauthTablesOptions<U>
+): {
+  tables: {
+    users: U;
+    sessions: ...;
+    accounts: ...;
+    verificationTokens: ...;
+    auditLog: ...;
+  };
+  relations: {...};
+}
+```
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table. Must have an `id` column (any string-compatible type).',
+      type: 'DrizzleTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Prefix for all generated table names.',
+      type: 'string',
+      default: '"holeauth_"',
+    },
+  }}
+/>
+
+**Returns**
+
+An object with:
+
+- `tables.users` — Your provided users table (passed through unchanged).
+- `tables.sessions` — Session storage with columns: `id` (PK), `userId` (FK cascade), `familyId`, `refreshTokenHash` (unique), `expiresAt`, `createdAt`, `revokedAt`, `userAgent`, `ip`.
+- `tables.accounts` — OAuth / SSO account links: `id` (PK), `userId` (FK cascade), `provider`, `providerAccountId` (unique per provider), `email`, `accessToken`, `refreshToken`, `expiresAt`, `tokenType`, `scope`, `idToken`.
+- `tables.verificationTokens` — Email verification / password reset tokens: `identifier`, `token` (composite PK), `expiresAt`.
+- `tables.auditLog` — Audit trail: `id` (PK), `type`, `userId` (FK set null), `sessionId`, `at`, `ip`, `userAgent`, `data` (jsonb).
+- `relations` — Drizzle relations between tables.
+
+**Example**
 
 ```ts title="db/schema.ts"
-import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { users } from './users';
 
-export const users = pgTable('users', {
-  id: text('id').primaryKey(),
-  email: text('email').notNull().unique(),
-  emailVerified: timestamp('email_verified', { withTimezone: true }),
-  name: text('name'),
-  image: text('image'),
-  passwordHash: text('password_hash'),
+const holeauth = createHoleauthTables({
+  usersTable: users,
+  prefix: 'app_',
 });
+
+export const tables = { ...holeauth.tables };
+export const relations = { ...holeauth.relations };
 ```
+
+### createHoleauthAdapters()
+
+Constructs a complete adapter object that satisfies holeauth's `HoleauthConfig.adapter` contract.
+
+```ts
+function createHoleauthAdapters(
+  options: CreateHoleauthAdaptersOptions
+): {
+  user: UserAdapter;
+  session: SessionAdapter;
+  account: AccountAdapter;
+  auditLog: AuditLogAdapter;
+  verificationToken: VerificationTokenAdapter;
+  transaction: TransactionAdapter;
+}
+```
+
+<TypeTable
+  type={{
+    db: {
+      description: 'Drizzle database instance (node-postgres / postgres-js / mysql2 / better-sqlite3).',
+      type: 'DrizzleDB',
+      required: true,
+    },
+    tables: {
+      description: 'Tables object returned by `createHoleauthTables`.',
+      type: 'Tables',
+      required: true,
+    },
+    generateId: {
+      description: 'Custom ID generator for sessions, accounts, audit log entries.',
+      type: '() => string',
+      default: 'crypto.randomUUID',
+    },
+  }}
+/>
+
+**Example**
 
 ```ts title="lib/auth.ts"
 import { defineHoleauth } from '@holeauth/core';
-import { createHoleauthTables, createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
 import { db } from '@/db';
-import { users } from '@/db/schema';
+import { tables } from '@/db/schema';
 
-const { tables } = createHoleauthTables({ usersTable: users });
 const adapters = createHoleauthAdapters({ db, tables });
 
 export const auth = defineHoleauth({
@@ -68,156 +288,185 @@ export const auth = defineHoleauth({
 });
 ```
 
-<Callout type="info">
-  You own the `users` table. holeauth generates companion tables (sessions, accounts, verification tokens, audit log) prefixed with `holeauth_` and linked to your `users` table via foreign keys.
-</Callout>
+## Adapter Methods
 
-## `createHoleauthTables(options)`
+The adapter object returned by `createHoleauthAdapters` implements the following interfaces:
 
-Generate all holeauth companion table definitions. Call once and pass the result to `createHoleauthAdapters`.
-
-### Options
-
-<TypeTable
-  type={{
-    usersTable: {
-      description: 'Your Drizzle users table. Must have a string-compatible `id` column.',
-      type: 'PgUsersTable',
-      required: true,
-    },
-    prefix: {
-      description: 'Prefix prepended to every generated table name.',
-      type: 'string',
-      default: '"holeauth_"',
-    },
-  }}
-/>
-
-### Returns
+### UserAdapter
 
 ```ts
-{
-  tables: {
-    users: U;
-    sessions: PgTable;            // holeauth_session
-    accounts: PgTable;            // holeauth_account
-    verificationTokens: PgTable;  // holeauth_verification_token
-    auditLog: PgTable;            // holeauth_audit_log
-  };
-  relations: {
-    sessionsRelations: Relations;
-    accountsRelations: Relations;
-    auditLogRelations: Relations;
-  };
+interface UserAdapter {
+  getUserById(id: string): Promise<AdapterUser | null>;
+  getUserByEmail(email: string): Promise<AdapterUser | null>;
+  createUser(data: {...}): Promise<AdapterUser>;
+  updateUser(id: string, patch: Partial<AdapterUser>): Promise<AdapterUser>;
+  deleteUser(id: string): Promise<void>;
 }
 ```
 
-## `createHoleauthAdapters(options)`
+### SessionAdapter
 
-Build the `HoleauthAdapterBundle` from the generated tables.
+```ts
+interface SessionAdapter {
+  createSession(data: {...}): Promise<AdapterSession>;
+  getSession(id: string): Promise<AdapterSession | null>;
+  getByRefreshHash(hash: string): Promise<AdapterSession | null>;
+  findByFamily(familyId: string): Promise<AdapterSession[]>;
+  deleteSession(id: string): Promise<void>;
+  rotateRefresh(id: string, newHash: string, expiresAt: Date): Promise<AdapterSession>;
+  revokeFamily(familyId: string): Promise<void>;
+  revokeUser(userId: string): Promise<void>;
+}
+```
 
-### Options
+### AccountAdapter
 
-<TypeTable
-  type={{
-    db: {
-      description: 'Drizzle database instance (postgres-js, node-postgres, or compatible).',
-      type: 'PgDb',
-      required: true,
-    },
-    tables: {
-      description: 'Tables returned by createHoleauthTables.',
-      type: 'HoleauthTables',
-      required: true,
-    },
-    userEmailColumn: {
-      description: 'Name of the email column on your users table.',
-      type: 'string',
-      default: '"email"',
-    },
-    generateId: {
-      description: 'Custom ID generator for new records.',
-      type: '() => string',
-      default: 'crypto.randomUUID()',
-    },
-  }}
-/>
+```ts
+interface AccountAdapter {
+  createAccount(data: {...}): Promise<AdapterAccount>;
+  getAccountByProvider(provider: string, providerAccountId: string): Promise<AdapterAccount | null>;
+  listAccountsByUserId(userId: string): Promise<AdapterAccount[]>;
+  updateAccount(id: string, patch: Partial<AdapterAccount>): Promise<AdapterAccount>;
+  deleteAccount(id: string): Promise<void>;
+}
+```
 
-### Returns `HoleauthAdapterBundle`
+### VerificationTokenAdapter
 
-<TypeTable
-  type={{
-    user: { description: 'UserAdapter — CRUD operations for your users table.', type: 'UserAdapter', required: true },
-    session: { description: 'SessionAdapter — session lifecycle (create, rotate, revoke, family queries).', type: 'SessionAdapter', required: true },
-    account: { description: 'AccountAdapter — OAuth provider account links.', type: 'AccountAdapter', required: true },
-    verificationToken: { description: 'VerificationTokenAdapter — email OTP / magic-link tokens.', type: 'VerificationTokenAdapter', required: true },
-    auditLog: { description: 'AuditLogAdapter — append-only event log.', type: 'AuditLogAdapter', required: true },
-    transaction: { description: 'TransactionAdapter — wraps mutations in a DB transaction.', type: 'TransactionAdapter', required: true },
-  }}
-/>
+```ts
+interface VerificationTokenAdapter {
+  createToken(data: {...}): Promise<void>;
+  getToken(identifier: string, token: string): Promise<AdapterVerificationToken | null>;
+  deleteToken(identifier: string, token: string): Promise<void>;
+  deleteExpiredTokens(): Promise<number>;
+}
+```
 
-## Dialects
+### AuditLogAdapter
 
-| Import path | Dialect |
-|-------------|---------|
-| `@holeauth/adapter-drizzle/pg` | PostgreSQL |
-| `@holeauth/adapter-drizzle/mysql` | MySQL / PlanetScale |
-| `@holeauth/adapter-drizzle/sqlite` | SQLite / Turso / Cloudflare D1 |
+```ts
+interface AuditLogAdapter {
+  createEntry(data: {...}): Promise<AdapterAuditEvent>;
+  listEntries(opts?: {userId?: string; type?: string; limit?: number}): Promise<AdapterAuditEvent[]>;
+}
+```
 
-All three subpaths export identical `createHoleauthTables` and `createHoleauthAdapters` APIs with dialect-specific column types.
+### TransactionAdapter
 
-## Generated table schema
+```ts
+interface TransactionAdapter {
+  transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T>;
+}
+```
 
-### `holeauth_session`
+Wraps a callback in a database transaction. The `tx` object passed to `fn` is a Drizzle transaction instance.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | text PK | Session ID |
-| `user_id` | text FK → users | Cascade delete |
-| `family_id` | text | Refresh token family for reuse detection |
-| `refresh_token_hash` | text UNIQUE | SHA-256 of the refresh token |
-| `expires_at` | timestamp | When the refresh token expires |
-| `created_at` | timestamp | Defaulted to now |
-| `revoked_at` | timestamp | Null if active |
-| `user_agent` | text | |
-| `ip` | text | |
+## Schema Details
 
-### `holeauth_account`
+### Sessions Table (PostgreSQL example)
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | text PK | |
-| `user_id` | text FK → users | Cascade delete |
-| `provider` | text | e.g. `"google"`, `"github"` |
-| `provider_account_id` | text | UNIQUE with provider |
-| `email` | text | |
-| `access_token` / `refresh_token` | text | |
-| `expires_at` | timestamp | |
-| `id_token` | text | |
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `text` | Primary key |
+| `userId` | `text` | Not null, foreign key → `users.id` (on delete cascade), indexed |
+| `familyId` | `text` | Not null, indexed (for refresh token rotation) |
+| `refreshTokenHash` | `text` | Not null, unique (SHA-256 hash) |
+| `expiresAt` | `timestamp` | Not null |
+| `createdAt` | `timestamp` | Not null, default now |
+| `revokedAt` | `timestamp` | Nullable (set when session is revoked) |
+| `userAgent` | `text` | Nullable |
+| `ip` | `text` | Nullable |
 
-### `holeauth_verification_token`
+### Accounts Table
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `identifier` | text | Email address (composite PK) |
-| `token` | text | Hashed token (composite PK) |
-| `expires_at` | timestamp | |
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `text` | Primary key |
+| `userId` | `text` | Not null, foreign key → `users.id` (on delete cascade), indexed |
+| `provider` | `text` | Not null |
+| `providerAccountId` | `text` | Not null |
+| `email` | `text` | Nullable |
+| `accessToken` | `text` | Nullable |
+| `refreshToken` | `text` | Nullable |
+| `expiresAt` | `timestamp` | Nullable |
+| `tokenType` | `text` | Nullable |
+| `scope` | `text` | Nullable |
+| `idToken` | `text` | Nullable |
 
-### `holeauth_audit_log`
+Unique constraint: `(provider, providerAccountId)`.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | text PK | |
-| `type` | text | [`HoleauthEventType`](/docs/api/events) |
-| `user_id` | text FK → users | Set null on delete |
-| `session_id` | text | |
-| `at` | timestamp | Event time |
-| `ip` / `user_agent` | text | |
-| `data` | jsonb | Structured event payload |
+### Verification Tokens Table
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `identifier` | `text` | Part of composite PK (usually email) |
+| `token` | `text` | Part of composite PK (random token) |
+| `expiresAt` | `timestamp` | Not null |
+
+### Audit Log Table
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `text` | Primary key |
+| `type` | `text` | Not null, indexed |
+| `userId` | `text` | Nullable, foreign key → `users.id` (on delete set null), indexed |
+| `sessionId` | `text` | Nullable |
+| `at` | `timestamp` | Not null, default now |
+| `ip` | `text` | Nullable |
+| `userAgent` | `text` | Nullable |
+| `data` | `jsonb` | Nullable (additional structured data) |
+
+## Headless Alternative
+
+If you are not using Drizzle, implement the adapter interfaces manually. See the [Adapters concept page](/concepts/adapters) for the full contract.
+
+**Example (custom adapter)**
+
+```ts title="lib/my-adapter.ts"
+import { defineHoleauth } from '@holeauth/core';
+import type { UserAdapter, SessionAdapter } from '@holeauth/core/adapters';
+
+const userAdapter: UserAdapter = {
+  async getUserById(id) {
+    return myDb.query('SELECT * FROM users WHERE id = $1', [id]);
+  },
+  // ... implement all methods
+};
+
+const sessionAdapter: SessionAdapter = {
+  // ... implement all methods
+};
+
+export const auth = defineHoleauth({
+  adapter: { user: userAdapter, session: sessionAdapter, /* ... */ },
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+});
+```
+
+## Migration
+
+After defining your schema, generate and run a migration:
+
+```bash
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+<Callout type="warn">
+  Do not rename holeauth-managed columns. The adapter expects exact column names as defined by `createHoleauthTables`. You can add custom columns to your users table.
+</Callout>
+
+## See Also
 
 <Cards>
-  <Card title="2fa-drizzle" href="/docs/packages/2fa-drizzle" description="Drizzle tables and adapter for @holeauth/plugin-2fa." />
-  <Card title="passkey-drizzle" href="/docs/packages/passkey-drizzle" description="Drizzle tables and adapter for @holeauth/plugin-passkey." />
-  <Card title="rbac-drizzle" href="/docs/packages/rbac-drizzle" description="Drizzle tables and adapter for @holeauth/plugin-rbac." />
-  <Card title="idp-drizzle" href="/docs/packages/idp-drizzle" description="Drizzle tables and adapter for @holeauth/plugin-idp." />
+  <Card title="@holeauth/core" href="/packages/core" description="Core holeauth primitives and types" />
+  <Card title="Concepts: Adapters" href="/concepts/adapters" description="Adapter contract and headless implementation guide" />
+  <Card title="Concepts: Sessions" href="/concepts/sessions" description="Refresh token rotation and family revocation" />
+</Cards>
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/nextjs-app-router" href="/packages/nextjs-app-router" description="Next.js App Router integration" />
+  <Card title="@holeauth/react" href="/packages/react" description="React hooks and components" />
 </Cards>

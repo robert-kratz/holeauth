@@ -1,0 +1,411 @@
+---
+title: "@holeauth/idp-drizzle"
+description: Drizzle ORM adapter for OIDC / OAuth 2.0 Identity Provider storage across PostgreSQL, MySQL, and SQLite.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# @holeauth/idp-drizzle
+
+Drizzle ORM adapter for `@holeauth/plugin-idp` supporting PostgreSQL, MySQL, and SQLite.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/idp-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/idp-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/idp-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/idp-drizzle
+```
+</Tab>
+</Tabs>
+
+## Subpath Exports
+
+This package provides dialect-specific entry points:
+
+- `@holeauth/idp-drizzle/pg` — PostgreSQL
+- `@holeauth/idp-drizzle/mysql` — MySQL
+- `@holeauth/idp-drizzle/sqlite` — SQLite
+
+All three expose the same API: `createIdpTables` and `createIdpAdapter`.
+
+## Usage by Dialect
+
+<Tabs items={['PostgreSQL', 'MySQL', 'SQLite']}>
+  <Tab value="PostgreSQL">
+    ```ts title="db/schema.ts"
+    import { pgTable, text } from 'drizzle-orm/pg-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+    import { createIdpTables } from '@holeauth/idp-drizzle/pg';
+
+    export const users = pgTable('users', {
+      id: text('id').primaryKey(),
+      email: text('email').notNull().unique(),
+      name: text('name'),
+      image: text('image'),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const idp = createIdpTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...idp.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...idp.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { idp } from '@holeauth/plugin-idp';
+    import { createIdpAdapter } from '@holeauth/idp-drizzle/pg';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        idp({
+          adapter: createIdpAdapter({ db, tables }),
+          issuer: 'https://auth.example.com',
+        }),
+      ],
+    });
+    ```
+  </Tab>
+  <Tab value="MySQL">
+    ```ts title="db/schema.ts"
+    import { mysqlTable, varchar } from 'drizzle-orm/mysql-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+    import { createIdpTables } from '@holeauth/idp-drizzle/mysql';
+
+    export const users = mysqlTable('users', {
+      id: varchar('id', { length: 191 }).primaryKey(),
+      email: varchar('email', { length: 255 }).notNull().unique(),
+      name: varchar('name', { length: 255 }),
+      image: varchar('image', { length: 512 }),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const idp = createIdpTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...idp.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...idp.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { idp } from '@holeauth/plugin-idp';
+    import { createIdpAdapter } from '@holeauth/idp-drizzle/mysql';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        idp({
+          adapter: createIdpAdapter({ db, tables }),
+          issuer: 'https://auth.example.com',
+        }),
+      ],
+    });
+    ```
+  </Tab>
+  <Tab value="SQLite">
+    ```ts title="db/schema.ts"
+    import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+    import { createIdpTables } from '@holeauth/idp-drizzle/sqlite';
+
+    export const users = sqliteTable('users', {
+      id: text('id').primaryKey(),
+      email: text('email').notNull().unique(),
+      name: text('name'),
+      image: text('image'),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const idp = createIdpTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...idp.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...idp.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { idp } from '@holeauth/plugin-idp';
+    import { createIdpAdapter } from '@holeauth/idp-drizzle/sqlite';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        idp({
+          adapter: createIdpAdapter({ db, tables }),
+          issuer: 'https://auth.example.com',
+        }),
+      ],
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## API Reference
+
+### createIdpTables()
+
+Creates Drizzle table definitions for OIDC / OAuth 2.0 storage.
+
+```ts
+function createIdpTables<U extends UsersTable>(
+  options: CreateIdpTablesOptions<U>
+): {
+  tables: {
+    teams: ...;
+    teamMembers: ...;
+    apps: ...;
+    authorizationCodes: ...;
+    refreshTokens: ...;
+    consents: ...;
+    signingKeys: ...;
+  };
+  relations: {...};
+}
+```
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table (must have an `id` column).',
+      type: 'DrizzleTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Prefix for the generated table names.',
+      type: 'string',
+      default: '"holeauth_idp_"',
+    },
+  }}
+/>
+
+**Returns**
+
+An object with:
+
+- `tables.teams` — OAuth app teams: `id`, `name`, `createdAt`.
+- `tables.teamMembers` — Team membership: `teamId` (FK cascade), `userId` (FK cascade), `role`, `addedAt`.
+- `tables.apps` — OAuth apps: `id`, `teamId` (FK cascade), `name`, `description`, `logoUrl`, `type`, `clientSecretHash`, `redirectUris`, `allowedScopes`, `requirePkce`, `createdAt`, `updatedAt`, `disabledAt`.
+- `tables.authorizationCodes` — One-time codes: `codeHash` (PK), `appId` (FK cascade), `userId` (FK cascade), `redirectUri`, `scope`, `nonce`, `codeChallenge`, `codeChallengeMethod`, `expiresAt`, `consumedAt`.
+- `tables.refreshTokens` — Refresh tokens: `id` (PK), `tokenHash` (unique), `appId` (FK cascade), `userId` (FK cascade), `familyId`, `scope`, `expiresAt`, `createdAt`, `revokedAt`.
+- `tables.consents` — Remembered consents: `userId` (FK cascade), `appId` (FK cascade), `scope`, `grantedAt`.
+- `tables.signingKeys` — JWKs: `kid` (PK), `alg`, `publicKey`, `privateKey`, `createdAt`, `rotatedAt`.
+- `relations` — Drizzle relations to the users table.
+
+**Example**
+
+```ts title="db/schema.ts"
+import { createIdpTables } from '@holeauth/idp-drizzle/pg';
+import { users } from './users';
+
+const idp = createIdpTables({
+  usersTable: users,
+  prefix: 'app_idp_',
+});
+
+export const tables = { ...idp.tables };
+export const relations = { ...idp.relations };
+```
+
+### createIdpAdapter()
+
+Constructs an `IdpAdapter` that implements the plugin's storage interface.
+
+```ts
+function createIdpAdapter(
+  options: CreateIdpAdapterOptions
+): IdpAdapter
+```
+
+<TypeTable
+  type={{
+    db: {
+      description: 'Drizzle database instance.',
+      type: 'DrizzleDB',
+      required: true,
+    },
+    tables: {
+      description: 'Tables object returned by `createIdpTables`.',
+      type: 'Tables',
+      required: true,
+    },
+    generateId: {
+      description: 'Function that generates unique IDs for teams and apps.',
+      type: '() => string',
+      default: 'crypto.randomUUID',
+    },
+  }}
+/>
+
+**Example**
+
+```ts title="lib/auth.ts"
+import { createIdpAdapter } from '@holeauth/idp-drizzle/pg';
+import { db } from '@/db';
+import { tables } from '@/db/schema';
+
+const adapter = createIdpAdapter({ db, tables });
+```
+
+## Schema Details
+
+### Teams Table
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `text` | Primary key |
+| `name` | `text` | Not null |
+| `createdAt` | `timestamp` | Not null, default now |
+
+### Team Members Table
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `teamId` | `text` | Not null, foreign key → `teams.id` (on delete cascade), part of composite PK |
+| `userId` | `text` | Not null, foreign key → `users.id` (on delete cascade), part of composite PK |
+| `role` | `text` | Not null (`owner` or `developer`) |
+| `addedAt` | `timestamp` | Not null, default now |
+
+### Apps Table
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `text` | Primary key |
+| `teamId` | `text` | Not null, foreign key → `teams.id` (on delete cascade) |
+| `name` | `text` | Not null |
+| `description` | `text` | Nullable |
+| `logoUrl` | `text` | Nullable |
+| `type` | `text` | Not null (`confidential` or `public`) |
+| `clientSecretHash` | `text` | Nullable (only for confidential apps) |
+| `redirectUris` | `text[]` | Not null, default `[]` |
+| `allowedScopes` | `text[]` | Not null, default `[]` |
+| `requirePkce` | `boolean` | Not null, default `true` |
+| `createdAt` | `timestamp` | Not null, default now |
+| `updatedAt` | `timestamp` | Not null, default now |
+| `disabledAt` | `timestamp` | Nullable |
+
+<Callout type="warn">
+  The `clientSecretHash` is a bcrypt hash. Never log or expose this value. Client secrets are shown only once during app creation.
+</Callout>
+
+### Authorization Codes Table
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `codeHash` | `text` | Primary key (SHA-256 of the code) |
+| `appId` | `text` | Not null, foreign key → `apps.id` (on delete cascade) |
+| `userId` | `text` | Not null, foreign key → `users.id` (on delete cascade) |
+| `redirectUri` | `text` | Not null |
+| `scope` | `text` | Not null |
+| `nonce` | `text` | Nullable |
+| `codeChallenge` | `text` | Nullable (PKCE) |
+| `codeChallengeMethod` | `text` | Nullable (PKCE) |
+| `expiresAt` | `timestamp` | Not null, indexed |
+| `consumedAt` | `timestamp` | Nullable |
+
+### Refresh Tokens Table
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `text` | Primary key |
+| `tokenHash` | `text` | Not null, unique (SHA-256 of the token) |
+| `appId` | `text` | Not null, foreign key → `apps.id` (on delete cascade) |
+| `userId` | `text` | Not null, foreign key → `users.id` (on delete cascade) |
+| `familyId` | `text` | Not null (rotation family), indexed |
+| `scope` | `text` | Not null |
+| `expiresAt` | `timestamp` | Not null, indexed |
+| `createdAt` | `timestamp` | Not null, default now |
+| `revokedAt` | `timestamp` | Nullable |
+
+<Callout type="warn">
+  Refresh tokens are stored as SHA-256 hashes. The plain-text token is sent to the client once and never stored. If a token is reused (reuse detection), the entire `familyId` is revoked.
+</Callout>
+
+### Consents Table
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `userId` | `text` | Not null, foreign key → `users.id` (on delete cascade), part of composite PK |
+| `appId` | `text` | Not null, foreign key → `apps.id` (on delete cascade), part of composite PK |
+| `scope` | `text` | Not null |
+| `grantedAt` | `timestamp` | Not null, default now |
+
+### Signing Keys Table
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `kid` | `text` | Primary key (key ID) |
+| `alg` | `text` | Not null (`RS256` or `ES256`), indexed |
+| `publicKey` | `text` | Not null (JWK format) |
+| `privateKey` | `text` | Not null (JWK format) |
+| `createdAt` | `timestamp` | Not null, default now |
+| `rotatedAt` | `timestamp` | Nullable (set when key is superseded) |
+
+<Callout type="warn">
+  Signing keys contain private key material. Ensure your database supports at-rest encryption.
+</Callout>
+
+## Migration
+
+After defining your schema, generate and run a migration:
+
+```bash
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/plugin-idp" href="index" description="Learn about the IDP plugin options and API" />
+  <Card title="@holeauth/plugin-idp-consumer" href="/packages/plugin-idp-consumer" description="Consume external OIDC providers" />
+</Cards>

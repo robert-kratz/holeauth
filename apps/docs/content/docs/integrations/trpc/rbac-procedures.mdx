@@ -1,0 +1,235 @@
+---
+title: RBAC-gated procedures
+description: Create permission-protected tRPC procedures using makePermissionProcedure.
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# RBAC-gated procedures
+
+The `makePermissionProcedure` helper from `@holeauth/trpc` creates a factory that builds permission-protected tRPC procedures. When the user lacks the required permissions, the procedure throws a `FORBIDDEN` error before your handler runs.
+
+<Callout type="info">
+  This feature requires `@holeauth/plugin-rbac` to be installed and configured. The RBAC plugin adds the `auth.rbac` namespace with `canAll` and `canAny` methods.
+</Callout>
+
+## Installation
+
+If you have not already installed the RBAC plugin, follow the [RBAC plugin setup guide](/getting-started/nextjs-app-router/plugin-rbac) for your framework, then install `@holeauth/trpc`:
+
+```bash
+pnpm add @holeauth/trpc
+```
+
+## Setup
+
+In your tRPC server file, create the permission procedure factory by passing your authenticated procedure and the `auth.rbac` API to `makePermissionProcedure`:
+
+```ts title="lib/trpc/server.ts"
+import { createHoleauthContext, makePermissionProcedure } from '@holeauth/trpc';
+import { initTRPC, TRPCError } from '@trpc/server';
+import superjson from 'superjson';
+import { auth } from '../auth';
+
+export const createTrpcContext = createHoleauthContext(auth);
+export type TrpcContext = Awaited<ReturnType<typeof createTrpcContext>>;
+
+const t = initTRPC.context<TrpcContext>().create({ transformer: superjson });
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+
+const enforceSession = t.middleware(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session, userId: ctx.session.sub! } });
+});
+
+export const authProcedure = publicProcedure.use(enforceSession);
+
+export const permissionProcedure = makePermissionProcedure(authProcedure, auth.rbac);
+```
+
+<Callout type="warn">
+  The `authProcedure` passed to `makePermissionProcedure` must include a `userId` field in its context. The `enforceSession` middleware above extracts `userId` from `ctx.session.sub`.
+</Callout>
+
+## Usage
+
+The `permissionProcedure` factory accepts two arguments:
+
+1. **nodes** — A single permission node (string) or an array of nodes (string[]).
+2. **mode** (optional) — `'all'` (default) or `'any'`.
+
+It returns a procedure builder that gates the handler on the permission check.
+
+### Require a single permission
+
+```ts title="lib/trpc/router.ts"
+import { z } from 'zod';
+import { router, authProcedure, permissionProcedure } from './server';
+
+export const appRouter = router({
+  createPost: permissionProcedure('posts.create')
+    .input(z.object({ title: z.string(), content: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // User has 'posts.create' permission
+      const post = await db.post.create({ data: input });
+      return { id: post.id };
+    }),
+});
+```
+
+When a user without the `posts.create` permission calls this procedure, they receive a `FORBIDDEN` error:
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Missing permission(s): posts.create"
+  }
+}
+```
+
+### Require all of multiple permissions
+
+Use an array with the default `'all'` mode:
+
+```ts title="lib/trpc/router.ts"
+export const appRouter = router({
+  moderateComment: permissionProcedure(['comments.read', 'comments.moderate'], 'all')
+    .input(z.object({ commentId: z.string(), action: z.enum(['approve', 'reject']) }))
+    .mutation(async ({ ctx, input }) => {
+      // User has BOTH 'comments.read' AND 'comments.moderate'
+      await db.comment.update({
+        where: { id: input.commentId },
+        data: { status: input.action },
+      });
+      return { success: true };
+    }),
+});
+```
+
+### Require any of multiple permissions
+
+Use `'any'` mode to allow the procedure if the user has **at least one** of the listed permissions:
+
+```ts title="lib/trpc/router.ts"
+export const appRouter = router({
+  viewDashboard: permissionProcedure(['analytics.read', 'admin.read'], 'any')
+    .query(async ({ ctx }) => {
+      // User has 'analytics.read' OR 'admin.read'
+      const stats = await db.analytics.findMany();
+      return { stats };
+    }),
+});
+```
+
+## API Reference
+
+### `makePermissionProcedure`
+
+```ts
+function makePermissionProcedure<Ctx extends { userId: string }>(
+  authProcedure: ProcedureWithUse<Ctx>,
+  rbac: RbacLike,
+): (nodes: string | string[], mode?: 'all' | 'any') => ProcedureWithUse<Ctx>
+```
+
+**Parameters:**
+
+<TypeTable
+  type={{
+    authProcedure: {
+      description: 'A tRPC procedure builder whose context already contains userId: string (i.e., it has an auth middleware applied).',
+      type: 'ProcedureWithUse<Ctx>',
+      required: true,
+    },
+    rbac: {
+      description: 'The RBAC API surface (e.g., auth.rbac when using @holeauth/plugin-rbac). Must implement canAll and canAny methods.',
+      type: 'RbacLike',
+      required: true,
+    },
+  }}
+/>
+
+**Returns:**
+
+A factory function `(nodes, mode?) => procedure` that accepts:
+
+<TypeTable
+  type={{
+    nodes: {
+      description: 'A single permission node (string) or an array of nodes (string[]).',
+      type: 'string | string[]',
+      required: true,
+    },
+    mode: {
+      description: 'Whether all or any of the nodes must be satisfied.',
+      type: '"all" | "any"',
+      default: '"all"',
+    },
+  }}
+/>
+
+**Throws:**
+
+When the user lacks the required permissions, the procedure throws a `TRPCError` with:
+
+- **code**: `FORBIDDEN`
+- **message**: `"Missing permission(s): <nodes>"`
+
+## Permission nodes
+
+Permission nodes are dot-separated strings like `posts.create`, `users.update`, or `admin.read`. The structure is arbitrary — you define the schema in your RBAC configuration (YAML file or database).
+
+Example YAML:
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  editor:
+    permissions:
+      - posts.create
+      - posts.read
+      - posts.update
+      - comments.moderate
+
+  analyst:
+    permissions:
+      - analytics.read
+      - reports.generate
+
+  admin:
+    extends: [editor, analyst]
+    permissions:
+      - admin.read
+      - users.delete
+```
+
+With this schema:
+- A user in the `editor` group can call `permissionProcedure('posts.create')`.
+- A user in the `analyst` group can call `permissionProcedure(['analytics.read', 'reports.generate'], 'any')`.
+- A user in the `admin` group inherits all permissions from `editor` and `analyst`.
+
+## Next Steps
+
+<Cards>
+  <Card
+    title="RBAC Plugin"
+    href="/packages/plugin-rbac"
+    description="Full reference for the RBAC plugin, including groups, inheritance, and the YAML schema."
+  />
+  <Card
+    title="RBAC Guide"
+    href="/guides/rbac"
+    description="Step-by-step guide to implementing role-based access control."
+  />
+  <Card
+    title="Setup"
+    href="/integrations/trpc/setup"
+    description="Return to the tRPC context and server setup guide."
+  />
+</Cards>

@@ -1,0 +1,333 @@
+---
+title: "SSO Consumer"
+description: Built-in SSO consumer for Google, GitHub, Discord, Microsoft, and generic OIDC. No separate package required.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# SSO Consumer
+
+SSO consumer functionality is built into `@holeauth/core/sso`. There is no separate `@holeauth/plugin-idp-consumer` package. The framework adapters (Next.js, Express, Hono) automatically register the `/authorize/:provider` and `/callback/:provider` routes when SSO providers are configured.
+
+<Callout type="info">
+  This page documents the SSO consumer (acting as a Relying Party / OAuth client). To run an OAuth 2.0 / OIDC Identity Provider (SSO server), see [plugin-idp](/packages/plugin-idp).
+</Callout>
+
+## Installation
+
+SSO consumer providers are exported from `@holeauth/core/sso`. No additional packages required.
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/core
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/core
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/core
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/core
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { GoogleProvider, GithubProvider } from '@holeauth/core/sso';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from './db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  sso: {
+    baseUrl: process.env.NEXT_PUBLIC_BASE_URL!,
+    providers: [
+      GoogleProvider({
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback/google`,
+      }),
+      GithubProvider({
+        clientId: process.env.GITHUB_CLIENT_ID!,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+        redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback/github`,
+      }),
+    ],
+  },
+});
+```
+
+## Built-in providers
+
+### GoogleProvider
+
+Google OAuth 2.0 consumer.
+
+```ts
+import { GoogleProvider } from '@holeauth/core/sso';
+
+GoogleProvider({
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback/google`,
+})
+```
+
+<TypeTable
+  type={{
+    clientId: {
+      description: 'Google OAuth client ID.',
+      type: 'string',
+      required: true,
+    },
+    clientSecret: {
+      description: 'Google OAuth client secret.',
+      type: 'string',
+      required: true,
+    },
+    redirectUri: {
+      description: 'OAuth callback URL registered with Google.',
+      type: 'string',
+      required: true,
+    },
+  }}
+/>
+
+### GithubProvider
+
+GitHub OAuth 2.0 consumer.
+
+```ts
+import { GithubProvider } from '@holeauth/core/sso';
+
+GithubProvider({
+  clientId: process.env.GITHUB_CLIENT_ID!,
+  clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+  redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback/github`,
+})
+```
+
+### DiscordProvider
+
+Discord OAuth 2.0 consumer.
+
+```ts
+import { DiscordProvider } from '@holeauth/core/sso';
+
+DiscordProvider({
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback/discord`,
+})
+```
+
+### MicrosoftProvider
+
+Microsoft OAuth 2.0 consumer (supports Azure AD).
+
+```ts
+import { MicrosoftProvider } from '@holeauth/core/sso';
+
+MicrosoftProvider({
+  clientId: process.env.MICROSOFT_CLIENT_ID!,
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+  redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback/microsoft`,
+  tenant: 'common', // or your tenant ID
+})
+```
+
+<TypeTable
+  type={{
+    clientId: {
+      description: 'Microsoft OAuth client ID.',
+      type: 'string',
+      required: true,
+    },
+    clientSecret: {
+      description: 'Microsoft OAuth client secret.',
+      type: 'string',
+      required: true,
+    },
+    redirectUri: {
+      description: 'OAuth callback URL registered with Microsoft.',
+      type: 'string',
+      required: true,
+    },
+    tenant: {
+      description: 'Azure AD tenant ID or "common" for multi-tenant.',
+      type: 'string',
+      default: '"common"',
+    },
+  }}
+/>
+
+### OIDCProvider
+
+Generic OIDC consumer for any compliant identity provider.
+
+```ts
+import { OIDCProvider } from '@holeauth/core/sso';
+
+OIDCProvider({
+  clientId: process.env.OIDC_CLIENT_ID!,
+  clientSecret: process.env.OIDC_CLIENT_SECRET!,
+  redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback/oidc`,
+  issuer: 'https://auth.example.com',
+  scopes: ['openid', 'profile', 'email'],
+})
+```
+
+<TypeTable
+  type={{
+    clientId: {
+      description: 'OIDC client ID.',
+      type: 'string',
+      required: true,
+    },
+    clientSecret: {
+      description: 'OIDC client secret.',
+      type: 'string',
+      required: true,
+    },
+    redirectUri: {
+      description: 'OAuth callback URL.',
+      type: 'string',
+      required: true,
+    },
+    issuer: {
+      description: 'OIDC issuer URL (must serve /.well-known/openid-configuration).',
+      type: 'string',
+      required: true,
+    },
+    scopes: {
+      description: 'OAuth scopes to request.',
+      type: 'string[]',
+      default: '["openid", "profile", "email"]',
+    },
+  }}
+/>
+
+## Routes
+
+Framework adapters automatically register these routes when SSO providers are configured:
+
+- `GET /api/auth/authorize/:provider` — Start OAuth flow
+- `GET /api/auth/callback/:provider` — Handle OAuth callback
+
+## Client-side usage
+
+### React
+
+```tsx
+import { useSso } from '@holeauth/react';
+
+function GoogleSignInButton() {
+  const { start } = useSso('google');
+
+  return <button onClick={() => start('/dashboard')}>Sign in with Google</button>;
+}
+```
+
+### React UI
+
+```tsx
+import { SsoButton } from '@holeauth/react-ui';
+
+<SsoButton providerId="google">Sign in with Google</SsoButton>
+```
+
+## Server-side usage
+
+```ts title="app/api/auth/sso/route.ts"
+import { authorize, callback } from '@holeauth/core/sso';
+import { auth } from '@/lib/auth';
+
+// Start OAuth flow
+const { redirectUrl, state, codeVerifier } = authorize('google', auth.sso);
+// Store state and codeVerifier in a cookie
+// Redirect to redirectUrl
+
+// Handle callback
+const result = await callback('google', {
+  code: searchParams.get('code')!,
+  state: searchParams.get('state')!,
+  codeVerifier: cookies.get('holeauth.pkce'),
+}, auth.sso);
+
+// Find or create user with result.providerAccountId and result.email
+```
+
+## Account linking
+
+When a user signs in via SSO, holeauth links the provider account to the user record. The `accounts` table stores:
+
+- `provider` — Provider ID (e.g., `google`, `github`)
+- `providerAccountId` — Provider's unique user ID
+- `email` — User's email from the provider
+- `accessToken` — Provider access token
+- `refreshToken` — Provider refresh token (if available)
+- `expiresAt` — Token expiration timestamp
+- `tokenType` — Token type (e.g., `Bearer`)
+- `scope` — Granted scopes
+- `idToken` — OIDC ID token (if available)
+
+## Security considerations
+
+<Callout type="warn">
+  - Always validate the `state` parameter to prevent CSRF attacks.
+  - Use PKCE (Proof Key for Code Exchange) for public clients.
+  - Rotate provider access tokens when they expire.
+  - Revoke provider access when a user unlinks an account.
+</Callout>
+
+## See also
+
+<Cards>
+  <Card
+    title="@holeauth/core/sso"
+    href="/packages/core#holeath-core-sso"
+    description="SSO consumer API reference."
+  />
+  <Card
+    title="plugin-idp"
+    href="/packages/plugin-idp"
+    description="Run an OAuth 2.0 / OIDC Identity Provider (SSO server)."
+  />
+  <Card
+    title="SSO guide"
+    href="/guides/sso"
+    description="Comprehensive SSO setup guide."
+  />
+</Cards>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="@holeauth/react"
+    href="/packages/react"
+    description="React provider and hooks for SSO flows."
+  />
+  <Card
+    title="Account linking guide"
+    href="/guides/account-linking"
+    description="Link multiple provider accounts to a single user."
+  />
+</Cards>

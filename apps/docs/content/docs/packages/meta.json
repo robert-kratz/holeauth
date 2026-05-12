@@ -2,21 +2,22 @@
   "title": "Packages",
   "pages": [
     "index",
+    "---Core---",
     "core",
-    "nextjs",
-    "react",
-    "---Drizzle Adapters---",
     "adapter-drizzle",
-    "2fa-drizzle",
-    "passkey-drizzle",
-    "rbac-drizzle",
-    "idp-drizzle",
+    "---Frameworks---",
+    "nextjs-app-router",
+    "nextjs-pages-router",
+    "express",
+    "hono",
+    "---React---",
+    "react",
+    "react-ui",
     "---Plugins---",
     "plugin-2fa",
     "plugin-passkey",
     "plugin-rbac",
     "plugin-idp",
-    "---Utilities---",
-    "rbac-yaml"
+    "plugin-idp-consumer"
   ]
 }

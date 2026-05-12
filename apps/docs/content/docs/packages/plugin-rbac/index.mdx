@@ -1,0 +1,455 @@
+---
+title: "@holeauth/plugin-rbac"
+description: Add Role-Based Access Control with wildcard permissions, groups, and runtime reload.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/plugin-rbac
+
+Add Role-Based Access Control (RBAC) with wildcard permissions, hierarchical groups, and runtime reload.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-rbac
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-rbac
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-rbac
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-rbac
+```
+</Tab>
+</Tabs>
+
+## Quick Example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { rbac } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+import { db } from '@/db';
+import { tables } from '@/db/schema';
+
+const yaml = loadRbacYaml('./holeauth.rbac.yml', {
+  watch: process.env.NODE_ENV !== 'production',
+});
+
+const plugin = rbac({
+  groups: yaml.snapshot.groups,
+  adapter: createRbacAdapter({ db, tables }),
+});
+
+yaml.onReload((snapshot) => plugin.reload(snapshot.groups));
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [plugin],
+});
+```
+
+## Factory Function
+
+### rbac()
+
+Creates an RBAC plugin instance.
+
+```ts
+function rbac(options: RbacOptions): RbacPlugin
+```
+
+<TypeTable
+  type={{
+    groups: {
+      description: 'Array of group definitions. Must include exactly one with `default: true`.',
+      type: 'GroupDefinition[]',
+      required: true,
+    },
+    adapter: {
+      description: 'Storage adapter for per-user group and permission assignments.',
+      type: 'RbacAdapter',
+    },
+    cacheTtlMs: {
+      description: 'Per-user permission cache TTL (milliseconds).',
+      type: 'number',
+      default: '5000 (dev) / 30000 (prod)',
+    },
+    cache: {
+      description: 'Custom cache adapter. Defaults to in-memory TTL cache.',
+      type: 'RbacCacheAdapter',
+    },
+  }}
+/>
+
+**Example**
+
+```ts title="lib/auth.ts"
+import { rbac } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { createRedisCache } from '@/lib/rbac-cache';
+import { db } from '@/db';
+import { tables } from '@/db/schema';
+
+const plugin = rbac({
+  groups: [
+    {
+      id: 'user',
+      default: true,
+      effective: ['posts.read', 'comments.create'],
+    },
+    {
+      id: 'admin',
+      effective: ['*'],
+    },
+  ],
+  adapter: createRbacAdapter({ db, tables }),
+  cacheTtlMs: 60000,
+  cache: createRedisCache(),
+});
+```
+
+## GroupDefinition Interface
+
+```ts
+interface GroupDefinition {
+  id: string;
+  default?: boolean;
+  displayName?: string;
+  description?: string;
+  priority?: number;
+  effective: string[];
+  permissions?: string[];
+}
+```
+
+<TypeTable
+  type={{
+    id: {
+      description: 'Unique group identifier.',
+      type: 'string',
+      required: true,
+    },
+    default: {
+      description: 'Whether this is the default group (exactly one required).',
+      type: 'boolean',
+    },
+    displayName: {
+      description: 'Human-readable group name.',
+      type: 'string',
+    },
+    description: {
+      description: 'Group description.',
+      type: 'string',
+    },
+    priority: {
+      description: 'Sort order for permission precedence (lower = higher priority).',
+      type: 'number',
+    },
+    effective: {
+      description: 'Full list of permission nodes (inheritance already resolved).',
+      type: 'string[]',
+      required: true,
+    },
+    permissions: {
+      description: 'Raw own permissions (informational, before inheritance).',
+      type: 'string[]',
+    },
+  }}
+/>
+
+## RbacAdapter Interface
+
+If you are not using [@holeauth/rbac-drizzle](drizzle), implement this interface to provide custom storage.
+
+```ts
+interface RbacAdapter {
+  listUserGroups(userId: string): Promise<string[]>;
+  assignGroup(userId: string, groupId: string): Promise<void>;
+  removeGroup(userId: string, groupId: string): Promise<void>;
+  listUserPermissions(userId: string): Promise<string[]>;
+  grantPermission(userId: string, node: string): Promise<void>;
+  revokePermission(userId: string, node: string): Promise<void>;
+  listAllGroupAssignments(): Promise<UserGroupAssignment[]>;
+  purgeUser(userId: string): Promise<void>;
+}
+```
+
+## API Surface
+
+The plugin exposes the following methods on your auth instance at `auth.rbac.*`:
+
+### can()
+
+Checks if a user has permission for a single node.
+
+```ts
+auth.rbac.can(userId: string, node: string): Promise<boolean>
+```
+
+**Example**
+
+```ts title="app/api/posts/route.ts"
+import { auth } from '@/lib/auth';
+
+export async function POST(req: Request) {
+  const session = await auth.validateCurrentRequest(req);
+  if (!session) return new Response('Unauthorized', { status: 401 });
+
+  const allowed = await auth.rbac.can(session.userId, 'posts.create');
+  if (!allowed) return new Response('Forbidden', { status: 403 });
+
+  // Create post...
+}
+```
+
+### canAll()
+
+Checks if a user has permission for all nodes in an array.
+
+```ts
+auth.rbac.canAll(userId: string, nodes: string[]): Promise<boolean>
+```
+
+### canAny()
+
+Checks if a user has permission for at least one node in an array.
+
+```ts
+auth.rbac.canAny(userId: string, nodes: string[]): Promise<boolean>
+```
+
+### listGroups()
+
+Returns all defined groups.
+
+```ts
+auth.rbac.listGroups(): GroupDefinition[]
+```
+
+### getGroup()
+
+Returns a single group definition by ID.
+
+```ts
+auth.rbac.getGroup(id: string): GroupDefinition | null
+```
+
+### getUserGroups()
+
+Returns the groups assigned to a user (includes the default group).
+
+```ts
+auth.rbac.getUserGroups(userId: string): Promise<GroupDefinition[]>
+```
+
+### getUserPermissions()
+
+Returns the effective permission nodes for a user (cached).
+
+```ts
+auth.rbac.getUserPermissions(userId: string): Promise<string[]>
+```
+
+### getEffectiveNodes()
+
+Alias for `getUserPermissions`.
+
+```ts
+auth.rbac.getEffectiveNodes(userId: string): Promise<string[]>
+```
+
+### assignGroup()
+
+Assigns a group to a user.
+
+```ts
+auth.rbac.assignGroup(userId: string, groupId: string): Promise<void>
+```
+
+### removeGroup()
+
+Removes a group assignment from a user.
+
+```ts
+auth.rbac.removeGroup(userId: string, groupId: string): Promise<void>
+```
+
+### grant()
+
+Grants a direct permission to a user (bypassing groups).
+
+```ts
+auth.rbac.grant(userId: string, node: string): Promise<void>
+```
+
+### revoke()
+
+Revokes a direct permission from a user.
+
+```ts
+auth.rbac.revoke(userId: string, node: string): Promise<void>
+```
+
+### reload()
+
+Replaces the group set at runtime (used for YAML hot-reload).
+
+```ts
+auth.rbac.reload(groups: GroupDefinition[]): void
+```
+
+**Example**
+
+```ts title="lib/auth.ts"
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const yaml = loadRbacYaml('./holeauth.rbac.yml', { watch: true });
+const plugin = rbac({ groups: yaml.snapshot.groups, adapter });
+
+yaml.onReload((snapshot) => plugin.reload(snapshot.groups));
+```
+
+### listOrphans()
+
+Returns all user-group assignments that reference a group ID no longer defined in the current snapshot.
+
+```ts
+auth.rbac.listOrphans(): Promise<UserGroupAssignment[]>
+```
+
+### snapshot()
+
+Returns the current group set and default group ID.
+
+```ts
+auth.rbac.snapshot(): { groups: GroupDefinition[]; defaultGroupId: string }
+```
+
+## Permission Node Syntax
+
+Permission nodes are dot-separated strings with optional wildcard matching:
+
+- `posts.create` — Exact match
+- `posts.*` — Matches `posts.create`, `posts.delete`, `posts.update`, etc.
+- `*` — Matches everything
+- `!posts.delete` — Negation (revokes a permission)
+
+**Priority**: Negations always win. Within a user's effective permission list, the last matching pattern determines the result. Groups are ordered by `priority` (lower = higher precedence).
+
+**Example**
+
+```yaml
+groups:
+  admin:
+    default: false
+    priority: 0
+    permissions:
+      - '*'
+  editor:
+    default: false
+    priority: 1
+    permissions:
+      - 'posts.*'
+      - '!posts.delete'
+  user:
+    default: true
+    priority: 2
+    permissions:
+      - 'posts.read'
+      - 'comments.create'
+```
+
+## Registered HTTP Routes
+
+The plugin registers the following route on your auth handler:
+
+<TypeTable
+  type={{
+    "GET /rbac/me": {
+      description: 'Returns the current user\'s groups and effective permissions. Requires authentication.',
+      type: 'requireAuth: true',
+    },
+  }}
+/>
+
+**Response shape**
+
+```json
+{
+  "groups": ["user", "editor"],
+  "permissions": ["posts.*", "!posts.delete", "comments.create"]
+}
+```
+
+## Utility Exports
+
+### matchNodes()
+
+Checks if a permission node matches a user's effective permissions (pure function, no database).
+
+```ts
+function matchNodes(effective: string[], query: string): boolean
+```
+
+### matchNodesAll()
+
+```ts
+function matchNodesAll(effective: string[], queries: string[]): boolean
+```
+
+### matchNodesAny()
+
+```ts
+function matchNodesAny(effective: string[], queries: string[]): boolean
+```
+
+### matchPattern()
+
+Checks if a wildcard pattern matches a concrete permission node.
+
+```ts
+function matchPattern(pattern: string, node: string): boolean
+```
+
+**Example**
+
+```ts
+import { matchPattern } from '@holeauth/plugin-rbac';
+
+matchPattern('posts.*', 'posts.create'); // true
+matchPattern('posts.*', 'comments.create'); // false
+matchPattern('*', 'anything'); // true
+```
+
+## See Also
+
+<Cards>
+  <Card title="@holeauth/rbac-drizzle" href="drizzle" description="Drizzle ORM adapter for RBAC storage" />
+  <Card title="@holeauth/rbac-yaml" href="yaml" description="Load groups from a YAML file with hot-reload" />
+  <Card title="Getting Started: RBAC" href="/getting-started/core/rbac" description="Complete setup guide with examples" />
+  <Card title="Concepts: RBAC Matching" href="/concepts/rbac-matching" description="How wildcard and negation logic works" />
+</Cards>
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/rbac-drizzle" href="drizzle" description="Drizzle adapter for PostgreSQL, MySQL, and SQLite" />
+  <Card title="@holeauth/rbac-yaml" href="yaml" description="YAML-based group definitions with file-watch" />
+</Cards>

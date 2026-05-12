@@ -1,0 +1,167 @@
+---
+title: Sign in with Discord
+description: Configure Discord OAuth 2.0 for gaming and community applications.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Sign in with Discord
+
+Discord is an **OAuth 2.0** provider (not OIDC). holeauth fetches the user profile from Discord's REST API (`https://discord.com/api/users/@me`).
+
+<Steps>
+  <Step>
+    ### Create a Discord application
+
+    1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+    2. Click **New Application**
+    3. Give it a name and click **Create**
+    4. Go to the **OAuth2** tab in the left sidebar
+    5. Add a redirect: `http://localhost:3000/api/auth/sso/discord/callback`
+    6. Copy the **Client ID** and **Client Secret**
+  </Step>
+
+  <Step>
+    ### Set environment variables
+
+    ```bash title=".env.local"
+    DISCORD_CLIENT_ID=123456789012345678
+    DISCORD_CLIENT_SECRET=abc123...
+    ```
+  </Step>
+
+  <Step>
+    ### Wire `DiscordProvider` into holeauth
+
+    ```ts title="lib/auth.ts" {4,10-15}
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+import { DiscordProvider } from '@holeauth/core/sso';
+import * as schema from '@/db/schema';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db, schema.holeauth),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  providers: [
+    DiscordProvider({
+      clientId: process.env.DISCORD_CLIENT_ID!,
+      clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+      redirectUri: 'http://localhost:3000/api/auth/sso/discord/callback',
+    }),
+  ],
+});
+```
+
+    <TypeTable
+      type={{
+        clientId: {
+          description: 'Discord OAuth2 application client ID.',
+          type: 'string',
+          required: true,
+        },
+        clientSecret: {
+          description: 'Discord OAuth2 application client secret.',
+          type: 'string',
+          required: true,
+        },
+        redirectUri: {
+          description: 'OAuth callback URL registered in the Discord Developer Portal. Must match exactly.',
+          type: 'string',
+          required: true,
+        },
+        id: {
+          description: 'Provider ID (used as the :provider URL segment). Defaults to "discord".',
+          type: 'string',
+          default: '"discord"',
+        },
+        scopes: {
+          description: 'OAuth scopes to request. identify grants access to user ID and username; email grants access to email address.',
+          type: 'string[]',
+          default: '["identify", "email"]',
+        },
+      }}
+    />
+  </Step>
+
+  <Step>
+    ### Add a sign-in button
+
+    ```tsx title="app/login/page.tsx"
+export default function LoginPage() {
+  return (
+    <div>
+      <h1>Sign in</h1>
+      <a href="/api/auth/sso/discord/authorize">
+        <button>Sign in with Discord</button>
+      </a>
+    </div>
+  );
+}
+```
+
+    When clicked, the user is redirected to Discord's OAuth consent screen. After approval, Discord redirects back to `/api/auth/sso/discord/callback`, where holeauth:
+    1. Exchanges the authorization code for an access token
+    2. Fetches user profile from `https://discord.com/api/users/@me`
+    3. Extracts `id`, `username`, `global_name`, `email`, and `avatar`
+    4. Creates a new user or links the Discord account to an existing user
+    5. Issues a holeauth session
+  </Step>
+
+  <Step>
+    ### Handle the result
+
+    ```tsx title="app/dashboard/page.tsx"
+import { auth } from '@/lib/auth';
+import { validateCurrentRequest } from '@holeauth/nextjs/server';
+
+export default async function DashboardPage() {
+  const session = await validateCurrentRequest(auth);
+  if (!session) return <div>Not signed in</div>;
+
+  return <div>Welcome, {session.user.email}!</div>;
+}
+```
+  </Step>
+</Steps>
+
+## Profile mapping
+
+Discord's API returns:
+- `id` — Snowflake user ID (used as `providerAccountId`)
+- `username` — Display name (not unique)
+- `global_name` — Global display name (may be null)
+- `email` — Email address (only if `email` scope granted)
+- `avatar` — Avatar hash (reconstructed to CDN URL: `https://cdn.discordapp.com/avatars/{id}/{avatar}.png`)
+
+holeauth normalizes this into:
+- `providerAccountId` = `id`
+- `email` = `email`
+- `name` = `global_name` (fallback to `username`)
+- `image` = `https://cdn.discordapp.com/avatars/{id}/{avatar}.png` (or null if no avatar)
+
+<Callout type="info">
+  Discord usernames are **not unique** (they include a discriminator like `user#1234` for legacy accounts, but new accounts use display names only). Always use the `id` field as the stable identifier.
+</Callout>
+
+## Email verification
+
+Discord **does not** return an `email_verified` field in the user profile. holeauth treats all Discord emails as unverified by default. If you enable `allowDangerousEmailAccountLinking`, auto-linking will **not** occur for Discord accounts (because `emailVerified: false`).
+
+<Callout type="warn">
+  Discord does not verify email addresses in the OAuth flow. Do not enable `allowDangerousEmailAccountLinking` if you accept Discord as a provider, as an attacker could create a Discord account with a victim's email and gain access to the victim's holeauth account.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Sign in with Microsoft"
+    href="/sso/consumer/microsoft"
+    description="Integrate Microsoft Identity Platform (Azure AD / Entra ID) for enterprise SSO"
+  />
+</Cards>

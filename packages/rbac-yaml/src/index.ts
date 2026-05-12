@@ -30,6 +30,8 @@ import { readFileSync, watch as fsWatch, type FSWatcher } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
+import { rbac as rbacPlugin } from '@holeauth/plugin-rbac';
+import type { RbacOptions, RbacPlugin } from '@holeauth/plugin-rbac';
 
 /* ───────────────────────── Schema ───────────────────────── */
 
@@ -155,6 +157,35 @@ export function validateRbacDefinition(obj: unknown, opts: LoadOptions = {}): Rb
   return buildSnapshot(parsed, opts);
 }
 
+/**
+ * Parse and validate a raw YAML string without touching the filesystem.
+ *
+ * **Edge-compatible** — no `node:fs` or `node:path` dependencies. Use this in
+ * environments where `loadRbacYaml` cannot run (Cloudflare Workers, Deno Deploy,
+ * Next.js Edge Runtime, Hono on serverless runtimes). Obtain the YAML content
+ * from a KV store, an environment variable, a bundled asset, or any other
+ * source your runtime supports.
+ *
+ * @example Cloudflare Worker / Hono Edge
+ * ```ts
+ * import { loadRbacYamlFromString, rbacFromSnapshot } from '@holeauth/rbac-yaml';
+ *
+ * // YAML content bundled at build time (e.g. via import assertion or env var)
+ * const snapshot = loadRbacYamlFromString(RBAC_YAML_CONTENT);
+ * const plugin = rbacFromSnapshot(snapshot, { adapter: rbacAdapter });
+ * ```
+ *
+ * @example Pair with rbacFromYamlString for hot-reload-less dynamic config
+ * ```ts
+ * const content = await kv.get('rbac-config');
+ * const snapshot = loadRbacYamlFromString(content);
+ * ```
+ */
+export function loadRbacYamlFromString(content: string, opts: LoadOptions = {}): RbacConfigSnapshot {
+  const parsed = parseYaml(content);
+  return validateRbacDefinition(parsed, opts);
+}
+
 /* ───────────────────── File loader + watcher ───────────────────── */
 
 export interface LoadYamlOptions extends LoadOptions {
@@ -227,4 +258,79 @@ export function loadRbacYaml(path: string, opts: LoadYamlOptions = {}): LoadedRb
       handlers.clear();
     },
   } as LoadedRbacYaml;
+}
+
+/* ──────────────────── Convenience: rbacFromYaml ──────────────────── */
+
+export type RbacFromYamlOptions = Omit<RbacOptions, 'groups'> & LoadYamlOptions;
+
+/**
+ * One-call replacement for the three-step `loadRbacYaml` / `rbac({groups})` / `onReload` pattern.
+ *
+ * Before:
+ * ```ts
+ * const yaml = loadRbacYaml('./holeauth.rbac.yml', { watch: isDev });
+ * const plugin = rbac({ groups: yaml.snapshot.groups, adapter: rbacAdapter });
+ * yaml.onReload((snap) => auth.rbac.reload(snap.groups)); // ← must run AFTER auth is created
+ * ```
+ *
+ * After:
+ * ```ts
+ * const rbacFromYamlPlugin = rbacFromYaml('./holeauth.rbac.yml', {
+ *   adapter: rbacAdapter,
+ *   watch: isDev,
+ * });
+ * // Pass directly to createAuthHandler({ plugins: [rbacFromYamlPlugin] })
+ * // Reload is wired automatically via the plugin's onInit hook.
+ * ```
+ */
+export function rbacFromYaml(yamlPath: string, opts: RbacFromYamlOptions = {} as RbacFromYamlOptions): RbacPlugin {
+  const { watch, multipleDefaults, logger: loadLogger, ...rbacOpts } = opts;
+  const yaml = loadRbacYaml(yamlPath, { watch, multipleDefaults, logger: loadLogger });
+
+  const plugin = rbacPlugin({
+    ...rbacOpts,
+    groups: yaml.snapshot.groups,
+  });
+
+  // Wire hot-reload: whenever the YAML file changes, push the new group
+  // definitions into the running plugin. Must happen AFTER the plugin is
+  // initialised but that's fine — the listener fires on subsequent file
+  // changes, never before the plugin processes its first request.
+  yaml.onReload((snap) => {
+    plugin.reload(snap.groups);
+  });
+
+  return plugin;
+}
+
+/* ──────────────────── rbacFromSnapshot (codegen entrypoint) ──────────────────── */
+
+export type RbacFromSnapshotOptions = Omit<RbacOptions, 'groups'>;
+
+/**
+ * Build an RBAC plugin from a pre-resolved snapshot (typically produced by the
+ * `holeauth-rbac-codegen` CLI and imported as a plain TS module). Use this in
+ * environments where filesystem access is unavailable at runtime — Next.js
+ * Edge, Cloudflare Workers, browser bundles, etc.
+ *
+ * ```ts
+ * import { snapshot } from './rbac.generated';
+ * import { rbacFromSnapshot } from '@holeauth/rbac-yaml';
+ *
+ * const plugin = rbacFromSnapshot(snapshot, { adapter: rbacAdapter });
+ * ```
+ *
+ * The snapshot is consumed once at construction time — there is no hot-reload
+ * in this mode.
+ */
+export function rbacFromSnapshot(
+  snapshot: { groups: readonly ResolvedGroup[] },
+  opts: RbacFromSnapshotOptions,
+): RbacPlugin {
+  return rbacPlugin({
+    ...opts,
+    // The plugin expects mutable arrays internally; we hand it a shallow copy.
+    groups: snapshot.groups.map((g) => ({ ...g })),
+  });
 }

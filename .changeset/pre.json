@@ -10,7 +10,7 @@
     "@holeauth/core": "0.0.0",
     "@holeauth/eslint-config": "0.0.0",
     "@holeauth/idp-drizzle": "0.0.0",
-    "@holeauth/nextjs": "0.0.0",
+    "@holeauth/nextjs-app-router": "0.0.0",
     "@holeauth/passkey-drizzle": "0.0.0",
     "@holeauth/plugin-2fa": "0.0.0",
     "@holeauth/plugin-idp": "0.0.0",

@@ -1,0 +1,134 @@
+---
+title: Token rotation
+description: Refresh token families, rotation-on-use, and automatic reuse detection
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Token Rotation
+
+holeauth implements rotation-on-use for refresh tokens. Every time a client exchanges a refresh token for a new access token, the old refresh token is invalidated and replaced with a new one. This pattern limits the window of exposure if a refresh token is stolen.
+
+## Family Tracking
+
+All tokens in a single authentication session share a `familyId`. When a user signs in, holeauth generates a new `familyId` and embeds it in both the access and refresh tokens. Every subsequent rotation preserves the same `familyId`, creating a chain of related sessions.
+
+The `familyId` is stored in the session row and in the JWT claims:
+
+```ts
+{
+  sid: "session-uuid",
+  sub: "user-id",
+  fam: "family-uuid",
+  nce: "nonce-uuid",
+  typ: "refresh",
+  exp: 1234567890,
+  iat: 1234567890
+}
+```
+
+## Rotation Flow
+
+When a client calls the refresh endpoint with a refresh token:
+
+1. holeauth decodes the JWT to extract `sid`, `sub`, `fam`, and `typ`.
+2. The presented token is hashed using SHA-256 and looked up in the database by `refreshTokenHash`.
+3. If the hash is not found or the session is revoked, holeauth detects reuse and revokes the entire family (see below).
+4. If the session is valid and not expired, holeauth generates a new access + refresh token pair with a new `nce` (nonce) and a new JWT ID.
+5. The new refresh token is hashed and atomically updates the session row via `SessionAdapter.rotateRefresh`.
+6. The old refresh token is now invalid—attempting to reuse it will trigger reuse detection.
+
+<Callout type="info">
+  The `sessionId` and `familyId` never change during rotation. Only the access token, refresh token, and their embedded nonces are updated.
+</Callout>
+
+## Reuse Detection
+
+If a client presents a refresh token whose hash does not exist in the database, one of two things has happened:
+
+1. The token was already rotated away and the client is using an outdated token (reuse).
+2. The token is forged or stolen.
+
+In either case, holeauth treats this as a security event. It immediately:
+
+1. Calls `SessionAdapter.revokeFamily(familyId)` to mark all sessions with the same `familyId` as revoked.
+2. Emits a `session.reuse_detected` event with the user ID and family ID.
+3. Throws a `RefreshReuseError` to the caller.
+
+This ensures that if an attacker steals a refresh token and uses it while the legitimate user also refreshes, both tokens become invalid and the user is forced to re-authenticate.
+
+<Callout type="warn">
+  Reuse detection is aggressive. If you accidentally retry a refresh request (for example, due to a network error), you may revoke your own session. Clients must never retry refresh requests with the same token.
+</Callout>
+
+## Session Adapter Contract
+
+The `SessionAdapter` interface includes three methods critical to rotation and reuse detection:
+
+<TypeTable
+  type={{
+    getByRefreshHash: {
+      description: 'Look up a session by its SHA-256(refreshToken) hash.',
+      type: '(hash: string) => Promise<AdapterSession | null>',
+      required: true,
+    },
+    rotateRefresh: {
+      description: 'Atomically replace the refresh token hash and expiration.',
+      type: '(id: string, newHash: string, expiresAt: Date) => Promise<AdapterSession>',
+      required: true,
+    },
+    revokeFamily: {
+      description: 'Mark all sessions in a family as revoked by setting `revokedAt`.',
+      type: '(familyId: string) => Promise<void>',
+      required: true,
+    },
+  }}
+/>
+
+Implementers must ensure `rotateRefresh` is atomic—either the hash and expiration are both updated or neither is. Use database transactions if your ORM supports them.
+
+## Example Rotation
+
+Given a user who signs in on Monday:
+
+1. **Monday 9:00 AM** — User signs in. holeauth issues `familyId: fam-1`, `sessionId: sess-1`, `refreshToken: rt-1`. The database stores `refreshTokenHash: hash(rt-1)`.
+2. **Monday 9:15 AM** — Access token expires. Client sends `rt-1` to `/api/auth/refresh`. holeauth hashes `rt-1`, finds the session, issues new tokens `rt-2` and `at-2`, and updates the row to `refreshTokenHash: hash(rt-2)`.
+3. **Monday 9:16 AM** — Attacker intercepts `rt-1` and tries to use it. holeauth hashes `rt-1`, finds no matching row (because it was rotated to `hash(rt-2)`), and calls `revokeFamily('fam-1')`. The user's session is now revoked.
+4. **Monday 9:17 AM** — Legitimate client tries to refresh with `rt-2`. holeauth hashes `rt-2` and finds the session is revoked. It returns `401 Unauthorized`.
+
+The user must sign in again.
+
+## Event: session.reuse_detected
+
+When reuse is detected, holeauth emits:
+
+```ts title="Event payload"
+{
+  type: 'session.reuse_detected',
+  userId: 'user-123',
+  sessionId: 'sess-1',
+  ip: '192.0.2.1',
+  userAgent: 'Mozilla/5.0 ...',
+  data: { familyId: 'fam-1' },
+}
+```
+
+Subscribe to this event to send email alerts or log security incidents:
+
+```ts title="lib/auth.ts"
+auth.on('session.reuse_detected', async (event) => {
+  await sendSecurityAlert(event.userId, 'Session hijack attempt detected');
+});
+```
+
+## Next
+
+<Cards>
+  <Card
+    title="CSRF protection"
+    description="Learn how holeauth defends against cross-site request forgery."
+    href="/concepts/csrf"
+  />
+</Cards>

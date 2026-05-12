@@ -1,0 +1,116 @@
+---
+title: Token revocation (RFC 7009)
+description: Revoke refresh tokens and access tokens using the RFC 7009 revocation endpoint.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Token revocation (RFC 7009)
+
+The IdP plugin exposes a **token revocation endpoint** ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)) at `/oauth2/revoke`. This endpoint allows clients to explicitly revoke refresh tokens (and, by extension, invalidate active sessions).
+
+## Endpoint
+
+```
+POST /oauth2/revoke
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic {base64(clientId:clientSecret)}
+
+token={refresh_token}&token_type_hint=refresh_token
+```
+
+## Parameters
+
+| Parameter | Required | Description |
+| --- | --- | --- |
+| `token` | Yes | The token to revoke (refresh token or access token) |
+| `token_type_hint` | No | Hint about the token type: `refresh_token` or `access_token`. Improves performance but is not required. |
+
+## Authentication
+
+The client must authenticate using one of:
+- **HTTP Basic Auth**: `Authorization: Basic {base64(clientId:clientSecret)}`
+- **POST body**: `client_id` + `client_secret` fields
+
+Public clients (type `public`) pass `client_id` only. Confidential clients must pass `client_secret`.
+
+## Example: Revoke a refresh token
+
+```bash
+curl -X POST https://auth.example.com/oauth2/revoke \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -u "client_id:client_secret" \
+  -d "token=eyJhbG...&token_type_hint=refresh_token"
+```
+
+Response:
+
+```
+200 OK
+```
+
+<Callout type="info">
+  RFC 7009 specifies that the revocation endpoint **always** returns `200 OK`, even if the token is invalid, already revoked, or does not exist. This prevents leaking information about token validity to unauthenticated callers.
+</Callout>
+
+## What happens on revocation
+
+1. **Refresh token revocation**: The plugin marks the token row as `revokedAt = now()` in the `idp_refresh_tokens` table. Future attempts to use this token will fail with `invalid_grant`.
+2. **Access token revocation**: Access tokens are JWTs and cannot be revoked server-side (they are stateless). The plugin accepts `token_type_hint=access_token` for spec compliance but does not store access tokens. Clients must discard the access token locally and stop including it in API requests.
+
+<Callout type="warn">
+  Revoking a refresh token does NOT revoke the entire token family. Only the specific token is revoked. To revoke all tokens for a user × app pair, use the plugin API: `idpPlugin.tokens.revokeAllForApp(userId, appId)`.
+</Callout>
+
+## Revoking all tokens for an app
+
+App owners can revoke all active refresh tokens for their app (e.g., when a user clicks "Sign out of all devices"):
+
+```ts title="app/api/revoke-all-sessions/route.ts"
+import { auth } from '@/lib/auth';
+import { validateCurrentRequest } from '@holeauth/nextjs/server';
+
+export async function POST(req: Request) {
+  const session = await validateCurrentRequest(auth);
+  if (!session) return new Response('Unauthorized', { status: 401 });
+
+  const { appId } = await req.json();
+  const idpPlugin = auth.getPlugin('idp');
+
+  await idpPlugin.tokens.revokeAllForApp(session.userId, appId);
+
+  return new Response('All sessions revoked', { status: 200 });
+}
+```
+
+This marks all refresh tokens for the app as `revokedAt = now()`. Active access tokens remain valid until they expire (TTL configured in `accessTokenTtl`).
+
+## RP-initiated logout
+
+The plugin also supports **RP-Initiated Logout** via `POST /oauth2/end-session`. This endpoint:
+- Revokes the refresh token passed in the `id_token_hint` or `refresh_token` parameter (if provided)
+- Clears holeauth session cookies (`holeauth.at`, `holeauth.rt`, `holeauth.csrf`)
+- Redirects to `post_logout_redirect_uri` (if registered with the app)
+
+Example:
+
+```bash
+curl -X POST https://auth.example.com/oauth2/end-session \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "id_token_hint=eyJhbG...&post_logout_redirect_uri=https://app.example.com/goodbye"
+```
+
+<Callout type="info">
+  The `end-session` endpoint is primarily for Relying Parties (RPs) that need to log users out of the IdP session as well as their own session. If you only want to revoke tokens, use `/oauth2/revoke`.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="SSO Consumer"
+    href="/sso/consumer"
+    description="Flip the script: consume external identity providers (Google, GitHub, generic OIDC)"
+  />
+</Cards>

@@ -1,0 +1,200 @@
+---
+title: Authorization code + PKCE
+description: Implement the OAuth 2.0 authorization code flow with Proof Key for Code Exchange from a client application.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Authorization code + PKCE
+
+The Authorization Code flow with PKCE is the **recommended** OAuth 2.0 flow for public clients (SPAs, mobile apps) and confidential clients. The plugin enforces PKCE for all public apps and optionally for confidential apps via the `requirePkce` flag.
+
+## Flow diagram
+
+1. **Client generates PKCE pair**: `code_verifier` (random), `code_challenge = base64url(sha256(code_verifier))`.
+2. **Client redirects user** to `/oauth2/authorize` with `code_challenge` and `code_challenge_method=S256`.
+3. **IdP checks session**: if unauthenticated, redirects to `/login?returnTo=...`.
+4. **IdP shows consent screen** (unless already approved).
+5. **User approves**: IdP issues an authorization code and redirects to `redirect_uri?code=...&state=...`.
+6. **Client exchanges code** at `/oauth2/token` with `code_verifier`.
+7. **IdP verifies PKCE**: checks `base64url(sha256(code_verifier)) == code_challenge` and issues access token, ID token, and (optionally) refresh token.
+
+## Example implementation
+
+<Steps>
+  <Step>
+    ### Generate PKCE pair
+
+    ```ts title="lib/pkce.ts"
+import crypto from 'crypto';
+
+function base64UrlEncode(buffer: Buffer): string {
+  return buffer
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+export function generatePkce(): { verifier: string; challenge: string } {
+  const verifier = base64UrlEncode(crypto.randomBytes(32));
+  const challenge = base64UrlEncode(
+    crypto.createHash('sha256').update(verifier).digest(),
+  );
+  return { verifier, challenge };
+}
+```
+  </Step>
+
+  <Step>
+    ### Redirect to `/oauth2/authorize`
+
+    ```ts title="app/login-with-sso/route.ts"
+import { generatePkce } from '@/lib/pkce';
+import { cookies } from 'next/headers';
+
+export async function GET() {
+  const { verifier, challenge } = generatePkce();
+  const state = crypto.randomUUID();
+
+  cookies().set('oauth_verifier', verifier, { httpOnly: true, maxAge: 600 });
+  cookies().set('oauth_state', state, { httpOnly: true, maxAge: 600 });
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: process.env.OAUTH_CLIENT_ID!,
+    redirect_uri: process.env.OAUTH_REDIRECT_URI!,
+    scope: 'openid profile email offline_access',
+    state,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+  });
+
+  const authorizeUrl = `${process.env.OIDC_ISSUER}/oauth2/authorize?${params}`;
+  return Response.redirect(authorizeUrl);
+}
+```
+  </Step>
+
+  <Step>
+    ### Handle callback and exchange code
+
+    ```ts title="app/oauth/callback/route.ts"
+import { cookies } from 'next/headers';
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
+
+  const cookieStore = cookies();
+  const savedState = cookieStore.get('oauth_state')?.value;
+  const verifier = cookieStore.get('oauth_verifier')?.value;
+
+  if (!code || !state || state !== savedState || !verifier) {
+    return new Response('Invalid callback', { status: 400 });
+  }
+
+  const tokenUrl = `${process.env.OIDC_ISSUER}/oauth2/token`;
+  const tokenRes = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: process.env.OAUTH_REDIRECT_URI!,
+      client_id: process.env.OAUTH_CLIENT_ID!,
+      code_verifier: verifier,
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    const error = await tokenRes.text();
+    return new Response(`Token exchange failed: ${error}`, { status: 400 });
+  }
+
+  const tokens = await tokenRes.json();
+  console.log('Access token:', tokens.access_token);
+  console.log('ID token:', tokens.id_token);
+  console.log('Refresh token:', tokens.refresh_token);
+
+  return Response.redirect('/dashboard');
+}
+```
+
+    <Callout type="warn">
+      In production, store `access_token` and `refresh_token` securely (httpOnly cookies or encrypted session storage). Never expose them to client-side JavaScript.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Verify ID token (OIDC)
+
+    If you requested the `openid` scope, the response includes an `id_token`. Verify its signature using the JWKS endpoint before trusting its claims:
+
+    ```ts title="lib/verify-id-token.ts"
+import { jwtVerify, createRemoteJWKSet } from 'jose';
+
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.OIDC_ISSUER}/oauth2/jwks`),
+);
+
+export async function verifyIdToken(idToken: string) {
+  const { payload } = await jwtVerify(idToken, JWKS, {
+    issuer: process.env.OIDC_ISSUER,
+    audience: process.env.OAUTH_CLIENT_ID,
+  });
+  return payload;
+}
+```
+
+    Claims you can trust after verification:
+    - `sub` — user ID
+    - `email` — user email
+    - `name` — display name
+    - `picture` — profile image URL
+    - `email_verified` — whether email is verified
+  </Step>
+</Steps>
+
+## Refresh token rotation
+
+If you requested `offline_access` scope, the response includes a `refresh_token`. To obtain a new access token without re-prompting the user:
+
+```ts title="lib/refresh-tokens.ts"
+export async function refreshAccessToken(refreshToken: string) {
+  const tokenUrl = `${process.env.OIDC_ISSUER}/oauth2/token`;
+  const res = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: process.env.OAUTH_CLIENT_ID!,
+    }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(`Refresh failed: ${error.error}`);
+  }
+
+  return res.json();
+}
+```
+
+<Callout type="warn">
+  Refresh tokens are rotated on every use. The old token is revoked and a new one is issued. If the same refresh token is used twice, the entire token family is revoked (reuse detection). Store the new `refresh_token` returned by the token endpoint and discard the old one.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="JWKS and key rotation"
+    href="/sso/provider/jwks-rotation"
+    description="Manage signing keys and rotate them without downtime"
+  />
+</Cards>

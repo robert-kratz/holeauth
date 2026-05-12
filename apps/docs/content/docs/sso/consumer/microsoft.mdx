@@ -1,0 +1,184 @@
+---
+title: Sign in with Microsoft
+description: Configure Microsoft Identity Platform (Azure AD / Entra ID) for enterprise authentication.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Sign in with Microsoft
+
+Microsoft Identity Platform (formerly Azure AD, now Entra ID) is an **OpenID Connect** provider. holeauth validates ID tokens and fetches user profile data from the Microsoft Graph userinfo endpoint.
+
+<Steps>
+  <Step>
+    ### Register an application in Azure
+
+    1. Go to the [Azure Portal](https://portal.azure.com/)
+    2. Navigate to **Azure Active Directory → App registrations**
+    3. Click **New registration**
+    4. Fill in:
+       - **Name**: Your app name
+       - **Supported account types**: Choose one:
+         - **Accounts in this organizational directory only** (single tenant)
+         - **Accounts in any organizational directory** (multi-tenant)
+         - **Accounts in any organizational directory and personal Microsoft accounts** (most common for public apps)
+       - **Redirect URI**: Web → `http://localhost:3000/api/auth/sso/microsoft/callback`
+    5. Click **Register**
+    6. Copy the **Application (client) ID**
+    7. Go to **Certificates & secrets → Client secrets → New client secret**
+    8. Copy the **Value** (this is the client secret)
+  </Step>
+
+  <Step>
+    ### Set environment variables
+
+    ```bash title=".env.local"
+    MICROSOFT_CLIENT_ID=abc12345-...
+    MICROSOFT_CLIENT_SECRET=abc~...
+    ```
+  </Step>
+
+  <Step>
+    ### Wire `MicrosoftProvider` into holeauth
+
+    ```ts title="lib/auth.ts" {4,10-16}
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+import { MicrosoftProvider } from '@holeauth/core/sso';
+import * as schema from '@/db/schema';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db, schema.holeauth),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  providers: [
+    MicrosoftProvider({
+      clientId: process.env.MICROSOFT_CLIENT_ID!,
+      clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+      redirectUri: 'http://localhost:3000/api/auth/sso/microsoft/callback',
+      tenantId: 'common',
+    }),
+  ],
+});
+```
+
+    <TypeTable
+      type={{
+        clientId: {
+          description: 'Microsoft application (client) ID from Azure Portal.',
+          type: 'string',
+          required: true,
+        },
+        clientSecret: {
+          description: 'Microsoft client secret from Azure Portal.',
+          type: 'string',
+          required: true,
+        },
+        redirectUri: {
+          description: 'OAuth callback URL registered in Azure. Must match exactly.',
+          type: 'string',
+          required: true,
+        },
+        tenantId: {
+          description: 'Microsoft tenant. Common values: "common" (work + personal accounts), "organizations" (work/school only), "consumers" (personal only), or a specific tenant GUID.',
+          type: 'string',
+          default: '"common"',
+        },
+        id: {
+          description: 'Provider ID (used as the :provider URL segment). Defaults to "microsoft".',
+          type: 'string',
+          default: '"microsoft"',
+        },
+        scopes: {
+          description: 'OAuth scopes to request. Microsoft OIDC defaults are sufficient for most apps.',
+          type: 'string[]',
+          default: '["openid", "email", "profile"]',
+        },
+      }}
+    />
+
+    <Callout type="info">
+      The `tenantId` option determines which account types can sign in:
+      - `"common"` — Both work/school (Azure AD) and personal Microsoft accounts
+      - `"organizations"` — Work/school accounts only (Azure AD)
+      - `"consumers"` — Personal Microsoft accounts only (outlook.com, hotmail.com, live.com)
+      - `"<tenant-guid>"` — A specific Azure AD tenant (single-tenant app)
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Add a sign-in button
+
+    ```tsx title="app/login/page.tsx"
+export default function LoginPage() {
+  return (
+    <div>
+      <h1>Sign in</h1>
+      <a href="/api/auth/sso/microsoft/authorize">
+        <button>Sign in with Microsoft</button>
+      </a>
+    </div>
+  );
+}
+```
+
+    When clicked, the user is redirected to Microsoft's OAuth consent screen. After approval, Microsoft redirects back to `/api/auth/sso/microsoft/callback`, where holeauth:
+    1. Exchanges the authorization code for an access token and ID token
+    2. Verifies the ID token signature using Microsoft's JWKS
+    3. Extracts `sub`, `email`, `name`, and `picture` from the ID token (or userinfo endpoint)
+    4. Creates a new user or links the Microsoft account to an existing user
+    5. Issues a holeauth session
+  </Step>
+
+  <Step>
+    ### Handle the result
+
+    ```tsx title="app/dashboard/page.tsx"
+import { auth } from '@/lib/auth';
+import { validateCurrentRequest } from '@holeauth/nextjs/server';
+
+export default async function DashboardPage() {
+  const session = await validateCurrentRequest(auth);
+  if (!session) return <div>Not signed in</div>;
+
+  return <div>Welcome, {session.user.email}!</div>;
+}
+```
+  </Step>
+</Steps>
+
+## Issuer validation
+
+Microsoft's issuer URL varies by tenant:
+- For `tenantId: "common"`, the issuer is `https://login.microsoftonline.com/{tid}/v2.0` where `{tid}` is the actual tenant ID from the ID token.
+- holeauth normalizes this to `https://login.microsoftonline.com/common/v2.0` for validation purposes.
+
+If you pin a specific tenant (e.g., `tenantId: "abc123-..."`), the issuer will be `https://login.microsoftonline.com/abc123-.../v2.0` and holeauth will enforce strict issuer validation.
+
+<Callout type="warn">
+  If you use `tenantId: "common"`, the issuer in the ID token will be tenant-specific (`https://login.microsoftonline.com/{tenant-guid}/v2.0`). holeauth handles this automatically, but if you validate tokens manually, account for the dynamic issuer.
+</Callout>
+
+## Account linking
+
+If a user signs in with Microsoft and an existing holeauth user has the same email address:
+- By default, holeauth throws `AccountConflictError` (safe mode).
+- If `allowDangerousEmailAccountLinking: true` is set **and** Microsoft verified the email (`email_verified: true` in the ID token), holeauth auto-links the accounts.
+
+<Callout type="info">
+  Microsoft **does** verify email addresses for Azure AD accounts. Personal Microsoft accounts (outlook.com, etc.) are also verified. Auto-linking is safe if you trust Microsoft as a provider.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Generic OIDC provider"
+    href="/sso/consumer/generic-oidc"
+    description="Connect to any OIDC provider (Keycloak, Auth0, Okta, holeauth-as-IDP)"
+  />
+</Cards>

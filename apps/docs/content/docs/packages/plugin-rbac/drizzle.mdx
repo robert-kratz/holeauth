@@ -1,0 +1,335 @@
+---
+title: "@holeauth/rbac-drizzle"
+description: Drizzle ORM adapter for RBAC user-group and user-permission assignments across PostgreSQL, MySQL, and SQLite.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# @holeauth/rbac-drizzle
+
+Drizzle ORM adapter for `@holeauth/plugin-rbac` supporting PostgreSQL, MySQL, and SQLite.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/rbac-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/rbac-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/rbac-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/rbac-drizzle
+```
+</Tab>
+</Tabs>
+
+## Subpath Exports
+
+This package provides dialect-specific entry points:
+
+- `@holeauth/rbac-drizzle/pg` — PostgreSQL
+- `@holeauth/rbac-drizzle/mysql` — MySQL
+- `@holeauth/rbac-drizzle/sqlite` — SQLite
+
+All three expose the same API: `createRbacTables` and `createRbacAdapter`.
+
+## Usage by Dialect
+
+<Tabs items={['PostgreSQL', 'MySQL', 'SQLite']}>
+  <Tab value="PostgreSQL">
+    ```ts title="db/schema.ts"
+    import { pgTable, text } from 'drizzle-orm/pg-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+    import { createRbacTables } from '@holeauth/rbac-drizzle/pg';
+
+    export const users = pgTable('users', {
+      id: text('id').primaryKey(),
+      email: text('email').notNull().unique(),
+      name: text('name'),
+      image: text('image'),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const rbac = createRbacTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...rbac.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...rbac.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { rbac } from '@holeauth/plugin-rbac';
+    import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+    import { loadRbacYaml } from '@holeauth/rbac-yaml';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    const yaml = loadRbacYaml('./holeauth.rbac.yml');
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        rbac({
+          groups: yaml.snapshot.groups,
+          adapter: createRbacAdapter({ db, tables }),
+        }),
+      ],
+    });
+    ```
+  </Tab>
+  <Tab value="MySQL">
+    ```ts title="db/schema.ts"
+    import { mysqlTable, varchar } from 'drizzle-orm/mysql-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+    import { createRbacTables } from '@holeauth/rbac-drizzle/mysql';
+
+    export const users = mysqlTable('users', {
+      id: varchar('id', { length: 191 }).primaryKey(),
+      email: varchar('email', { length: 255 }).notNull().unique(),
+      name: varchar('name', { length: 255 }),
+      image: varchar('image', { length: 512 }),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const rbac = createRbacTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...rbac.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...rbac.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { rbac } from '@holeauth/plugin-rbac';
+    import { createRbacAdapter } from '@holeauth/rbac-drizzle/mysql';
+    import { loadRbacYaml } from '@holeauth/rbac-yaml';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    const yaml = loadRbacYaml('./holeauth.rbac.yml');
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        rbac({
+          groups: yaml.snapshot.groups,
+          adapter: createRbacAdapter({ db, tables }),
+        }),
+      ],
+    });
+    ```
+  </Tab>
+  <Tab value="SQLite">
+    ```ts title="db/schema.ts"
+    import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+    import { createRbacTables } from '@holeauth/rbac-drizzle/sqlite';
+
+    export const users = sqliteTable('users', {
+      id: text('id').primaryKey(),
+      email: text('email').notNull().unique(),
+      name: text('name'),
+      image: text('image'),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const rbac = createRbacTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...rbac.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...rbac.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { rbac } from '@holeauth/plugin-rbac';
+    import { createRbacAdapter } from '@holeauth/rbac-drizzle/sqlite';
+    import { loadRbacYaml } from '@holeauth/rbac-yaml';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    const yaml = loadRbacYaml('./holeauth.rbac.yml');
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        rbac({
+          groups: yaml.snapshot.groups,
+          adapter: createRbacAdapter({ db, tables }),
+        }),
+      ],
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## API Reference
+
+### createRbacTables()
+
+Creates Drizzle table definitions for RBAC storage.
+
+```ts
+function createRbacTables<U extends UsersTable>(
+  options: CreateRbacTablesOptions<U>
+): {
+  tables: { userGroups: ...; userPermissions: ...; groups?: ... };
+  relations: { userGroupsRelations: ...; userPermissionsRelations: ... };
+}
+```
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table (must have an `id` column).',
+      type: 'DrizzleTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Prefix for the generated table names.',
+      type: 'string',
+      default: '"holeauth_rbac_"',
+    },
+    persistGroups: {
+      description: 'Whether to create a `groups` table for storing group definitions in the database.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+<Callout type="info">
+  Most applications load groups from YAML using [@holeauth/rbac-yaml](yaml). Set `persistGroups: true` only if you want to manage group definitions in the database rather than in code or YAML.
+</Callout>
+
+**Returns**
+
+An object with:
+
+- `tables.userGroups` — Join table: `userId` (FK cascade), `groupId`, `assignedAt`.
+- `tables.userPermissions` — Direct overrides: `userId` (FK cascade), `node`, `assignedAt`.
+- `tables.groups` — (Optional, if `persistGroups: true`) Group definitions: `id`, `displayName`, `description`, `priority`, `isDefault`, `effective`, `permissions`.
+- `relations` — Drizzle relations to the users table.
+
+**Example**
+
+```ts title="db/schema.ts"
+import { createRbacTables } from '@holeauth/rbac-drizzle/pg';
+import { users } from './users';
+
+const rbac = createRbacTables({
+  usersTable: users,
+  prefix: 'app_rbac_',
+  persistGroups: false,
+});
+
+export const tables = { ...rbac.tables };
+export const relations = { ...rbac.relations };
+```
+
+### createRbacAdapter()
+
+Constructs an `RbacAdapter` that implements the plugin's storage interface.
+
+```ts
+function createRbacAdapter(
+  options: CreateRbacAdapterOptions
+): RbacAdapter
+```
+
+<TypeTable
+  type={{
+    db: {
+      description: 'Drizzle database instance.',
+      type: 'DrizzleDB',
+      required: true,
+    },
+    tables: {
+      description: 'Tables object returned by `createRbacTables`.',
+      type: 'Tables',
+      required: true,
+    },
+  }}
+/>
+
+**Example**
+
+```ts title="lib/auth.ts"
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { db } from '@/db';
+import { tables } from '@/db/schema';
+
+const adapter = createRbacAdapter({ db, tables });
+```
+
+## Schema Details
+
+The `userGroups` table (PostgreSQL example):
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `userId` | `text` | Not null, foreign key → `users.id` (on delete cascade), part of composite PK |
+| `groupId` | `text` | Not null, part of composite PK, indexed |
+| `assignedAt` | `timestamp` | Not null, default now |
+
+The `userPermissions` table:
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `userId` | `text` | Not null, foreign key → `users.id` (on delete cascade), part of composite PK |
+| `node` | `text` | Not null, part of composite PK |
+| `assignedAt` | `timestamp` | Not null, default now |
+
+Direct user permissions stored in `userPermissions` are appended to the user's effective permission list **after** all group permissions, giving them the highest precedence.
+
+## Migration
+
+After defining your schema, generate and run a migration:
+
+```bash
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/plugin-rbac" href="index" description="Learn about the RBAC plugin options and API" />
+  <Card title="@holeauth/rbac-yaml" href="yaml" description="Load group definitions from a YAML file" />
+</Cards>

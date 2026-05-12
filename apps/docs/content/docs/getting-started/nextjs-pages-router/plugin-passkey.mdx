@@ -1,0 +1,521 @@
+---
+title: Passkeys
+description: Add WebAuthn / FIDO2 passwordless authentication with biometric and hardware security keys to your Next.js Pages Router application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Passkeys
+
+This guide walks you through adding WebAuthn-based passkey authentication to your Next.js Pages Router project. Users will register a passkey using their device biometrics or a hardware security key, then sign in without a password.
+
+<Callout type="info">
+  This guide assumes you have completed the [core Next.js Pages Router setup](/getting-started/nextjs-pages-router).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/browser @simplewebauthn/server
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/browser @simplewebauthn/server
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/browser @simplewebauthn/server
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/browser @simplewebauthn/server
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+  If you are using a headless adapter, skip `@holeauth/passkey-drizzle` and implement the `PasskeyAdapter` interface yourself. See [`@holeauth/plugin-passkey`](/packages/plugin-passkey#PasskeyAdapter) for the contract.
+</Callout>
+</Step>
+
+<Step>
+### Extend your database schema
+
+Import the passkey table factory and add it to your schema:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,13-14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const passkeys = createPasskeyTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,13-14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const passkeys = createPasskeyTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,13-14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const passkeys = createPasskeyTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` to apply the migration.
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts" {4,5,9,23-29}
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth, passkeys } from '@/db/schema';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/pg';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeys.tables });
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpID: process.env.PASSKEY_RP_ID ?? 'localhost',
+      rpName: 'MyApp',
+      rpOrigin: process.env.APP_URL ?? 'http://localhost:3000',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts" {4,5,9,23-29}
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '@/db/client';
+import { holeauth, passkeys } from '@/db/schema';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/mysql';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeys.tables });
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpID: process.env.PASSKEY_RP_ID ?? 'localhost',
+      rpName: 'MyApp',
+      rpOrigin: process.env.APP_URL ?? 'http://localhost:3000',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts" {4,5,9,23-29}
+import { createPagesAuthHandler } from '@holeauth/nextjs-pages-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '@/db/client';
+import { holeauth, passkeys } from '@/db/schema';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/sqlite';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeys.tables });
+
+export const auth = createPagesAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpID: process.env.PASSKEY_RP_ID ?? 'localhost',
+      rpName: 'MyApp',
+      rpOrigin: process.env.APP_URL ?? 'http://localhost:3000',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Drizzle-backed passkey adapter. Required.',
+      type: 'PasskeyAdapter',
+      required: true,
+    },
+    rpID: {
+      description: 'Relying Party ID. Must match the domain (or a parent domain) of your app. Use "localhost" for local development.',
+      type: 'string',
+      required: true,
+    },
+    rpName: {
+      description: 'Relying Party name shown to users during registration and authentication.',
+      type: 'string',
+      required: true,
+    },
+    rpOrigin: {
+      description: 'Relying Party origin. Must match the exact origin (protocol + domain + port) of your app.',
+      type: 'string',
+      required: true,
+    },
+    pendingTtlSeconds: {
+      description: 'Lifetime of pending challenge tokens issued during registration and authentication.',
+      type: 'number',
+      default: '300',
+    },
+    rateLimiter: {
+      description: 'Rate limiter for registration and authentication attempts. Defaults to an in-memory limiter.',
+      type: 'PasskeyRateLimiter',
+    },
+  }}
+/>
+
+Add environment variables:
+
+```bash title=".env.local"
+PASSKEY_RP_ID="localhost"
+APP_URL="http://localhost:3000"
+```
+
+For production, set `PASSKEY_RP_ID` to your domain (e.g. `example.com`) and `APP_URL` to your public origin (e.g. `https://example.com`).
+</Step>
+
+<Step>
+### Add the registration flow
+
+Create API routes to initiate and complete passkey registration:
+
+```ts title="pages/api/passkey/begin-registration.ts"
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getServerSidePropsSession } from '@holeauth/nextjs-pages-router';
+import { auth } from '@/lib/auth';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const session = await getServerSidePropsSession({ req } as never, auth.config);
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const options = await auth.passkey.beginRegistration(session.userId);
+  return res.status(200).json(options);
+}
+```
+
+```ts title="pages/api/passkey/complete-registration.ts"
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getServerSidePropsSession } from '@holeauth/nextjs-pages-router';
+import { auth } from '@/lib/auth';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const session = await getServerSidePropsSession({ req } as never, auth.config);
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const { credential, name } = req.body;
+  await auth.passkey.completeRegistration(session.userId, credential, name ?? 'My passkey');
+  return res.status(200).json({ ok: true });
+}
+```
+
+Create a client component to handle the WebAuthn ceremony:
+
+```tsx title="components/register-passkey.tsx"
+'use client';
+import { useState } from 'react';
+import { startRegistration } from '@simplewebauthn/browser';
+
+export function RegisterPasskey() {
+  const [name, setName] = useState('');
+  const [status, setStatus] = useState('');
+
+  async function handleRegister() {
+    try {
+      setStatus('Starting registration...');
+      const optionsRes = await fetch('/api/passkey/begin-registration', { method: 'POST' });
+      const options = await optionsRes.json();
+
+      const credential = await startRegistration(options);
+
+      setStatus('Completing registration...');
+      await fetch('/api/passkey/complete-registration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential, name }),
+      });
+
+      setStatus('Passkey registered!');
+    } catch (error) {
+      setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return (
+    <div>
+      <h2>Register a passkey</h2>
+      <input
+        type="text"
+        placeholder="Passkey name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <button onClick={handleRegister}>Register</button>
+      {status && <p>{status}</p>}
+    </div>
+  );
+}
+```
+</Step>
+
+<Step>
+### Add the authentication flow
+
+Create API routes for passkey login:
+
+```ts title="pages/api/passkey/begin-login.ts"
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { auth } from '@/lib/auth';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { email } = req.body;
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  const options = await auth.passkey.beginLogin(email);
+  return res.status(200).json(options);
+}
+```
+
+```ts title="pages/api/passkey/complete-login.ts"
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { auth } from '@/lib/auth';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { credential } = req.body;
+  const result = await auth.passkey.completeLogin(credential);
+  return res.status(200).json(result);
+}
+```
+
+Create a client component for login:
+
+```tsx title="components/login-with-passkey.tsx"
+'use client';
+import { useState } from 'react';
+import { useRouter } from 'next/router';
+import { startAuthentication } from '@simplewebauthn/browser';
+
+export function LoginWithPasskey() {
+  const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState('');
+
+  async function handleLogin() {
+    try {
+      setStatus('Starting authentication...');
+      const optionsRes = await fetch('/api/passkey/begin-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const options = await optionsRes.json();
+
+      const credential = await startAuthentication(options);
+
+      setStatus('Completing authentication...');
+      const loginRes = await fetch('/api/passkey/complete-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential }),
+      });
+
+      if (loginRes.ok) {
+        router.push('/dashboard');
+      }
+    } catch (error) {
+      setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return (
+    <div>
+      <h2>Sign in with a passkey</h2>
+      <input
+        type="email"
+        placeholder="Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <button onClick={handleLogin}>Sign in</button>
+      {status && <p>{status}</p>}
+    </div>
+  );
+}
+```
+</Step>
+</Steps>
+
+## How it works
+
+Passkey registration and authentication use the WebAuthn standard. The browser prompts the user to create a credential using their device biometrics (Touch ID, Face ID, Windows Hello) or a hardware security key (YubiKey, Titan). The credential is bound to the Relying Party ID and cannot be used on other domains.
+
+<Callout type="warn">
+  The `rpID` must match your domain. For `example.com`, set `PASSKEY_RP_ID="example.com"`. For subdomains, you can use the parent domain (e.g. `example.com` works for `app.example.com`).
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Roles and permissions"
+    href="/getting-started/nextjs-pages-router/plugin-rbac"
+    description="Add role-based access control with YAML config."
+  />
+  <Card
+    title="Sign in with Google, GitHub, OIDC"
+    href="/getting-started/nextjs-pages-router/sso-consumer"
+    description="Add OAuth 2.0 / OpenID Connect as a Relying Party."
+  />
+</Cards>

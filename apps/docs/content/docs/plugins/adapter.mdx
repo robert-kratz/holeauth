@@ -1,0 +1,400 @@
+---
+title: Plugin adapters
+description: How plugins contribute and retrieve their own adapters.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+# Plugin adapters
+
+Plugins contribute their own adapters to persist plugin-specific state (TOTP secrets, passkey credentials, RBAC assignments) in the same database or a separate store. Core treats plugin adapters as opaque: the consumer supplies them via `defineHoleauth({ pluginAdapters: { [id]: ... } })`, and the plugin retrieves its own via `ctx.getPluginAdapter<T>(id)`.
+
+## Why separate from core adapters
+
+Core adapters (`user`, `session`, `account`, `verificationToken`, `auditLog`, `transaction`) handle authentication primitives shared across all holeauth instances. Plugin adapters handle plugin-specific state that varies by feature set.
+
+Separating them:
+
+- **Keeps core adapters lean.** Core does not need to know about TOTP secrets or RBAC groups.
+- **Allows headless implementations.** Plugins can define their adapter interface and let consumers implement it for any backend.
+- **Simplifies versioning.** Plugin adapters evolve independently of core.
+
+## Wiring a plugin adapter
+
+### 1. Define the adapter interface
+
+Most plugins export an interface defining the operations they require:
+
+```ts title="packages/plugin-2fa/src/adapter.ts"
+export interface TwoFactorRecord {
+  userId: string;
+  secret: string;
+  enabled: boolean;
+  recoveryCodes: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TwoFactorAdapter {
+  getByUserId(userId: string): Promise<TwoFactorRecord | null>;
+  upsert(record: Omit<TwoFactorRecord, 'createdAt' | 'updatedAt'>): Promise<void>;
+  update(userId: string, patch: Partial<Omit<TwoFactorRecord, 'userId'>>): Promise<void>;
+  delete(userId: string): Promise<void>;
+}
+```
+
+### 2. Provide a default Drizzle adapter
+
+Most official plugins ship a default Drizzle adapter (e.g. `@holeauth/2fa-drizzle`) that implements the interface:
+
+```ts title="packages/2fa-drizzle/src/pg.ts"
+import { pgTable, text, boolean, timestamp } from 'drizzle-orm/pg-core';
+import type { TwoFactorAdapter, TwoFactorRecord } from '@holeauth/plugin-2fa';
+
+export const twoFactorTable = pgTable('holeauth_2fa', {
+  userId: text('user_id').primaryKey(),
+  secret: text('secret').notNull(),
+  enabled: boolean('enabled').notNull().default(false),
+  recoveryCodes: text('recovery_codes').array().notNull().default([]),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export function twoFactorDrizzleAdapter(db: DrizzleDb): TwoFactorAdapter {
+  return {
+    async getByUserId(userId) {
+      const rows = await db.select().from(twoFactorTable).where(eq(twoFactorTable.userId, userId)).limit(1);
+      return rows[0] ?? null;
+    },
+    async upsert(record) {
+      await db.insert(twoFactorTable).values({
+        ...record,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: twoFactorTable.userId,
+        set: { ...record, updatedAt: new Date() },
+      });
+    },
+    async update(userId, patch) {
+      await db.update(twoFactorTable).set(patch).where(eq(twoFactorTable.userId, userId));
+    },
+    async delete(userId) {
+      await db.delete(twoFactorTable).where(eq(twoFactorTable.userId, userId));
+    },
+  };
+}
+```
+
+### 3. Wire the adapter in `defineHoleauth`
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { twofa } from '@holeauth/plugin-2fa';
+import { twoFactorDrizzleAdapter } from '@holeauth/2fa-drizzle/pg';
+import { db } from './db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [twofa({ issuer: 'MyApp' })] as const,
+  pluginAdapters: {
+    twofa: twoFactorDrizzleAdapter(db),
+  },
+});
+```
+
+<Callout type="info">
+  The `pluginAdapters` map is keyed by plugin id. The plugin retrieves its adapter via `ctx.getPluginAdapter('twofa')`.
+</Callout>
+
+## Retrieving the adapter inside a plugin
+
+```ts title="lib/plugins/twofa.ts"
+import { definePlugin, type PluginContext } from '@holeauth/core/plugins';
+import type { TwoFactorAdapter, TwoFactorRecord } from './adapter';
+
+export const twofa = (options: TwoFactorOptions) => definePlugin({
+  id: 'twofa' as const,
+
+  api(ctx: PluginContext) {
+    const adapter = ctx.getPluginAdapter<TwoFactorAdapter>('twofa');
+    if (!adapter) {
+      throw new Error(
+        'TwoFactorAdapter not configured. Pass it via pluginAdapters.twofa.'
+      );
+    }
+
+    return {
+      async setup(userId: string) {
+        const existing = await adapter.getByUserId(userId);
+        if (existing?.enabled) {
+          throw new Error('2FA already enabled');
+        }
+        // ...
+      },
+      async verify(userId: string, code: string) {
+        const record = await adapter.getByUserId(userId);
+        if (!record?.enabled) throw new Error('2FA not enabled');
+        // ...
+      },
+    };
+  },
+});
+```
+
+<Callout type="warn">
+  Always throw a friendly error if `getPluginAdapter` returns `undefined`. This surfaces misconfiguration early and guides users to wire the adapter correctly.
+</Callout>
+
+## Headless adapters
+
+Plugins can support headless backends by accepting a hand-written adapter:
+
+```ts title="lib/adapters/twofaFirebase.ts"
+import type { TwoFactorAdapter } from '@holeauth/plugin-2fa';
+import { db } from './firebase';
+
+export const twoFactorFirebaseAdapter: TwoFactorAdapter = {
+  async getByUserId(userId) {
+    const doc = await db.collection('twofa').doc(userId).get();
+    return doc.exists ? (doc.data() as TwoFactorRecord) : null;
+  },
+  async upsert(record) {
+    await db.collection('twofa').doc(record.userId).set({
+      ...record,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }, { merge: true });
+  },
+  async update(userId, patch) {
+    await db.collection('twofa').doc(userId).update(patch);
+  },
+  async delete(userId) {
+    await db.collection('twofa').doc(userId).delete();
+  },
+};
+```
+
+```ts title="lib/auth.ts"
+import { twoFactorFirebaseAdapter } from './adapters/twofaFirebase';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [twofa({ issuer: 'MyApp' })] as const,
+  pluginAdapters: {
+    twofa: twoFactorFirebaseAdapter,
+  },
+});
+```
+
+## Adapter design guidelines
+
+### Keep the interface minimal
+
+Only expose operations the plugin needs. Avoid CRUD bloat:
+
+```ts
+// ✅ Good
+export interface TwoFactorAdapter {
+  getByUserId(userId: string): Promise<TwoFactorRecord | null>;
+  upsert(record: Omit<TwoFactorRecord, 'createdAt' | 'updatedAt'>): Promise<void>;
+  update(userId: string, patch: Partial<Omit<TwoFactorRecord, 'userId'>>): Promise<void>;
+  delete(userId: string): Promise<void>;
+}
+
+// ❌ Bad
+export interface TwoFactorAdapter {
+  getAll(): Promise<TwoFactorRecord[]>; // why?
+  getById(id: string): Promise<TwoFactorRecord | null>; // never used
+}
+```
+
+### Document the contract
+
+Explain what each method does, what it throws, and when it's called:
+
+```ts
+export interface TwoFactorAdapter {
+  /**
+   * Retrieve the 2FA record for a user. Returns `null` if not enrolled.
+   * Called by `isEnabled`, `verify`, `activate`, and `disable`.
+   */
+  getByUserId(userId: string): Promise<TwoFactorRecord | null>;
+
+  /**
+   * Insert or update the 2FA record. Called by `setup` (insert with enabled=false)
+   * and `activate` (update with enabled=true + recoveryCodes).
+   * Throws if the database operation fails.
+   */
+  upsert(record: Omit<TwoFactorRecord, 'createdAt' | 'updatedAt'>): Promise<void>;
+
+  /**
+   * Partially update a 2FA record. Called by `activate` (set enabled=true + recoveryCodes)
+   * and `verify` (consume a recovery code by removing it from the array).
+   * Throws if the userId does not exist.
+   */
+  update(userId: string, patch: Partial<Omit<TwoFactorRecord, 'userId'>>): Promise<void>;
+
+  /**
+   * Delete the 2FA record for a user. Called by `disable` and `userDelete` hooks.
+   * Idempotent — does not throw if the record does not exist.
+   */
+  delete(userId: string): Promise<void>;
+}
+```
+
+### Use typed records
+
+Export a shared record type so the adapter and plugin agree on the shape:
+
+```ts
+export interface TwoFactorRecord {
+  userId: string;
+  secret: string;
+  enabled: boolean;
+  recoveryCodes: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+### Omit generated fields from input types
+
+Timestamps, UUIDs, and auto-incremented fields should be `Omit`ted from insert/update inputs:
+
+```ts
+upsert(record: Omit<TwoFactorRecord, 'createdAt' | 'updatedAt'>): Promise<void>;
+```
+
+This makes the adapter implementation responsible for setting them, ensuring consistency across Drizzle/Prisma/Firebase/etc.
+
+## Example: building a custom adapter
+
+Let's implement a plugin adapter for a hypothetical `magicLink` plugin using an in-memory store (for demonstration):
+
+```ts title="lib/adapters/magicLinkMemory.ts"
+export interface MagicLinkRecord {
+  email: string;
+  tokenHash: string;
+  expiresAt: Date;
+}
+
+export interface MagicLinkAdapter {
+  createToken(record: MagicLinkRecord): Promise<void>;
+  findValidToken(tokenHash: string): Promise<MagicLinkRecord | null>;
+  consumeToken(tokenHash: string): Promise<void>;
+}
+
+const store = new Map<string, MagicLinkRecord>();
+
+export const magicLinkMemoryAdapter: MagicLinkAdapter = {
+  async createToken(record) {
+    store.set(record.tokenHash, record);
+  },
+  async findValidToken(tokenHash) {
+    const record = store.get(tokenHash);
+    if (!record) return null;
+    if (record.expiresAt < new Date()) {
+      store.delete(tokenHash);
+      return null;
+    }
+    return record;
+  },
+  async consumeToken(tokenHash) {
+    store.delete(tokenHash);
+  },
+};
+```
+
+```ts title="lib/auth.ts"
+import { magicLinkMemoryAdapter } from './adapters/magicLinkMemory';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [magicLink()] as const,
+  pluginAdapters: {
+    magicLink: magicLinkMemoryAdapter,
+  },
+});
+```
+
+<Callout type="warn">
+  In-memory adapters are suitable only for development and testing. Production plugins should use a persistent store (database, Redis, KV service).
+</Callout>
+
+## Relationship to core adapters
+
+Core adapters (`config.adapters`) are mandatory and handle shared primitives:
+
+<TypeTable
+  type={{
+    user: {
+      description: 'User CRUD (getUserById, getUserByEmail, createUser, updateUser, deleteUser).',
+      type: 'UserAdapter',
+      required: true,
+    },
+    session: {
+      description: 'Session CRUD (createSession, getSession, updateSession, deleteSession, deleteSessions).',
+      type: 'SessionAdapter',
+      required: true,
+    },
+    auditLog: {
+      description: 'Persisted event log (createAuditEvent).',
+      type: 'AuditLogAdapter',
+      required: true,
+    },
+    account: {
+      description: 'OAuth account linking (linkAccount, unlinkAccount, getAccountsByUserId).',
+      type: 'AccountAdapter',
+    },
+    verificationToken: {
+      description: 'Password reset tokens (createVerificationToken, consumeVerificationToken).',
+      type: 'VerificationTokenAdapter',
+    },
+    transaction: {
+      description: 'Wrap multi-step writes in a DB transaction.',
+      type: 'TransactionAdapter',
+    },
+  }}
+/>
+
+Plugin adapters (`config.pluginAdapters`) are optional and handle plugin-specific state:
+
+<TypeTable
+  type={{
+    twofa: {
+      description: 'TOTP secrets + recovery codes for @holeauth/plugin-2fa.',
+      type: 'TwoFactorAdapter',
+    },
+    passkey: {
+      description: 'WebAuthn credentials for @holeauth/plugin-passkey.',
+      type: 'PasskeyAdapter',
+    },
+    rbac: {
+      description: 'Role assignments for @holeauth/plugin-rbac.',
+      type: 'RbacAdapter',
+    },
+    idp: {
+      description: 'OAuth client registry for @holeauth/plugin-idp.',
+      type: 'IdpAdapter',
+    },
+  }}
+/>
+
+See [Adapter contract](/concepts/adapter-contract) for the core adapter reference.
+
+## Next
+
+<Cards>
+  <Card
+    title="Dependencies and lifecycle"
+    href="/plugins/dependencies"
+    description="Load-order constraints, onInit, and onShutdown."
+  />
+</Cards>

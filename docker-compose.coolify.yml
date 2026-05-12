@@ -1,0 +1,85 @@
+# docker-compose.coolify.yml — monorepo root
+#
+# Deploys BOTH the landing app (port 3000) and the docs app (port 3001) under
+# a SINGLE domain using Traefik path-based routing:
+#
+#   https://<domain>/docs/** → docs container (port 3001)
+#   https://<domain>/**      → landing container (port 3000)
+#
+# The docs app uses Next.js `basePath: '/docs'` so its static assets are
+# served at /docs/_next/static/... and the Traefik PathPrefix rule catches
+# both pages AND assets for the docs container cleanly.
+#
+# Coolify usage:
+#   - Set SERVICE_FQDN_LANDING_3000 to your domain (e.g. holeauth.dev).
+#     Coolify generates this automatically from the service configuration.
+#   - Both Traefik routers reference the same variable, creating one FQDN.
+#   - NEXT_PUBLIC_LANDING_URL is passed as a Docker build arg so the baked-in
+#     JS bundle in the docs app knows how to link back to the landing site.
+
+services:
+  # ── Landing / Marketing site ─────────────────────────────────────────────
+  landing:
+    build:
+      context: .
+      dockerfile: apps/landing/Dockerfile
+      # NEXT_PUBLIC_DOCS_URL is left empty in production because docs links
+      # resolve as /docs/... on the same origin via Traefik routing.
+      args:
+        NEXT_PUBLIC_DOCS_URL: ""
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    labels:
+      - traefik.enable=true
+      # Catch-all for the domain — lower priority than the docs router.
+      - traefik.http.routers.landing.rule=Host(`${SERVICE_FQDN_LANDING_3000}`)
+      - traefik.http.routers.landing.entrypoints=https
+      - traefik.http.routers.landing.tls=true
+      - traefik.http.routers.landing.tls.certresolver=letsencrypt
+      - traefik.http.routers.landing.priority=1
+      - traefik.http.services.landing.loadbalancer.server.port=3000
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Docs / Fumadocs site ──────────────────────────────────────────────────
+  docs:
+    build:
+      context: .
+      dockerfile: apps/docs/Dockerfile
+      args:
+        # Baked into the docs JS bundle so the sidebar "Landing page" link
+        # resolves to the correct origin. Must be an absolute URL so fumadocs
+        # does not pass it through Next.js <Link> (which would prepend basePath).
+        NEXT_PUBLIC_LANDING_URL: "https://${SERVICE_FQDN_LANDING_3000}"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      PORT: "3001"
+      HOSTNAME: "0.0.0.0"
+    labels:
+      - traefik.enable=true
+      # PathPrefix(/docs) is more specific than the landing catch-all and
+      # therefore has higher implicit priority. We set it explicitly to 10
+      # to be unambiguous. Next.js basePath ensures /docs/_next/static/...
+      # assets also match this rule and are served by this container.
+      - traefik.http.routers.docs.rule=Host(`${SERVICE_FQDN_LANDING_3000}`) && PathPrefix(`/docs`)
+      - traefik.http.routers.docs.entrypoints=https
+      - traefik.http.routers.docs.tls=true
+      - traefik.http.routers.docs.tls.certresolver=letsencrypt
+      - traefik.http.routers.docs.priority=10
+      - traefik.http.services.docs.loadbalancer.server.port=3001
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/docs/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

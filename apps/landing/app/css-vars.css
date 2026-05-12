@@ -1,0 +1,31 @@
+/*
+ * css-vars.css — design-token CSS custom properties shared across all pages.
+ *
+ * Imported by the root layout so both the landing page and the docs site
+ * have access to these tokens. No Tailwind / fumadocs dependencies.
+ */
+
+:root {
+  --color-bg: #0a0a0b;
+  --color-bg-soft: #111114;
+  --color-bg-elev: #15151a;
+  --color-ink: #ededed;
+  --color-ink-dim: #b8b8c0;
+  --color-muted: #6e6e78;
+  --color-line: rgba(255, 255, 255, 0.06);
+  --color-line-strong: rgba(255, 255, 255, 0.12);
+  --color-accent-from: #c1ae7c;
+  --color-accent-mid: #dd5e98;
+  --color-accent-to: #6c3a5c;
+  --color-accent-1: #c1ae7c;
+  --color-accent-2: #e16f7c;
+  --color-accent-3: #dd5e98;
+  --color-accent-4: #cc4bc2;
+  --color-accent-5: #6c3a5c;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}

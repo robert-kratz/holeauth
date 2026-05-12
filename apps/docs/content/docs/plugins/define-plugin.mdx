@@ -1,0 +1,290 @@
+---
+title: definePlugin
+description: API reference for the plugin definition helper.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+# definePlugin
+
+`definePlugin<P>(p: P): P` is an identity function that preserves the literal `id` on the plugin type so `PluginsApi<Plugins>` can index by it with full type safety.
+
+## Signature
+
+```ts
+export function definePlugin<const P extends HoleauthPlugin<string, unknown>>(
+  p: P
+): P;
+```
+
+## Why it exists
+
+TypeScript cannot infer a literal string type from an object literal unless you use `as const` on the entire object or explicitly type the field. `definePlugin` is a zero-runtime-cost helper that narrows the `id` field to a literal type, enabling `auth[plugin.id]` to be fully typed without `declare module` augmentation.
+
+**Without `definePlugin`:**
+
+```ts
+const badPlugin = {
+  id: 'demo', // TypeScript infers id: string (not literal 'demo')
+  api: () => ({ hello: () => 'world' }),
+};
+
+// auth.demo is `unknown` — no IntelliSense
+```
+
+**With `definePlugin`:**
+
+```ts
+import { definePlugin } from '@holeauth/core/plugins';
+
+const goodPlugin = () => definePlugin({
+  id: 'demo' as const, // explicit literal
+  api: () => ({ hello: () => 'world' }),
+});
+
+// auth.demo.hello() is fully typed
+```
+
+## Minimal example
+
+```ts title="lib/plugins/demo.ts"
+import { definePlugin, type PluginContext } from '@holeauth/core/plugins';
+
+export const demo = () => definePlugin({
+  id: 'demo' as const,
+  api: (ctx: PluginContext) => ({
+    hello: () => 'world',
+  }),
+});
+```
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { demo } from './plugins/demo';
+import { db } from './db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [demo()] as const,
+});
+
+// TypeScript infers auth.demo.hello() automatically
+console.log(auth.demo.hello()); // => "world"
+```
+
+<Callout type="info">
+  The `as const` on the `plugins` array is **required** for type inference. Without it, TypeScript widens the tuple to `HoleauthPlugin[]` and loses literal id tracking.
+</Callout>
+
+## Full example
+
+```ts title="lib/plugins/analytics.ts"
+import { definePlugin, type PluginContext } from '@holeauth/core/plugins';
+
+export interface AnalyticsOptions {
+  apiKey: string;
+  endpoint?: string;
+}
+
+export const analytics = (options: AnalyticsOptions) => definePlugin({
+  id: 'analytics' as const,
+  version: '1.0.0',
+  dependsOn: [],
+
+  hooks: {
+    signIn: {
+      async after(result, ctx) {
+        await fetch(options.endpoint ?? 'https://analytics.example.com/track', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${options.apiKey}`,
+          },
+          body: JSON.stringify({
+            event: 'user.signed_in',
+            userId: result.user.id,
+            method: result.method,
+            timestamp: Date.now(),
+          }),
+        });
+      },
+    },
+  },
+
+  routes: [
+    {
+      method: 'POST',
+      path: '/analytics/track',
+      requireAuth: true,
+      requireCsrf: true,
+      async handler(rctx) {
+        const session = await rctx.getSession();
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'UNAUTHENTICATED' }), {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        await fetch(options.endpoint ?? 'https://analytics.example.com/track', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${options.apiKey}`,
+          },
+          body: JSON.stringify({
+            event: 'custom_event',
+            userId: session.userId,
+            data: rctx.body,
+            timestamp: Date.now(),
+          }),
+        });
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    },
+  ],
+
+  api(ctx: PluginContext) {
+    return {
+      async track(userId: string, event: string, data?: unknown) {
+        await ctx.events.emit({
+          type: 'analytics.tracked',
+          userId,
+          data: { event, payload: data },
+        });
+      },
+    };
+  },
+
+  async onInit(ctx: PluginContext) {
+    ctx.logger.info(`analytics plugin initialized with endpoint: ${options.endpoint ?? 'default'}`);
+  },
+
+  async onShutdown() {
+    // Flush any pending events
+  },
+});
+```
+
+## HoleauthPlugin fields
+
+<TypeTable
+  type={{
+    id: {
+      description: 'Unique plugin identifier. Must be a literal string for type inference. Use `as const`.',
+      type: 'string',
+      required: true,
+    },
+    version: {
+      description: 'Semantic version string. Informational only; not enforced by core.',
+      type: 'string',
+    },
+    dependsOn: {
+      description: 'Array of plugin ids that must be loaded before this plugin. Triggers topological sort.',
+      type: 'readonly string[]',
+    },
+    adapter: {
+      description: 'Plugin-owned adapter instance. Opaque to core; retrieved via ctx.getPluginAdapter(id).',
+      type: 'unknown',
+    },
+    hooks: {
+      description: 'Hook implementations. Every key is optional. See /docs/plugins/hooks.',
+      type: 'HoleauthHooks',
+    },
+    routes: {
+      description: 'HTTP routes auto-mounted by the framework binding. See /docs/plugins/routes.',
+      type: 'readonly PluginRoute[]',
+    },
+    api: {
+      description: 'Construct the public API surface. Called once per defineHoleauth(). Returns the object merged into auth[plugin.id].',
+      type: '(ctx: PluginContext) => Api',
+      required: true,
+    },
+    onInit: {
+      description: 'Called after all plugins have been wired and apiMap is filled. Safe to call ctx.getPlugin(otherId) here.',
+      type: '(ctx: PluginContext) => Promise<void> | void',
+    },
+    onShutdown: {
+      description: 'Called on shutdown (best-effort; consumer-controlled). Use for cleanup (close DB connections, flush buffers).',
+      type: '() => Promise<void> | void',
+    },
+  }}
+/>
+
+## Type inference with `as const`
+
+### Without `as const` (broken)
+
+```ts
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [demo()], // TypeScript infers: HoleauthPlugin[]
+});
+
+// auth.demo is unknown — no IntelliSense
+auth.demo.hello(); // ❌ Type error: Property 'demo' does not exist
+```
+
+### With `as const` (correct)
+
+```ts
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [demo()] as const, // TypeScript infers: readonly [HoleauthPlugin<'demo', ...>]
+});
+
+// auth.demo.hello() is fully typed ✅
+auth.demo.hello(); // => "world"
+```
+
+The `as const` assertion narrows the array type to a `readonly` tuple, preserving the literal `id` of each plugin. Core's `PluginsApi<Plugins>` helper type then maps each plugin's `id` to its `api` return type.
+
+## Pattern: plugin factory
+
+Most plugins export a factory function that accepts options and returns a `HoleauthPlugin`:
+
+```ts
+export interface MyPluginOptions {
+  apiKey: string;
+  timeout?: number;
+}
+
+export const myPlugin = (options: MyPluginOptions) => definePlugin({
+  id: 'myPlugin' as const,
+  api: (ctx) => ({
+    doSomething: async () => {
+      // use options.apiKey
+    },
+  }),
+});
+```
+
+This pattern allows plugins to be configured at the call site:
+
+```ts
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    myPlugin({ apiKey: process.env.MY_API_KEY!, timeout: 5000 }),
+  ] as const,
+});
+```
+
+## Next
+
+<Cards>
+  <Card
+    title="Hooks"
+    href="/plugins/hooks"
+    description="Full reference for every hook slot and when they run."
+  />
+</Cards>

@@ -1,0 +1,305 @@
+---
+title: "@holeauth/2fa-drizzle"
+description: Drizzle ORM adapter for two-factor authentication storage across PostgreSQL, MySQL, and SQLite.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/2fa-drizzle
+
+Drizzle ORM adapter for `@holeauth/plugin-2fa` supporting PostgreSQL, MySQL, and SQLite.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/2fa-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/2fa-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/2fa-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/2fa-drizzle
+```
+</Tab>
+</Tabs>
+
+## Subpath Exports
+
+This package provides dialect-specific entry points:
+
+- `@holeauth/2fa-drizzle/pg` — PostgreSQL
+- `@holeauth/2fa-drizzle/mysql` — MySQL
+- `@holeauth/2fa-drizzle/sqlite` — SQLite
+
+All three expose the same API: `createTwoFactorTables` and `createTwoFactorAdapter`.
+
+## Usage by Dialect
+
+<Tabs items={['PostgreSQL', 'MySQL', 'SQLite']}>
+  <Tab value="PostgreSQL">
+    ```ts title="db/schema.ts"
+    import { pgTable, text } from 'drizzle-orm/pg-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+    import { createTwoFactorTables } from '@holeauth/2fa-drizzle/pg';
+
+    export const users = pgTable('users', {
+      id: text('id').primaryKey(),
+      email: text('email').notNull().unique(),
+      name: text('name'),
+      image: text('image'),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const twofa = createTwoFactorTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...twofa.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...twofa.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { twofa } from '@holeauth/plugin-2fa';
+    import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/pg';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        twofa({
+          adapter: createTwoFactorAdapter({ db, tables }),
+          issuer: 'My App',
+        }),
+      ],
+    });
+    ```
+  </Tab>
+  <Tab value="MySQL">
+    ```ts title="db/schema.ts"
+    import { mysqlTable, varchar } from 'drizzle-orm/mysql-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+    import { createTwoFactorTables } from '@holeauth/2fa-drizzle/mysql';
+
+    export const users = mysqlTable('users', {
+      id: varchar('id', { length: 191 }).primaryKey(),
+      email: varchar('email', { length: 255 }).notNull().unique(),
+      name: varchar('name', { length: 255 }),
+      image: varchar('image', { length: 512 }),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const twofa = createTwoFactorTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...twofa.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...twofa.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { twofa } from '@holeauth/plugin-2fa';
+    import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/mysql';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        twofa({
+          adapter: createTwoFactorAdapter({ db, tables }),
+          issuer: 'My App',
+        }),
+      ],
+    });
+    ```
+  </Tab>
+  <Tab value="SQLite">
+    ```ts title="db/schema.ts"
+    import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
+    import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+    import { createTwoFactorTables } from '@holeauth/2fa-drizzle/sqlite';
+
+    export const users = sqliteTable('users', {
+      id: text('id').primaryKey(),
+      email: text('email').notNull().unique(),
+      name: text('name'),
+      image: text('image'),
+    });
+
+    const holeauth = createHoleauthTables({ usersTable: users });
+    const twofa = createTwoFactorTables({ usersTable: users });
+
+    export const tables = {
+      ...holeauth.tables,
+      ...twofa.tables,
+    };
+
+    export const relations = {
+      ...holeauth.relations,
+      ...twofa.relations,
+    };
+    ```
+
+    ```ts title="lib/auth.ts"
+    import { defineHoleauth } from '@holeauth/core';
+    import { twofa } from '@holeauth/plugin-2fa';
+    import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/sqlite';
+    import { db } from '@/db';
+    import { tables } from '@/db/schema';
+
+    export const auth = defineHoleauth({
+      adapter: drizzleAdapter(db),
+      secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+      plugins: [
+        twofa({
+          adapter: createTwoFactorAdapter({ db, tables }),
+          issuer: 'My App',
+        }),
+      ],
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## API Reference
+
+### createTwoFactorTables()
+
+Creates Drizzle table definitions for two-factor authentication.
+
+```ts
+function createTwoFactorTables<U extends UsersTable>(
+  options: CreateTwoFactorTablesOptions<U>
+): { tables: { twoFactor: ... }; relations: { twoFactorRelations: ... } }
+```
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table (must have an `id` column).',
+      type: 'DrizzleTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Prefix for the generated table name.',
+      type: 'string',
+      default: '"holeauth_2fa_"',
+    },
+  }}
+/>
+
+**Returns**
+
+An object with:
+
+- `tables.twoFactor` — Drizzle table with columns: `userId` (PK, FK cascade), `secret`, `enabled`, `recoveryCodes`, `createdAt`, `updatedAt`.
+- `relations.twoFactorRelations` — Drizzle relation joining `twoFactor.userId` to `usersTable.id`.
+
+**Example**
+
+```ts title="db/schema.ts"
+import { createTwoFactorTables } from '@holeauth/2fa-drizzle/pg';
+import { users } from './users';
+
+const twofa = createTwoFactorTables({
+  usersTable: users,
+  prefix: 'app_2fa_',
+});
+
+export const tables = { ...twofa.tables };
+export const relations = { ...twofa.relations };
+```
+
+### createTwoFactorAdapter()
+
+Constructs a `TwoFactorAdapter` that implements the plugin's storage interface.
+
+```ts
+function createTwoFactorAdapter(
+  options: CreateTwoFactorAdapterOptions
+): TwoFactorAdapter
+```
+
+<TypeTable
+  type={{
+    db: {
+      description: 'Drizzle database instance.',
+      type: 'DrizzleDB',
+      required: true,
+    },
+    tables: {
+      description: 'Tables object returned by `createTwoFactorTables`.',
+      type: 'Tables',
+      required: true,
+    },
+  }}
+/>
+
+**Example**
+
+```ts title="lib/auth.ts"
+import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/pg';
+import { db } from '@/db';
+import { tables } from '@/db/schema';
+
+const adapter = createTwoFactorAdapter({ db, tables });
+```
+
+## Schema Details
+
+The `twoFactor` table has the following columns (PostgreSQL example):
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `userId` | `text` | Primary key, foreign key → `users.id` (on delete cascade) |
+| `secret` | `text` | Not null |
+| `enabled` | `boolean` | Not null, default `false` |
+| `recoveryCodes` | `text[]` | Not null, default `[]` |
+| `createdAt` | `timestamp` | Not null, default now |
+| `updatedAt` | `timestamp` | Not null, default now |
+
+Recovery codes are stored as SHA-256 hashes (hex). Each code can only be used once; the adapter removes it from the array after verification.
+
+## Migration
+
+After defining your schema, generate and run a migration:
+
+```bash
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/plugin-2fa" href="index" description="Learn about the 2FA plugin options and API" />
+  <Card title="@holeauth/plugin-passkey" href="/packages/plugin-passkey" description="Add WebAuthn / FIDO2 support" />
+</Cards>

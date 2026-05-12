@@ -1,0 +1,184 @@
+---
+title: Sign in with Google
+description: Configure Google OAuth 2.0 and OpenID Connect for your holeauth application.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Sign in with Google
+
+Google is an **OpenID Connect** provider. holeauth validates ID tokens and fetches user profile data from the userinfo endpoint.
+
+<Steps>
+  <Step>
+    ### Create a Google OAuth client
+
+    1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+    2. Create a new project (or select an existing one)
+    3. Navigate to **APIs & Services → Credentials**
+    4. Click **Create Credentials → OAuth client ID**
+    5. Select **Web application**
+    6. Add authorized redirect URI: `http://localhost:3000/api/auth/sso/google/callback` (replace with your production URL)
+    7. Copy the **Client ID** and **Client Secret**
+  </Step>
+
+  <Step>
+    ### Set environment variables
+
+    ```bash title=".env.local"
+    GOOGLE_CLIENT_ID=123456789012-abc...apps.googleusercontent.com
+    GOOGLE_CLIENT_SECRET=GOCSPX-...
+    ```
+  </Step>
+
+  <Step>
+    ### Wire `GoogleProvider` into holeauth
+
+    ```ts title="lib/auth.ts" {4,10-15}
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+import { GoogleProvider } from '@holeauth/core/sso';
+import * as schema from '@/db/schema';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db, schema.holeauth),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      redirectUri: 'http://localhost:3000/api/auth/sso/google/callback',
+    }),
+  ],
+});
+```
+
+    <TypeTable
+      type={{
+        clientId: {
+          description: 'Google OAuth client ID from the Cloud Console.',
+          type: 'string',
+          required: true,
+        },
+        clientSecret: {
+          description: 'Google OAuth client secret from the Cloud Console.',
+          type: 'string',
+          required: true,
+        },
+        redirectUri: {
+          description: 'OAuth callback URL registered in Google Cloud Console. Must match exactly.',
+          type: 'string',
+          required: true,
+        },
+        id: {
+          description: 'Provider ID (used as the :provider URL segment). Defaults to "google".',
+          type: 'string',
+          default: '"google"',
+        },
+        scopes: {
+          description: 'OAuth scopes to request. Google OIDC defaults are sufficient for most apps.',
+          type: 'string[]',
+          default: '["openid", "email", "profile"]',
+        },
+      }}
+    />
+
+    <Callout type="info">
+      The `redirectUri` must match exactly what you registered in the Google Cloud Console. For production, use your live domain: `https://yourapp.com/api/auth/sso/google/callback`.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Add a sign-in button
+
+    ```tsx title="app/login/page.tsx"
+export default function LoginPage() {
+  return (
+    <div>
+      <h1>Sign in</h1>
+      <a href="/api/auth/sso/google/authorize">
+        <button>Sign in with Google</button>
+      </a>
+    </div>
+  );
+}
+```
+
+    When clicked, the user is redirected to Google's OAuth consent screen. After approval, Google redirects back to `/api/auth/sso/google/callback`, where holeauth:
+    1. Exchanges the authorization code for an access token and ID token
+    2. Verifies the ID token signature and `iss` claim
+    3. Extracts `sub` (user ID), `email`, `name`, and `picture` from the ID token
+    4. Creates a new user (if no existing user with that email) or links the Google account to an existing user
+    5. Issues a holeauth session
+  </Step>
+
+  <Step>
+    ### Handle the result
+
+    After successful sign-in, the user is redirected to `/` (or the `returnTo` query parameter if set). Access the session in server components:
+
+    ```tsx title="app/dashboard/page.tsx"
+import { auth } from '@/lib/auth';
+import { validateCurrentRequest } from '@holeauth/nextjs/server';
+
+export default async function DashboardPage() {
+  const session = await validateCurrentRequest(auth);
+  if (!session) return <div>Not signed in</div>;
+
+  return <div>Welcome, {session.user.email}!</div>;
+}
+```
+  </Step>
+</Steps>
+
+## Token handling
+
+Google returns:
+- `access_token` — Bearer token for Google APIs (stored in `holeauth_accounts.access_token` if the account adapter is enabled)
+- `id_token` — JWT with user claims (verified and decoded by holeauth)
+- `refresh_token` — Long-lived token to refresh the Google access token (stored in `holeauth_accounts.refresh_token`)
+
+holeauth validates the `id_token` signature using Google's JWKS endpoint (`https://www.googleapis.com/oauth2/v3/certs`) and checks:
+- `iss` == `https://accounts.google.com`
+- `aud` == your `clientId`
+- `exp` > current time
+
+<Callout type="warn">
+  holeauth issues its own session tokens (separate from Google's tokens). The Google `access_token` and `refresh_token` are stored in the `holeauth_accounts` table for future API calls (e.g., Google Calendar integration) but are NOT used for holeauth session validation.
+</Callout>
+
+## Account linking
+
+If a user signs in with Google and an existing holeauth user has the same email address:
+- By default, holeauth throws `AccountConflictError` (safe mode).
+- If `allowDangerousEmailAccountLinking: true` is set in `defineHoleauth` **and** Google verified the email (`email_verified: true` in the ID token), holeauth auto-links the accounts.
+
+To enable auto-linking:
+
+```ts title="lib/auth.ts" {6}
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db, schema.holeauth),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  providers: [GoogleProvider({ /* ... */ })],
+  allowDangerousEmailAccountLinking: true,
+});
+```
+
+<Callout type="warn">
+  Email-based auto-linking is secure **only if** the provider verifies email addresses. Google does verify emails, so this is safe. Do not enable this flag if you also accept providers that do not verify emails (e.g., a custom OIDC provider without email verification).
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Sign in with GitHub"
+    href="/sso/consumer/github"
+    description="Integrate GitHub OAuth 2.0 for developer sign-in"
+  />
+</Cards>

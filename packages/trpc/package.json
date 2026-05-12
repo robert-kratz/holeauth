@@ -1,0 +1,62 @@
+{
+  "name": "@holeauth/trpc",
+  "version": "0.0.1-alpha.0",
+  "description": "tRPC helpers for holeauth: typed context factory, transparent refresh rotation, and RBAC-gated procedures.",
+  "license": "MIT",
+  "author": "Robert Kratz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-kratz/holeauth.git",
+    "directory": "packages/trpc"
+  },
+  "keywords": [
+    "auth",
+    "trpc",
+    "holeauth",
+    "rbac"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./cjs-error.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cjs-error.cjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist .turbo",
+    "lint": "echo 'lint skipped'",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@holeauth/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@trpc/server": ">=10"
+  },
+  "devDependencies": {
+    "@holeauth/eslint-config": "workspace:*",
+    "@holeauth/tsconfig": "workspace:*",
+    "@trpc/server": "^11.16.0",
+    "@types/node": "^20.16.10",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

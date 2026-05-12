@@ -1,131 +1,155 @@
 ---
 name: integrate-holeauth-2fa
 description: "Add Two-Factor Authentication (TOTP / 2FA) to a holeauth project using @holeauth/plugin-2fa and @holeauth/2fa-drizzle. Use when: adding 2FA, adding TOTP, adding two-factor auth, adding OTP, setting up authenticator app support. Requires integrate-holeauth-core to be completed first."
-argument-hint: "Requires core setup. Database dialect: PostgreSQL / MySQL / SQLite"
+argument-hint: "Requires core setup. Persistence: Drizzle (pg/mysql/sqlite) or headless TwoFactorAdapter."
 ---
 
 # Integrate holeauth — Two-Factor Authentication (2FA)
 
-Covers `@holeauth/plugin-2fa` and `@holeauth/2fa-drizzle`.
+Covers `@holeauth/plugin-2fa` (factory: `twofa`) and `@holeauth/2fa-drizzle` (`createTwoFactorTables`, `createTwoFactorAdapter`).
 
-> **Prerequisite**: Core setup must be complete (`integrate-holeauth-core`). If not done yet, load that skill first.
+> **Prerequisite**: `integrate-holeauth-core` already completed. Reuse `persistence`, `usersTable`, `framework` answers.
 
 ## Procedure
 
-### Step 1 — Clarify requirements
+### Step 1 — Plugin-specific questions (`vscode/askQuestions`)
 
-Use `vscode/askQuestions` to ask:
-
-1. **Database dialect** — Which database are you using?
-   - Options: PostgreSQL, MySQL, SQLite
-
-2. **Recovery codes** — Should users be given one-time recovery codes when they enable 2FA?
-   - Options: Yes (recommended), No
-
-3. **Issuer name** — What name should appear in authenticator apps (e.g. Google Authenticator)?
-   - Free text — defaults to the app name or domain.
-
-4. **Enforce 2FA** — Should 2FA be required for all users, or opt-in?
-   - Options: Opt-in (users choose), Required for all users, Required for specific roles only
-
-5. **QR code rendering** — How do you want to show the setup QR code?
-   - Options: Server-side PNG via `/2fa/render-qr` route (built-in), Client-side via `qrcode` library, Both
+1. **Issuer label** — `twofaIssuer` — free text — shown inside Google Authenticator etc. Default `<App name>`.
+2. **Recovery code count** — `twofaRecoveryCount` — `10` (default) | `5` | `0` (disable).
+3. **Pending challenge TTL** — `twofaPendingTtl` — seconds, default `300`.
+4. **Enrollment policy** — `twofaPolicy` — single select
+   - `Opt-in` *(default)* | `Required for all users` | `Required for specific RBAC groups`
+5. **Rate limiter** — `twofaRateLimiter` — `In-memory (default; replace in prod)` | `Custom (Redis/etc.) — leave stub`
+6. **QR rendering** — `twofaQr` — `Server data URL via twofa.setup() (default)` | `Server PNG buffer route` | `Client-side qrcode lib`
 
 ### Step 2 — Install
 
 ```
 @holeauth/plugin-2fa
-@holeauth/2fa-drizzle
+@holeauth/2fa-drizzle    # only if persistence === Drizzle
 ```
 
-### Step 3 — Extend Drizzle schema
-
-Import `createTwoFactorTables` and merge into the schema:
+### Step 3 — Drizzle schema (skip if headless)
 
 ```ts title="db/schema.ts"
 import { createTwoFactorTables } from '@holeauth/2fa-drizzle/pg'; // swap dialect
 
-const twoFa = createTwoFactorTables({ usersTable: users });
+export const twoFa = createTwoFactorTables({ usersTable: users });
+export const twoFactor = twoFa.tables.twoFactor;
 
 export const schema = {
   ...core.tables,
   ...twoFa.tables,
-  // ... other plugins
+  // ... other plugin tables
 };
 ```
 
-Run migrations after this change.
+Run `pnpm db:generate && pnpm db:push`.
 
-### Step 4 — Register the plugin in the auth instance
+### Step 4 — Register the plugin (fully-filled)
 
 ```ts title="lib/auth.ts"
-import { twoFactorPlugin } from '@holeauth/plugin-2fa';
-import { drizzle2faAdapter } from '@holeauth/2fa-drizzle/pg'; // swap dialect
-import { db } from '@/db';
+import { twofa } from '@holeauth/plugin-2fa';
+import { createTwoFactorAdapter } from '@holeauth/2fa-drizzle/pg'; // or implement adapter manually
+import { db } from '../db/client';
+import { twoFa } from '../db/schema';
 
-export const auth = defineHoleauth({
-  // ...existing config
+const twoFactorAdapter = createTwoFactorAdapter({ db, tables: twoFa.tables });
+
+export const auth = createAuthHandler({
+  // ... existing config
   plugins: [
-    twoFactorPlugin({
-      adapter: drizzle2faAdapter(db),
-      issuer: 'My App',          // shown in authenticator apps
-      recoveryCodesCount: 10,    // set to 0 to disable
+    twofa({
+      adapter: twoFactorAdapter,
+      issuer: process.env.APP_NAME ?? 'holeauth App',
+      recoveryCodeCount: 10,
+      pendingTtlSeconds: 300,
+      // rateLimiter: createMemoryRateLimiter({ max: 5, windowMs: 5 * 60_000 }),
     }),
   ],
 });
 ```
 
-The plugin auto-registers:
-- `POST /api/auth/2fa/verify` — verify TOTP code during sign-in challenge
-- `GET  /api/auth/2fa/render-qr` — returns a PNG QR code for setup
+The plugin auto-registers (under `<basePath>`):
+- `POST /2fa/verify` — exchange `pendingToken + code` for tokens.
+- `POST /2fa/setup` — start enrollment (auth required).
+- `POST /2fa/activate` — finalise enrollment with first code.
+- `POST /2fa/disable` — disable with current code.
+- `GET  /2fa/render-qr?payload=...` — PNG buffer.
 
-### Step 5 — API surface (server-side)
-
-Access the 2FA API via `auth.twofa` (or `auth.plugins['2fa']`):
+### Step 5 — API surface (`auth.twofa`)
 
 ```ts
-// Setup flow (authenticated user)
-const { secret, qrCodeUrl, recoveryCodes } = await auth.twofa.setup(userId);
-await auth.twofa.activate(userId, totpCode);
-
-// Disable (requires current TOTP code)
-await auth.twofa.disable(userId, totpCode);
-
-// Check status
-const enabled = await auth.twofa.isEnabled(userId);
+const { secret, otpauthUrl, qrCodeDataUrl } = await auth.twofa.setup(userId);
+const { recoveryCodes }                     = await auth.twofa.activate(userId, code);
+const enabled                               = await auth.twofa.isEnabled(userId);
+await auth.twofa.disable(userId, code);
+const { user, tokens } = await auth.twofa.verify({ pendingToken, code, ip, userAgent });
+const dataUrl = await auth.twofa.renderQrDataUrl(otpauthUrl);
+const buffer  = await auth.twofa.renderQrBuffer(otpauthUrl);
 ```
+
+`signIn()` returns `kind: 'pending'` with `pluginId: 'twofa'` when 2FA is enabled.
 
 ### Step 6 — Sign-in challenge flow
 
-When 2FA is enabled, `auth.signIn()` returns `{ challengeToken }` instead of tokens. The client must then call `POST /api/auth/2fa/verify` with `{ challengeToken, code }`.
-
-**Client-side example** (using `@holeauth/react`):
-
 ```tsx
-const { signIn } = useSignIn();
+'use client';
+import { useSignIn } from '@holeauth/react';
 
+const { signIn } = useSignIn();
 const result = await signIn({ email, password });
-if ('challengeToken' in result) {
-  // redirect to /2fa-challenge with challengeToken
+if (result?.kind === 'pending' && result.pluginId === 'twofa') {
+  // navigate to /2fa/verify with result.pendingToken
 }
 ```
 
-### Step 7 — Setup UI
+Server route to verify (or use plugin route directly):
+```ts
+const { user, tokens } = await auth.twofa.verify({
+  pendingToken,
+  code,
+  ip: req.headers.get('x-forwarded-for') ?? undefined,
+  userAgent: req.headers.get('user-agent') ?? undefined,
+});
+```
 
-Create a server action or API route that calls `auth.twofa.setup(userId)` and returns the `qrCodeUrl`. Render it in a client component. After the user scans and enters their first code, call `auth.twofa.activate(userId, code)`.
+### Step 7 — Recovery codes UI
 
-Show recovery codes exactly once after activation; hash and store them via the adapter automatically.
+After `activate()`, show the returned `recoveryCodes` exactly once. Helper utilities:
 
-### Step 8 — Verify
+```ts
+import {
+  formatRecoveryCodesAsText,
+  recoveryCodesToBlob,
+  downloadRecoveryCodesAsTxt,
+} from '@holeauth/plugin-2fa';
+```
 
-- Enable 2FA for a test user: call `setup` → `activate`.
-- Sign out and sign back in — should receive a `challengeToken` response.
-- Call `POST /api/auth/2fa/verify` with a valid TOTP code — should return `{ accessToken, refreshToken }`.
-- Call with a wrong code — should return a 401 error.
-- Test a recovery code in place of a TOTP code.
+### Step 8 — Enforcement (Q4)
+
+- `Required for all users` — gate `/login` or root layout server-side: redirect to `/2fa/setup` if `auth.twofa.isEnabled(userId)` returns `false`.
+- `Required for RBAC groups` — combine with the rbac plugin: `if (await auth.rbac.canAny(userId, ['admin.*']) && !await auth.twofa.isEnabled(userId)) redirect('/2fa/setup')`.
+
+### Step 9 — Verify
+
+- `setup` returns valid `otpauthUrl`.
+- `activate` succeeds with current TOTP and emits 10 recovery codes.
+- Sign-in returns `pending` afterwards.
+- `verify` exchanges valid code for tokens; wrong code → 401; rate limit kicks in after the configured window.
+
+## Headless variant
+
+Implement `TwoFactorAdapter` from `@holeauth/plugin-2fa`:
+```ts
+interface TwoFactorAdapter {
+  getByUserId(userId: string): Promise<TwoFactorRecord | null>;
+  upsert(record: TwoFactorRecord): Promise<void>;
+  delete(userId: string): Promise<void>;
+}
+```
 
 ## Key references
 
-- Plugin source: `packages/plugin-2fa/src/`
-- Drizzle adapter: `packages/2fa-drizzle/src/`
-- Playground 2FA usage: `apps/playground/app/` (look for 2fa route and server actions)
+- `packages/plugin-2fa/src/index.ts` — `TwoFactorOptions`, `TwoFactorApi`
+- `packages/2fa-drizzle/src/{pg,mysql,sqlite}/index.ts`

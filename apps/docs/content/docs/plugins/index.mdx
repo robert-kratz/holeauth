@@ -1,0 +1,111 @@
+---
+title: Plugin system
+description: Extend holeauth with first-class plugins that hook into flows, mount routes, and expose typed APIs.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Plugin system
+
+A holeauth plugin is a first-class extension that can contribute its own adapter, hook into core flows, mount HTTP routes, and expose a typed API surface that merges into the returned `HoleauthInstance` at `auth[plugin.id]`.
+
+Plugins are registered via `defineHoleauth({ plugins: [...] as const })`. The returned instance type is inferred from the tuple so consumers get full IntelliSense without any `declare module` augmentation.
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { definePlugin } from '@holeauth/core/plugins';
+import { db } from './db';
+
+const demoPlugin = () => definePlugin({
+  id: 'demo' as const,
+  api: (ctx) => ({
+    hello: () => 'world',
+  }),
+});
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [demoPlugin()] as const,
+});
+
+// TypeScript infers auth.demo.hello() automatically
+console.log(auth.demo.hello()); // => "world"
+```
+
+## What plugins can do
+
+Plugins extend holeauth in five fundamental ways:
+
+- **Contribute an adapter** — opaque to core, typed to the plugin, supplied via `pluginAdapters[id]`
+- **Hook into core flows** — register, signIn, refresh, signOut, passwordChange, passwordReset, userUpdate, userDelete, session lifecycle
+- **Mount HTTP routes** — auto-mounted by framework bindings under the same basePath as core routes
+- **Expose a typed API** — merged into `auth[plugin.id]` with full IntelliSense
+- **Subscribe to and emit events** — via `ctx.events` for audit logging and cross-plugin communication
+
+## Official plugins
+
+holeauth ships with four official plugins:
+
+- `@holeauth/plugin-2fa` — TOTP two-factor authentication with recovery codes
+- `@holeauth/plugin-passkey` — WebAuthn / FIDO2 passwordless authentication
+- `@holeauth/plugin-rbac` — Role-based access control with YAML-driven policies
+- `@holeauth/plugin-idp` — OAuth 2.0 / OpenID Connect identity provider (SSO server)
+
+## Learn more
+
+<Cards>
+  <Card
+    title="Architecture"
+    href="/plugins/architecture"
+    description="Where and how plugins plug in to the holeauth lifecycle."
+  />
+  <Card
+    title="definePlugin"
+    href="/plugins/define-plugin"
+    description="API reference for the plugin definition helper."
+  />
+  <Card
+    title="Hooks"
+    href="/plugins/hooks"
+    description="Full reference for every hook slot and when they run."
+  />
+  <Card
+    title="Routes"
+    href="/plugins/routes"
+    description="Mount HTTP endpoints alongside core auth routes."
+  />
+  <Card
+    title="Typed API surface"
+    href="/plugins/api-surface"
+    description="Expose plugin methods on auth[plugin.id] with full IntelliSense."
+  />
+  <Card
+    title="Plugin adapters"
+    href="/plugins/adapter"
+    description="How plugins contribute and retrieve their own adapters."
+  />
+  <Card
+    title="Dependencies and lifecycle"
+    href="/plugins/dependencies"
+    description="Load-order constraints, onInit, and onShutdown."
+  />
+  <Card
+    title="Build your own plugin"
+    href="/plugins/tutorial"
+    description="Step-by-step tutorial building a magic link sign-in plugin."
+  />
+</Cards>
+
+## Next
+
+<Cards>
+  <Card
+    title="Architecture"
+    href="/plugins/architecture"
+    description="Deep dive into the five extension points and request lifecycle."
+  />
+</Cards>

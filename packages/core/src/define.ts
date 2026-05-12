@@ -12,6 +12,7 @@ import * as ssoMod from './sso/index.js';
 import type { HoleauthPlugin, PluginsApi } from './plugins/types.js';
 import { buildRegistry, runOnInit, type PluginRegistry } from './plugins/registry.js';
 import { attachHookRunner } from './plugins/runner-ref.js';
+import { subscribe } from './events/emitter.js';
 
 const REGISTRY_KEY: unique symbol = Symbol.for('holeauth.registry');
 
@@ -98,6 +99,9 @@ export function defineHoleauth<
     sso: {
       authorize: (providerId) => ssoMod.authorize(config, providerId),
       callback: (providerId, input) => ssoMod.callback(config, providerId, input),
+    },
+    on(type, handler) {
+      return subscribe(config, type, handler);
     },
   };
 

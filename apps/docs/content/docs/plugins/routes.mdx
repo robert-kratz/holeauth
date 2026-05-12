@@ -1,0 +1,414 @@
+---
+title: Routes
+description: Mount HTTP endpoints alongside core auth routes.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+# Routes
+
+Plugins mount HTTP routes that framework bindings (Next.js, Express, Hono) auto-mount under the same basePath as core routes. Routes receive a `PluginRouteContext` with request primitives, parsed body, cookie helpers, and a `getSession()` shortcut.
+
+## PluginRoute
+
+<TypeTable
+  type={{
+    method: {
+      description: 'HTTP method.',
+      type: "'GET' | 'POST'",
+      required: true,
+    },
+    path: {
+      description: 'Path relative to the auth basePath (e.g. \'/2fa/verify\'). Must start with \'/\'.',
+      type: 'string',
+      required: true,
+    },
+    requireAuth: {
+      description: 'If true, the dispatcher enforces a valid session before calling the handler.',
+      type: 'boolean',
+    },
+    requireCsrf: {
+      description: 'If true, the dispatcher enforces CSRF (double-submit). Recommended for all POST routes that mutate state.',
+      type: 'boolean',
+    },
+    handler: {
+      description: 'Your handler. Return a Response; the dispatcher merges response headers.',
+      type: '(ctx: PluginRouteContext) => Promise<Response> | Response',
+      required: true,
+    },
+  }}
+/>
+
+## PluginRouteContext
+
+<TypeTable
+  type={{
+    req: {
+      description: 'Native Request object (web standard).',
+      type: 'Request',
+      required: true,
+    },
+    body: {
+      description: 'Parsed body (best-effort JSON) — may be empty object if parsing fails.',
+      type: 'Record<string, unknown>',
+      required: true,
+    },
+    responseHeaders: {
+      description: 'Response headers the handler can append Set-Cookie / other headers to. Dispatcher merges these into the final response.',
+      type: 'Headers',
+      required: true,
+    },
+    cookies: {
+      description: 'Read raw cookies.',
+      type: '{ get(name: string): string | undefined }',
+      required: true,
+    },
+    setCookie: {
+      description: 'Set a cookie on the response (framework-serialized). Accepts name, value, maxAge, httpOnly, path, sameSite.',
+      type: '(spec: CookieSpec) => void',
+      required: true,
+    },
+    getSession: {
+      description: 'Current authenticated session, if any (cheap — cached per request).',
+      type: '() => Promise<{ userId: string; sessionId: string; expiresAt: number } | null>',
+      required: true,
+    },
+    meta: {
+      description: 'Client metadata (ip + user-agent).',
+      type: '{ ip?: string; userAgent?: string }',
+      required: true,
+    },
+    plugin: {
+      description: 'Plugin context (config + adapters + core helpers + other plugin APIs).',
+      type: 'PluginContext',
+      required: true,
+    },
+  }}
+/>
+
+### setCookie spec
+
+```ts
+{
+  name: string;
+  value: string;
+  maxAge?: number;
+  httpOnly?: boolean;
+  path?: string;
+  sameSite?: 'lax' | 'strict' | 'none';
+}
+```
+
+## Mounting
+
+Framework bindings auto-mount plugin routes under the same basePath as core routes. No additional routing config is needed.
+
+**Next.js App Router:**
+
+```ts title="app/api/auth/[...holeauth]/route.ts"
+import { holeauthHandler } from '@holeauth/nextjs/app-router';
+import { auth } from '@/lib/auth';
+
+const { GET, POST } = holeauthHandler(auth);
+export { GET, POST };
+```
+
+All plugin routes are automatically available under `/api/auth/<plugin-path>`.
+
+**Next.js Pages Router:**
+
+```ts title="pages/api/auth/[...holeauth].ts"
+import { holeauthHandler } from '@holeauth/nextjs/pages-router';
+import { auth } from '@/lib/auth';
+
+export default holeauthHandler(auth);
+```
+
+**Express:**
+
+```ts title="server.ts"
+import express from 'express';
+import { holeauthMiddleware } from '@holeauth/express';
+import { auth } from './lib/auth';
+
+const app = express();
+app.use('/api/auth', holeauthMiddleware(auth));
+app.listen(3000);
+```
+
+**Hono:**
+
+```ts title="server.ts"
+import { Hono } from 'hono';
+import { holeauthMiddleware } from '@holeauth/hono';
+import { auth } from './lib/auth';
+
+const app = new Hono();
+app.route('/api/auth', holeauthMiddleware(auth));
+export default app;
+```
+
+## Path constraints
+
+### Must start with `/`
+
+Plugin routes must declare paths starting with `/`. Paths are relative to the auth basePath.
+
+```ts
+// ✅ Valid
+routes: [
+  { method: 'POST', path: '/2fa/verify', handler: async (ctx) => { ... } },
+]
+
+// ❌ Invalid
+routes: [
+  { method: 'POST', path: '2fa/verify', handler: async (ctx) => { ... } },
+]
+```
+
+### Cannot collide with core routes
+
+Plugin routes cannot override core routes. The registry throws at startup if a collision is detected.
+
+**Reserved core route paths:**
+
+| Method | Path |
+| --- | --- |
+| GET | `/session` |
+| GET | `/csrf` |
+| GET | `/authorize/:provider` |
+| GET | `/callback/:provider` |
+| POST | `/register` |
+| POST | `/signin` |
+| POST | `/signout` |
+| POST | `/refresh` |
+| POST | `/password/change` |
+| POST | `/password/reset/request` |
+| POST | `/password/reset/consume` |
+| GET | `/invite/info` |
+| GET | `/invite/list` |
+| POST | `/invite/create` |
+| POST | `/invite/consume` |
+| POST | `/invite/revoke` |
+
+<Callout type="warn">
+  Attempting to register a route matching a core path will throw: `holeauth: plugin "<id>" route <method> <path> conflicts with a core route`.
+</Callout>
+
+### Cannot collide with other plugins
+
+Plugin routes are validated against each other. Duplicate routes across plugins throw at startup.
+
+```ts
+// Plugin A
+routes: [
+  { method: 'POST', path: '/verify', handler: ... },
+]
+
+// Plugin B
+routes: [
+  { method: 'POST', path: '/verify', handler: ... }, // ❌ Collision
+]
+```
+
+Error: `holeauth: plugin "B" route POST /verify conflicts with plugin "A"`.
+
+## CSRF and auth flags
+
+### requireCsrf
+
+POST routes that mutate state should set `requireCsrf: true`. The dispatcher validates the `X-CSRF-Token` header against the `csrfToken` cookie before calling the handler.
+
+```ts
+routes: [
+  {
+    method: 'POST',
+    path: '/2fa/activate',
+    requireCsrf: true, // ✅ Enforces CSRF
+    async handler(ctx) {
+      // ...
+    },
+  },
+]
+```
+
+If the CSRF token is missing or invalid, the dispatcher returns `403 Forbidden` before calling the handler.
+
+<Callout type="warn">
+  **Always set `requireCsrf: true` for POST routes that mutate state.** Omitting it exposes your plugin to CSRF attacks.
+</Callout>
+
+### requireAuth
+
+Routes that operate on the current user should set `requireAuth: true`. The dispatcher validates the session (access token cookie) before calling the handler.
+
+```ts
+routes: [
+  {
+    method: 'POST',
+    path: '/2fa/setup',
+    requireAuth: true, // ✅ Requires valid session
+    requireCsrf: true,
+    async handler(ctx) {
+      const session = await ctx.getSession();
+      // session is guaranteed to be non-null
+    },
+  },
+]
+```
+
+If the session is invalid or expired, the dispatcher returns `401 Unauthorized` before calling the handler.
+
+## Complete example
+
+A `magicLink` plugin that accepts an email, looks up the user, and returns a confirmation:
+
+```ts title="lib/plugins/magicLink.ts"
+import { definePlugin, type PluginContext, type PluginRoute } from '@holeauth/core/plugins';
+
+export const magicLink = () => definePlugin({
+  id: 'magicLink' as const,
+
+  routes: [
+    {
+      method: 'POST',
+      path: '/magic-link/request',
+      requireCsrf: true,
+      async handler(ctx) {
+        const email = ctx.body.email;
+        if (typeof email !== 'string') {
+          return new Response(
+            JSON.stringify({ error: { code: 'INVALID_INPUT', message: 'email required' } }),
+            { status: 400, headers: { 'content-type': 'application/json' } }
+          );
+        }
+
+        const user = await ctx.plugin.core.getUserByEmail(email);
+        if (!user) {
+          // Silent failure for security
+          return new Response(
+            JSON.stringify({ ok: true, message: 'If the email exists, a magic link has been sent.' }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        }
+
+        // TODO: Generate token, send email
+
+        await ctx.plugin.events.emit({
+          type: 'magicLink.requested',
+          userId: user.id,
+          data: { email },
+        });
+
+        return new Response(
+          JSON.stringify({ ok: true, message: 'If the email exists, a magic link has been sent.' }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      },
+    },
+    {
+      method: 'GET',
+      path: '/magic-link/consume',
+      async handler(ctx) {
+        const token = new URL(ctx.req.url).searchParams.get('token');
+        if (!token) {
+          return new Response(
+            JSON.stringify({ error: { code: 'MISSING_TOKEN' } }),
+            { status: 400, headers: { 'content-type': 'application/json' } }
+          );
+        }
+
+        // TODO: Verify token, extract userId
+
+        const userId = 'user_123'; // placeholder
+        const { user, tokens } = await ctx.plugin.core.completeSignIn(userId, {
+          method: 'magic_link',
+          ip: ctx.meta.ip,
+          userAgent: ctx.meta.userAgent,
+        });
+
+        // Set session cookies
+        const prefix = ctx.plugin.config.tokens?.cookiePrefix ?? 'holeauth';
+        const accessTtl = ctx.plugin.config.tokens?.accessTtl ?? 900;
+        const refreshTtl = ctx.plugin.config.tokens?.refreshTtl ?? 2592000;
+
+        ctx.setCookie({
+          name: `${prefix}.at`,
+          value: tokens.accessToken,
+          maxAge: accessTtl,
+          httpOnly: true,
+          path: '/',
+        });
+        ctx.setCookie({
+          name: `${prefix}.rt`,
+          value: tokens.refreshToken,
+          maxAge: refreshTtl,
+          httpOnly: true,
+          path: '/',
+        });
+        ctx.setCookie({
+          name: `${prefix}.csrf`,
+          value: tokens.csrfToken,
+          maxAge: refreshTtl,
+          httpOnly: false,
+          path: '/',
+        });
+
+        await ctx.plugin.events.emit({
+          type: 'magicLink.consumed',
+          userId: user.id,
+          data: { sessionId: tokens.sessionId },
+        });
+
+        // Redirect to app
+        return new Response(null, {
+          status: 302,
+          headers: { Location: '/dashboard' },
+        });
+      },
+    },
+  ],
+
+  api(ctx: PluginContext) {
+    return {
+      async request(email: string) {
+        // Application code can call auth.magicLink.request(email)
+        // Implementation mirrors the route handler
+      },
+    };
+  },
+});
+```
+
+## Error handling
+
+Plugins should return well-formed JSON error responses with appropriate HTTP status codes:
+
+```ts
+function jsonError(code: string, status: number, extra?: Record<string, unknown>): Response {
+  return new Response(
+    JSON.stringify({ error: { code, ...(extra ?? {}) } }),
+    { status, headers: { 'content-type': 'application/json' } }
+  );
+}
+
+// Usage
+if (!session) return jsonError('UNAUTHENTICATED', 401);
+if (rateLimited) return jsonError('RATE_LIMITED', 429, { retryAfterSeconds: 60 });
+```
+
+<Callout type="info">
+  Framework dispatchers do not catch exceptions from plugin route handlers. Uncaught exceptions will crash the request (and potentially the process). Always wrap risky code in `try`/`catch`.
+</Callout>
+
+## Next
+
+<Cards>
+  <Card
+    title="Typed API surface"
+    href="/plugins/api-surface"
+    description="Expose plugin methods on auth[plugin.id] with full IntelliSense."
+  />
+</Cards>

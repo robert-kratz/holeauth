@@ -1,0 +1,401 @@
+---
+title: Adapters
+description: Database-agnostic persistence layer and the BaseAdapter contract
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Adapters
+
+holeauth never touches your database directly. Instead, it defines a set of adapter interfaces that abstract persistence operations. You provide an adapter implementation, and holeauth calls its methods to create, read, update, and delete users, sessions, and audit logs.
+
+This design keeps the core framework-agnostic and lets you use any ORM or database client.
+
+## Adapter Interfaces
+
+Every holeauth instance requires four adapters:
+
+<TypeTable
+  type={{
+    user: {
+      description: 'Create, read, update, and delete user accounts.',
+      type: 'UserAdapter',
+      required: true,
+    },
+    session: {
+      description: 'Create, read, rotate, and revoke sessions.',
+      type: 'SessionAdapter',
+      required: true,
+    },
+    auditLog: {
+      description: 'Persist and optionally query audit events.',
+      type: 'AuditLogAdapter',
+      required: true,
+    },
+    account: {
+      description: 'Link and unlink OAuth/OIDC accounts (for SSO).',
+      type: 'AccountAdapter',
+      required: false,
+    },
+    verificationToken: {
+      description: 'Store and consume short-lived tokens (password reset, email verification).',
+      type: 'VerificationTokenAdapter',
+      required: false,
+    },
+    transaction: {
+      description: 'Wrap multi-step writes in a database transaction.',
+      type: 'TransactionAdapter',
+      required: false,
+    },
+  }}
+/>
+
+The `user`, `session`, and `auditLog` adapters are mandatory. The others are optional and only required if you use the corresponding features (SSO, password reset, transactions).
+
+## UserAdapter
+
+<TypeTable
+  type={{
+    getUserById: {
+      description: 'Fetch a user by their unique ID.',
+      type: '(id: string) => Promise<AdapterUser | null>',
+      required: true,
+    },
+    getUserByEmail: {
+      description: 'Fetch a user by their email address.',
+      type: '(email: string) => Promise<AdapterUser | null>',
+      required: true,
+    },
+    createUser: {
+      description: 'Insert a new user row.',
+      type: '(data: Omit<AdapterUser, "id">) => Promise<AdapterUser>',
+      required: true,
+    },
+    updateUser: {
+      description: 'Update a user row by ID.',
+      type: '(id: string, patch: Partial<AdapterUser>) => Promise<AdapterUser>',
+      required: true,
+    },
+    deleteUser: {
+      description: 'Delete a user row by ID.',
+      type: '(id: string) => Promise<void>',
+      required: true,
+    },
+  }}
+/>
+
+The `AdapterUser` shape:
+
+<TypeTable
+  type={{
+    id: {
+      description: 'Unique user ID (UUID or auto-increment).',
+      type: 'string',
+      required: true,
+    },
+    email: {
+      description: 'User email address (unique).',
+      type: 'string',
+      required: true,
+    },
+    emailVerified: {
+      description: 'Timestamp when email was verified.',
+      type: 'Date | null',
+      required: false,
+    },
+    name: {
+      description: 'User display name.',
+      type: 'string | null',
+      required: false,
+    },
+    image: {
+      description: 'Avatar URL.',
+      type: 'string | null',
+      required: false,
+    },
+    passwordHash: {
+      description: 'Argon2id or PBKDF2 hash of the user password.',
+      type: 'string | null',
+      required: false,
+    },
+  }}
+/>
+
+<Callout type="warn">
+  Never store plain-text passwords in `passwordHash`. Always hash them using `password.hash` from `@holeauth/core/password`.
+</Callout>
+
+## SessionAdapter
+
+<TypeTable
+  type={{
+    createSession: {
+      description: 'Insert a new session row.',
+      type: '(data: AdapterSession) => Promise<AdapterSession>',
+      required: true,
+    },
+    getSession: {
+      description: 'Fetch a session by its ID.',
+      type: '(id: string) => Promise<AdapterSession | null>',
+      required: true,
+    },
+    getByRefreshHash: {
+      description: 'Fetch a session by its SHA-256(refreshToken) hash.',
+      type: '(hash: string) => Promise<AdapterSession | null>',
+      required: true,
+    },
+    findByFamily: {
+      description: 'Fetch all sessions in a family (for reuse detection).',
+      type: '(familyId: string) => Promise<AdapterSession[]>',
+      required: true,
+    },
+    deleteSession: {
+      description: 'Delete a session row by ID.',
+      type: '(id: string) => Promise<void>',
+      required: true,
+    },
+    rotateRefresh: {
+      description: 'Atomically update the refresh token hash and expiration.',
+      type: '(id: string, newHash: string, expiresAt: Date) => Promise<AdapterSession>',
+      required: true,
+    },
+    revokeFamily: {
+      description: 'Mark all sessions in a family as revoked by setting `revokedAt`.',
+      type: '(familyId: string) => Promise<void>',
+      required: true,
+    },
+    revokeUser: {
+      description: 'Revoke all sessions for a user (global signout).',
+      type: '(userId: string) => Promise<void>',
+      required: false,
+    },
+  }}
+/>
+
+The `AdapterSession` shape:
+
+<TypeTable
+  type={{
+    id: {
+      description: 'Unique session ID (UUID).',
+      type: 'string',
+      required: true,
+    },
+    userId: {
+      description: 'Foreign key to the user.',
+      type: 'string',
+      required: true,
+    },
+    familyId: {
+      description: 'Shared across all rotations of a refresh token chain.',
+      type: 'string',
+      required: true,
+    },
+    refreshTokenHash: {
+      description: 'SHA-256 hash of the current refresh token.',
+      type: 'string',
+      required: true,
+    },
+    expiresAt: {
+      description: 'Expiration timestamp of the refresh token.',
+      type: 'Date',
+      required: true,
+    },
+    createdAt: {
+      description: 'Timestamp when the session was created.',
+      type: 'Date',
+      required: false,
+    },
+    revokedAt: {
+      description: 'Timestamp when the session was revoked (null if active).',
+      type: 'Date | null',
+      required: false,
+    },
+    ip: {
+      description: 'IP address of the client that created the session.',
+      type: 'string | null',
+      required: false,
+    },
+    userAgent: {
+      description: 'User-Agent header of the client that created the session.',
+      type: 'string | null',
+      required: false,
+    },
+  }}
+/>
+
+<Callout type="info">
+  The `rotateRefresh` method must be atomic. Use a database transaction or an UPDATE statement that modifies both `refreshTokenHash` and `expiresAt` in a single query.
+</Callout>
+
+## AuditLogAdapter
+
+<TypeTable
+  type={{
+    record: {
+      description: 'Persist an audit event. Must be awaited by every flow.',
+      type: '(event: AdapterAuditEvent) => Promise<void>',
+      required: true,
+    },
+    list: {
+      description: 'Query audit events by user, type, or timestamp.',
+      type: '(filter: { userId?: string; type?: string; limit?: number }) => Promise<AdapterAuditEvent[]>',
+      required: false,
+    },
+  }}
+/>
+
+The `record` method is mandatory. The `list` method is optional and used for displaying audit logs in a dashboard.
+
+## AccountAdapter
+
+Required only if you use SSO (OAuth2 or OIDC):
+
+<TypeTable
+  type={{
+    linkAccount: {
+      description: 'Link an OAuth/OIDC account to a user.',
+      type: '(data: Omit<AdapterAccount, "id">) => Promise<AdapterAccount>',
+      required: true,
+    },
+    getAccountByProvider: {
+      description: 'Fetch an account by provider + providerAccountId.',
+      type: '(provider: string, providerAccountId: string) => Promise<AdapterAccount | null>',
+      required: true,
+    },
+    getByProviderEmail: {
+      description: 'Fetch an account by provider + email (for auto-linking).',
+      type: '(provider: string, email: string) => Promise<AdapterAccount | null>',
+      required: false,
+    },
+    listByUser: {
+      description: 'List all linked accounts for a user.',
+      type: '(userId: string) => Promise<AdapterAccount[]>',
+      required: true,
+    },
+    unlinkAccount: {
+      description: 'Unlink an account by ID.',
+      type: '(id: string) => Promise<void>',
+      required: true,
+    },
+  }}
+/>
+
+## VerificationTokenAdapter
+
+Required for password reset and email verification flows:
+
+<TypeTable
+  type={{
+    create: {
+      description: 'Insert a new verification token.',
+      type: '(data: AdapterVerificationToken) => Promise<AdapterVerificationToken>',
+      required: true,
+    },
+    consume: {
+      description: 'Look up a token by identifier + token and delete it atomically.',
+      type: '(identifier: string, token: string) => Promise<AdapterVerificationToken | null>',
+      required: true,
+    },
+    purgeExpired: {
+      description: 'Delete all expired tokens (maintenance task).',
+      type: '() => Promise<number>',
+      required: false,
+    },
+    listByIdentifierPrefix: {
+      description: 'List all tokens whose identifier starts with a prefix.',
+      type: '(prefix: string) => Promise<AdapterVerificationToken[]>',
+      required: false,
+    },
+    deleteByIdentifier: {
+      description: 'Delete all tokens with a given identifier.',
+      type: '(identifier: string) => Promise<number>',
+      required: false,
+    },
+  }}
+/>
+
+## TransactionAdapter
+
+Optional. When provided, holeauth wraps multi-step writes in a transaction:
+
+<TypeTable
+  type={{
+    run: {
+      description: 'Execute a function inside a database transaction.',
+      type: '<T>(fn: () => Promise<T>) => Promise<T>',
+      required: true,
+    },
+  }}
+/>
+
+Implementations should propagate the transaction context to all adapter method calls inside `fn`. Use async-local-storage or return a fresh adapter bundle bound to the transaction.
+
+## Drizzle Adapter
+
+The `@holeauth/adapter-drizzle` package provides reference implementations for Postgres, MySQL, and SQLite. It exports factory functions under subpath exports:
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+});
+```
+
+See the [Drizzle Adapter](/packages/adapter-drizzle) page for details on how to generate schema and wire the adapter.
+
+## Headless Implementation
+
+If you use a different ORM (Prisma, Kysely, TypeORM), implement the adapter interfaces yourself:
+
+```ts title="lib/adapters/user.ts"
+import type { UserAdapter, AdapterUser } from '@holeauth/core/adapters';
+import { prisma } from '@/db';
+
+export const userAdapter: UserAdapter = {
+  async getUserById(id: string) {
+    return await prisma.user.findUnique({ where: { id } });
+  },
+  async getUserByEmail(email: string) {
+    return await prisma.user.findUnique({ where: { email } });
+  },
+  async createUser(data: Omit<AdapterUser, 'id'>) {
+    return await prisma.user.create({ data });
+  },
+  async updateUser(id: string, patch: Partial<AdapterUser>) {
+    return await prisma.user.update({ where: { id }, data: patch });
+  },
+  async deleteUser(id: string) {
+    await prisma.user.delete({ where: { id } });
+  },
+};
+```
+
+Then wire it into the config:
+
+```ts title="lib/auth.ts"
+export const auth = defineHoleauth({
+  adapters: {
+    user: userAdapter,
+    session: sessionAdapter,
+    auditLog: auditLogAdapter,
+  },
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+});
+```
+
+## Next
+
+<Cards>
+  <Card
+    title="Getting Started"
+    description="Wire holeauth into a Next.js app in under five minutes."
+    href="/getting-started"
+  />
+</Cards>

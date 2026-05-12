@@ -1,0 +1,58 @@
+/*
+ * docs-theme.css — fumadocs-ui dark-mode overrides + docs-only styles.
+ *
+ * Must be imported AFTER fumadocs-ui/style.css (within the (docs) layout)
+ * so these non-layered rules correctly win the cascade.
+ */
+
+/* ── Fumadocs dark-mode overrides — match landing page palette ────────────── */
+.dark {
+  /* Backgrounds */
+  --color-fd-background: #0a0a0b;
+  --color-fd-foreground: #ededed;
+  --color-fd-muted: #111114;
+  --color-fd-muted-foreground: #b8b8c0;
+  --color-fd-popover: #15151a;
+  --color-fd-popover-foreground: #ededed;
+  --color-fd-card: #111114;
+  --color-fd-card-foreground: #ededed;
+  /* Borders — thin, no opacity gimmick, exactly like the landing navbar border */
+  --color-fd-border: rgba(255, 255, 255, 0.06);
+  /* Primary = white-ish for active/selected states */
+  --color-fd-primary: #ededed;
+  --color-fd-primary-foreground: #0a0a0b;
+  --color-fd-secondary: #15151a;
+  --color-fd-secondary-foreground: #ededed;
+  /* Accent = subtle hover fill (same whitespace feel as landing) */
+  --color-fd-accent: rgba(255, 255, 255, 0.05);
+  --color-fd-accent-foreground: #ededed;
+  --color-fd-ring: rgba(255, 255, 255, 0.15);
+  --color-fd-overlay: rgba(0, 0, 0, 0.45);
+}
+
+/* Sidebar uses a slightly lighter muted for contrast (keep fumadocs default ratio) */
+.dark #nd-sidebar {
+  --color-fd-muted: #111114;
+  --color-fd-secondary: #15151a;
+  --color-fd-muted-foreground: #b8b8c0;
+  background: #0a0a0b;
+}
+
+/* ── Strip shadows, keep minimal border-radius ────────────────────────────── */
+.dark #nd-sidebar *,
+.dark [data-radix-popper-content-wrapper] *,
+.dark [data-slot='card'] {
+  box-shadow: none !important;
+}
+
+/* Docs body — anti-aliasing to match landing page feel */
+.dark body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Sidebar footer links hover state */
+.sidebar-footer-link:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ededed;
+}

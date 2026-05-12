@@ -1,0 +1,431 @@
+---
+title: Passkeys
+description: Add WebAuthn / FIDO2 passwordless authentication with biometric and hardware security keys to your Express application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Passkeys
+
+This guide walks you through adding WebAuthn-based passkey authentication to your Express application. Users will register a passkey using their device biometrics or a hardware security key, then sign in without a password.
+
+<Callout type="info">
+  This guide assumes you have completed the [core Express setup](/getting-started/express).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/server
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/server
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/server
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-passkey @holeauth/passkey-drizzle @simplewebauthn/server
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+  If you are using a headless adapter, skip `@holeauth/passkey-drizzle` and implement the `PasskeyAdapter` interface yourself. See [`@holeauth/plugin-passkey`](/packages/plugin-passkey#PasskeyAdapter) for the contract. Your client must also install `@simplewebauthn/browser` to handle WebAuthn ceremonies.
+</Callout>
+</Step>
+
+<Step>
+### Extend your database schema
+
+Import the passkey table factory and add it to your schema:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,13-14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const passkeys = createPasskeyTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,13-14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const passkeys = createPasskeyTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,13-14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const passkeys = createPasskeyTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` to apply the migration.
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts" {4,5,9,23-29}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '../db/client';
+import { holeauth, passkeys } from '../db/schema';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/pg';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeys.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpID: process.env.PASSKEY_RP_ID ?? 'localhost',
+      rpName: 'MyApp',
+      rpOrigin: process.env.APP_URL ?? 'http://localhost:3000',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts" {4,5,9,23-29}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '../db/client';
+import { holeauth, passkeys } from '../db/schema';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/mysql';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeys.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpID: process.env.PASSKEY_RP_ID ?? 'localhost',
+      rpName: 'MyApp',
+      rpOrigin: process.env.APP_URL ?? 'http://localhost:3000',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts" {4,5,9,23-29}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '../db/client';
+import { holeauth, passkeys } from '../db/schema';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/sqlite';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeys.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpID: process.env.PASSKEY_RP_ID ?? 'localhost',
+      rpName: 'MyApp',
+      rpOrigin: process.env.APP_URL ?? 'http://localhost:3000',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'The adapter returned by `createPasskeyAdapter`. Handles persistence of passkey credentials.',
+      type: 'PasskeyAdapter',
+      required: true,
+    },
+    rpID: {
+      description: 'Relying Party ID. Must match the domain of your application. Use the bare domain (e.g. `example.com`) or `localhost` for development.',
+      type: 'string',
+      required: true,
+    },
+    rpName: {
+      description: 'Human-readable name shown to users during passkey registration (e.g. "MyApp").',
+      type: 'string',
+      required: true,
+    },
+    rpOrigin: {
+      description: 'The full origin of your application (e.g. `https://example.com`). Must include the protocol and match the request origin.',
+      type: 'string',
+      required: true,
+    },
+  }}
+/>
+
+<Callout type="warn">
+  `rpID` must match the domain of `rpOrigin`. For `https://example.com`, use `rpID: 'example.com'`. For `http://localhost:3000`, use `rpID: 'localhost'`. Mismatches will cause WebAuthn ceremonies to fail.
+</Callout>
+</Step>
+
+<Step>
+### Available routes
+
+The passkey plugin registers the following routes on the holeauth router:
+
+<TypeTable
+  type={{
+    'POST /api/auth/passkey/register/options': {
+      description: 'Generate WebAuthn registration options for the authenticated user. Returns `PublicKeyCredentialCreationOptions`. Requires authentication and CSRF token.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/passkey/register/verify': {
+      description: 'Verify the WebAuthn registration response and store the credential. Requires authentication and CSRF token. Body: `{ response: RegistrationResponseJSON, deviceName?: string }`.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/passkey/login/options': {
+      description: 'Generate WebAuthn authentication options. Returns `PublicKeyCredentialRequestOptions`. Does not require authentication.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/passkey/login/verify': {
+      description: 'Verify the WebAuthn authentication response and issue session tokens. Body: `{ response: AuthenticationResponseJSON }`.',
+      type: 'endpoint',
+    },
+    'GET /api/auth/passkey/list': {
+      description: 'List all passkeys registered for the authenticated user. Requires authentication.',
+      type: 'endpoint',
+    },
+    'POST /api/auth/passkey/delete': {
+      description: 'Delete a passkey by credential ID. Requires authentication and CSRF token. Body: `{ credentialId: string }`.',
+      type: 'endpoint',
+    },
+  }}
+/>
+</Step>
+
+<Step>
+### Client integration
+
+Your client must use the WebAuthn JavaScript APIs to perform passkey ceremonies. A typical registration flow:
+
+1. User signs in and navigates to account settings.
+2. Client calls `POST /api/auth/passkey/register/options` (send CSRF token).
+3. Server returns `{ options: PublicKeyCredentialCreationOptions }`.
+4. Client calls `navigator.credentials.create({ publicKey: options })`.
+5. Browser prompts for biometric or security key.
+6. Client calls `POST /api/auth/passkey/register/verify` with `{ response: credential, deviceName: 'My Phone' }`.
+7. Server stores the credential.
+
+A typical login flow:
+
+1. Client calls `POST /api/auth/passkey/login/options`.
+2. Server returns `{ options: PublicKeyCredentialRequestOptions }`.
+3. Client calls `navigator.credentials.get({ publicKey: options })`.
+4. Browser prompts for biometric or security key.
+5. Client calls `POST /api/auth/passkey/login/verify` with `{ response: credential }`.
+6. Server validates the signature and returns session tokens.
+
+<Callout type="info">
+  The `@simplewebauthn/browser` package provides `startRegistration` and `startAuthentication` helpers that handle the WebAuthn API calls and response serialization. Install it in your client: `pnpm add @simplewebauthn/browser`.
+</Callout>
+</Step>
+</Steps>
+
+## How it works
+
+Passkeys use public-key cryptography. During registration:
+
+1. The server generates a random challenge and sends it to the client along with the RP ID and user identifier.
+2. The client calls `navigator.credentials.create()`, which prompts the user for biometric authentication or a security key.
+3. The authenticator generates a key pair. The private key stays on the device; the public key is sent to the server.
+4. The server stores the public key, credential ID, and device metadata.
+
+During login:
+
+1. The server generates a challenge and sends it to the client.
+2. The client calls `navigator.credentials.get()`, which prompts the user to authenticate.
+3. The authenticator signs the challenge with the private key and returns a signed assertion.
+4. The server verifies the signature using the stored public key.
+5. If valid, the server issues session tokens.
+
+See [WebAuthn Guide](https://webauthn.guide) for a detailed explanation of the WebAuthn protocol.
+
+## Configuration reference
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Adapter implementing the `PasskeyAdapter` interface. Handles persistence of passkey credentials.',
+      type: 'PasskeyAdapter',
+      required: true,
+    },
+    rpID: {
+      description: 'Relying Party ID. Must match the domain of your application. Use the bare domain (e.g. `example.com`) or `localhost`.',
+      type: 'string',
+      required: true,
+    },
+    rpName: {
+      description: 'Human-readable name shown to users during passkey registration (e.g. "MyApp").',
+      type: 'string',
+      required: true,
+    },
+    rpOrigin: {
+      description: 'The full origin of your application (e.g. `https://example.com`). Must include the protocol.',
+      type: 'string',
+      required: true,
+    },
+    userVerification: {
+      description: 'User verification requirement for WebAuthn ceremonies. `preferred` allows biometrics or PIN; `required` enforces user verification.',
+      type: '"preferred" | "required" | "discouraged"',
+      default: '"preferred"',
+    },
+    timeout: {
+      description: 'WebAuthn ceremony timeout in milliseconds.',
+      type: 'number',
+      default: '60000',
+    },
+  }}
+/>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="RBAC"
+    href="/getting-started/express/plugin-rbac"
+    description="Add role-based access control with permissions and groups."
+  />
+  <Card
+    title="Two-factor authentication"
+    href="/getting-started/express/plugin-2fa"
+    description="Add TOTP-based 2FA with recovery codes."
+  />
+  <Card
+    title="WebAuthn Guide"
+    href="https://webauthn.guide"
+    description="Interactive guide to the WebAuthn protocol."
+  />
+</Cards>

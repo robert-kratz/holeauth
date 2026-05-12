@@ -1,0 +1,49 @@
+---
+title: Single sign-on
+description: Run an OIDC provider or consume external identity providers for federated authentication.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Single sign-on
+
+holeauth supports SSO in two directions: you can **issue** tokens (become an Identity Provider) or **accept** tokens from external IDPs (act as a Relying Party / OAuth client).
+
+## Provider vs. Consumer
+
+| Role | Package | You control | Use when |
+| --- | --- | --- | --- |
+| **Provider** | `@holeauth/plugin-idp` | Token issuance, client app registry, consent, JWKS, revocation | You want other apps to authenticate against your holeauth instance. You expose `/.well-known/openid-configuration`. |
+| **Consumer** | `@holeauth/core/sso` | Provider configuration (Google, GitHub, generic OIDC) | You want users to sign in via an external provider (Google, GitHub, Auth0, Keycloak, another holeauth instance). |
+
+These roles are not mutually exclusive. A single holeauth installation can simultaneously:
+- Run as an OIDC Provider for your own mobile app or third-party integrations.
+- Accept logins from Google or GitHub for end users who do not want a password.
+
+## Spec compliance
+
+**Provider** (`@holeauth/plugin-idp`):
+- OAuth 2.0 ([RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749)) — Authorization Code flow with PKCE
+- OpenID Connect Core 1.0 — discovery, ID token, userinfo
+- Token Revocation ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009))
+- RP-Initiated Logout
+
+**Consumer** (`@holeauth/core/sso`):
+- OAuth 2.0 client with PKCE
+- OIDC Relying Party
+- Five built-in providers plus generic OIDC support
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Run as an OIDC Provider"
+    href="/sso/provider"
+    description="Issue tokens, manage OAuth apps, expose discovery and JWKS endpoints"
+  />
+  <Card
+    title="Consume external providers"
+    href="/sso/consumer"
+    description="Sign users in with Google, GitHub, Discord, Microsoft, or any OIDC IDP"
+  />
+</Cards>

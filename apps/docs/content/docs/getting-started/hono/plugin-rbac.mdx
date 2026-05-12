@@ -1,0 +1,443 @@
+---
+title: Roles and permissions
+description: Add role-based access control with YAML configuration and wildcard permissions to your Hono application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Roles and permissions
+
+This guide walks you through adding role-based access control to your Hono application using `@holeauth/plugin-rbac` and `@holeauth/rbac-yaml`. You will define groups and permissions in a YAML file, assign users to groups, and enforce access control in your Hono handlers.
+
+<Callout type="info">
+  This guide assumes you have completed the [core Hono setup](/getting-started/hono).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+</Tabs>
+
+<Callout type="warn">
+  `@holeauth/rbac-yaml` uses Node.js `fs` APIs and is **not compatible** with edge runtimes like Cloudflare Workers. For edge deployments, define groups in TypeScript and pass them directly to the plugin. See [`@holeauth/plugin-rbac`](/packages/plugin-rbac) for examples.
+</Callout>
+
+<Callout type="info">
+  The RBAC plugin itself is edge-compatible. Only the YAML loader requires Node.js.
+</Callout>
+</Step>
+
+<Step>
+### Extend your database schema
+
+Import the RBAC table factory and add it to your schema:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,13-14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createRbacTables } from '@holeauth/rbac-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const rbacSchema = createRbacTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,13-14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createRbacTables } from '@holeauth/rbac-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const rbacSchema = createRbacTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,13-14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createRbacTables } from '@holeauth/rbac-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const rbacSchema = createRbacTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` to apply the migration.
+</Step>
+
+<Step>
+### Define roles and permissions
+
+Create a YAML file in your project root:
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  guest:
+    default: true
+    displayName: Guest
+    description: Default group for all users
+    priority: 0
+    permissions:
+      - posts.read
+
+  member:
+    displayName: Member
+    description: Registered members with basic access
+    priority: 10
+    inherits:
+      - guest
+    permissions:
+      - posts.create
+      - posts.edit.own
+
+  moderator:
+    displayName: Moderator
+    description: Moderators can edit and delete posts
+    priority: 50
+    inherits:
+      - member
+    permissions:
+      - posts.edit.*
+      - posts.delete.*
+
+  admin:
+    displayName: Administrator
+    description: Full access to all resources
+    priority: 100
+    permissions:
+      - '*'
+```
+
+Permission node syntax:
+
+- `posts.read` — exact match
+- `posts.*` — wildcard, matches `posts.create`, `posts.edit`, `posts.delete`, etc.
+- `!posts.delete` — negation, explicitly denies a permission
+- `*` — wildcard root, grants all permissions
+
+Groups with `inherits` inherit all permissions from their parent groups. The `effective` permission list (after inheritance resolution) is what the plugin evaluates at runtime.
+
+Exactly one group must have `default: true`. Users assigned no explicit groups receive the default group automatically.
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts" {5,6,7,10,11,26-30}
+import path from 'node:path';
+import { createHonoAuth } from '@holeauth/hono';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth, rbacSchema } from '@/db/schema';
+import { rbac } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const rbacYmlPath = path.join(process.cwd(), 'holeauth.rbac.yml');
+const rbacYaml = loadRbacYaml(rbacYmlPath, { watch: process.env.NODE_ENV !== 'production' });
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const rbacAdapter = createRbacAdapter({ db, tables: rbacSchema.tables });
+
+export const auth = createHonoAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    rbac({
+      adapter: rbacAdapter,
+      groups: rbacYaml.snapshot.groups,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts" {5,6,7,10,11,26-30}
+import path from 'node:path';
+import { createHonoAuth } from '@holeauth/hono';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '@/db/client';
+import { holeauth, rbacSchema } from '@/db/schema';
+import { rbac } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/mysql';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const rbacYmlPath = path.join(process.cwd(), 'holeauth.rbac.yml');
+const rbacYaml = loadRbacYaml(rbacYmlPath, { watch: process.env.NODE_ENV !== 'production' });
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const rbacAdapter = createRbacAdapter({ db, tables: rbacSchema.tables });
+
+export const auth = createHonoAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    rbac({
+      adapter: rbacAdapter,
+      groups: rbacYaml.snapshot.groups,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts" {5,6,7,10,11,26-30}
+import path from 'node:path';
+import { createHonoAuth } from '@holeauth/hono';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '@/db/client';
+import { holeauth, rbacSchema } from '@/db/schema';
+import { rbac } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/sqlite';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const rbacYmlPath = path.join(process.cwd(), 'holeauth.rbac.yml');
+const rbacYaml = loadRbacYaml(rbacYmlPath, { watch: process.env.NODE_ENV !== 'production' });
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const rbacAdapter = createRbacAdapter({ db, tables: rbacSchema.tables });
+
+export const auth = createHonoAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    rbac({
+      adapter: rbacAdapter,
+      groups: rbacYaml.snapshot.groups,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Adapter that persists group assignments.',
+      type: 'RbacAdapter',
+      required: true,
+    },
+    groups: {
+      description: 'Array of group definitions. Computed once at startup (or on reload).',
+      type: 'GroupDefinition[]',
+      required: true,
+    },
+  }}
+/>
+</Step>
+
+<Step>
+### New routes
+
+The plugin automatically registers the following routes under `/api/auth`:
+
+- `GET /api/auth/rbac/groups` — lists all groups with their effective permissions
+- `GET /api/auth/rbac/me` — returns the current user's groups and permissions
+- `POST /api/auth/rbac/assign` — assigns a user to one or more groups (admin only)
+- `POST /api/auth/rbac/unassign` — removes a user from one or more groups (admin only)
+
+See [`@holeauth/plugin-rbac`](/packages/plugin-rbac) for detailed request and response schemas.
+</Step>
+
+<Step>
+### Enforce permissions in handlers
+
+```ts title="index.ts"
+import { Hono } from 'hono';
+import { auth } from './lib/auth';
+import { getSession } from '@holeauth/hono';
+
+const app = new Hono();
+
+app.route('/api/auth', auth.app);
+
+app.delete('/api/posts/:id', async (c) => {
+  const session = await getSession(c, auth);
+  if (!session) return c.json({ error: 'Unauthorized' }, 401);
+
+  const postId = c.req.param('id');
+
+  const canDelete = await auth.rbac.can({
+    userId: session.user.id,
+    permissions: ['posts.delete.*'],
+  });
+
+  if (!canDelete) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  // delete the post...
+  return c.json({ ok: true });
+});
+
+export default app;
+```
+
+The `can` method returns `true` if the user has **all** requested permissions (implicit AND). Use `canAny` for OR semantics.
+</Step>
+</Steps>
+
+## Hot-reloading YAML definitions
+
+If you enabled `watch: true` in `loadRbacYaml`, the plugin will automatically reload the YAML file when it changes. You must wire up the reload callback:
+
+```ts title="lib/auth.ts"
+const rbacYaml = loadRbacYaml(rbacYmlPath, { watch: process.env.NODE_ENV !== 'production' });
+
+export const auth = createHonoAuth({
+  plugins: [
+    rbac({
+      adapter: rbacAdapter,
+      groups: rbacYaml.snapshot.groups,
+    }),
+  ],
+  // ... other config
+});
+
+rbacYaml.onReload((snapshot) => {
+  auth.rbac.reload(snapshot.groups);
+});
+```
+
+<Callout type="warn">
+  Hot-reloading is only supported in Node.js environments. Edge runtimes do not have filesystem watchers.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Sign in with Google and GitHub"
+    description="Add OAuth 2.0 / OpenID Connect social login."
+    href="/getting-started/hono/sso-consumer"
+  />
+  <Card
+    title="Become an OIDC provider"
+    description="Issue access tokens to other applications."
+    href="/getting-started/hono/sso-provider"
+  />
+  <Card
+    title="RBAC guide"
+    description="Deep dive into permission inheritance, wildcards, and negations."
+    href="/guides/rbac"
+  />
+</Cards>

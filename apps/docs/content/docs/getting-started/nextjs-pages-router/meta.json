@@ -1,0 +1,4 @@
+{
+  "title": "Next.js Pages Router",
+  "pages": ["index", "plugin-2fa", "plugin-passkey", "plugin-rbac", "sso-consumer", "sso-provider"]
+}

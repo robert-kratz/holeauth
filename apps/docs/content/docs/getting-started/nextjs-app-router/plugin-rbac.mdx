@@ -1,0 +1,526 @@
+---
+title: Roles and permissions
+description: Add role-based access control with YAML configuration and wildcard permissions to your Next.js App Router application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Roles and permissions
+
+This guide walks you through adding role-based access control to your Next.js App Router project using `@holeauth/plugin-rbac` and `@holeauth/rbac-yaml`. You will define groups and permissions in a YAML file, assign users to groups, and enforce access control in server components, route handlers, and client components.
+
+<Callout type="info">
+  This guide assumes you have completed the [core Next.js App Router setup](/getting-started/nextjs-app-router).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+  `@holeauth/rbac-yaml` is optional. If you prefer to define groups in TypeScript, you can skip it and pass a static array of `GroupDefinition` objects to the plugin.
+</Callout>
+</Step>
+
+<Step>
+### Extend your database schema
+
+Import the RBAC table factory and add it to your schema:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,13-14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createRbacTables } from '@holeauth/rbac-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const rbacSchema = createRbacTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,13-14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createRbacTables } from '@holeauth/rbac-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const rbacSchema = createRbacTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,13-14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createRbacTables } from '@holeauth/rbac-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const rbacSchema = createRbacTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` to apply the migration.
+</Step>
+
+<Step>
+### Define roles and permissions
+
+Create a YAML file in your project root:
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  guest:
+    default: true
+    displayName: Guest
+    description: Default group for all users
+    priority: 0
+    permissions:
+      - posts.read
+
+  member:
+    displayName: Member
+    description: Registered members with basic access
+    priority: 10
+    inherits:
+      - guest
+    permissions:
+      - posts.create
+      - posts.edit.own
+
+  moderator:
+    displayName: Moderator
+    description: Moderators can edit and delete posts
+    priority: 50
+    inherits:
+      - member
+    permissions:
+      - posts.edit.*
+      - posts.delete.*
+
+  admin:
+    displayName: Administrator
+    description: Full access to all resources
+    priority: 100
+    permissions:
+      - '*'
+```
+
+Permission node syntax:
+
+- `posts.read` — exact match
+- `posts.*` — wildcard, matches `posts.create`, `posts.edit`, `posts.delete`, etc.
+- `!posts.delete` — negation, explicitly denies a permission
+- `*` — wildcard root, grants all permissions
+
+Groups with `inherits` inherit all permissions from their parent groups. The `effective` permission list (after inheritance resolution) is what the plugin evaluates at runtime.
+
+Exactly one group must have `default: true`. Users assigned no explicit groups receive the default group automatically.
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts" {5,6,7,10,11,26-30}
+import path from 'node:path';
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth, rbacSchema } from '@/db/schema';
+import { rbac } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const rbacYmlPath = path.join(process.cwd(), 'holeauth.rbac.yml');
+const rbacYaml = loadRbacYaml(rbacYmlPath, { watch: process.env.NODE_ENV !== 'production' });
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const rbacAdapter = createRbacAdapter({ db, tables: rbacSchema.tables });
+
+export const auth = createAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    rbac({
+      adapter: rbacAdapter,
+      groups: rbacYaml.snapshot.groups,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+
+rbacYaml.onReload((snapshot) => auth.rbac.reload(snapshot.groups));
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts" {5,6,7,10,11,26-30}
+import path from 'node:path';
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '@/db/client';
+import { holeauth, rbacSchema } from '@/db/schema';
+import { rbac } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/mysql';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const rbacYmlPath = path.join(process.cwd(), 'holeauth.rbac.yml');
+const rbacYaml = loadRbacYaml(rbacYmlPath, { watch: process.env.NODE_ENV !== 'production' });
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const rbacAdapter = createRbacAdapter({ db, tables: rbacSchema.tables });
+
+export const auth = createAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    rbac({
+      adapter: rbacAdapter,
+      groups: rbacYaml.snapshot.groups,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+
+rbacYaml.onReload((snapshot) => auth.rbac.reload(snapshot.groups));
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts" {5,6,7,10,11,26-30}
+import path from 'node:path';
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '@/db/client';
+import { holeauth, rbacSchema } from '@/db/schema';
+import { rbac } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/sqlite';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const rbacYmlPath = path.join(process.cwd(), 'holeauth.rbac.yml');
+const rbacYaml = loadRbacYaml(rbacYmlPath, { watch: process.env.NODE_ENV !== 'production' });
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const rbacAdapter = createRbacAdapter({ db, tables: rbacSchema.tables });
+
+export const auth = createAuthHandler({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    rbac({
+      adapter: rbacAdapter,
+      groups: rbacYaml.snapshot.groups,
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+
+rbacYaml.onReload((snapshot) => auth.rbac.reload(snapshot.groups));
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Drizzle-backed RBAC adapter. Required.',
+      type: 'RbacAdapter',
+      required: true,
+    },
+    groups: {
+      description: 'Array of resolved group definitions (from YAML loader or inline TypeScript).',
+      type: 'GroupDefinition[]',
+      required: true,
+    },
+    cacheTtlMs: {
+      description: 'Time-to-live for in-memory permission cache. Set to 0 to disable caching.',
+      type: 'number',
+      default: '30000',
+    },
+    cache: {
+      description: 'Custom cache adapter. Defaults to an in-memory LRU cache.',
+      type: 'RbacCacheAdapter',
+    },
+  }}
+/>
+
+The `rbacYaml.onReload()` callback allows hot-reloading in development: when you edit `holeauth.rbac.yml`, the plugin reloads the group definitions without restarting the server.
+</Step>
+
+<Step>
+### Protect a server component
+
+Use `validateCurrentRequest` with permission or group requirements:
+
+```tsx title="app/admin/page.tsx"
+import { validateCurrentRequest } from '@holeauth/nextjs-app-router/server';
+import { auth } from '@/lib/auth';
+
+export default async function AdminPage() {
+  const { session, user, permissions } = await validateCurrentRequest(auth, {
+    redirectTo: '/login',
+    loadUser: true,
+    permissions: 'admin.access',
+  });
+
+  return (
+    <div>
+      <h1>Admin Dashboard</h1>
+      <p>Welcome, {user?.email}</p>
+      <p>Your permissions: {permissions?.join(', ')}</p>
+    </div>
+  );
+}
+```
+
+To require multiple permissions (AND), pass an array:
+
+```tsx
+await validateCurrentRequest(auth, {
+  permissions: ['posts.edit', 'posts.delete'],
+  redirectTo: '/403',
+});
+```
+
+To require any-of permissions (OR), use `anyPermission`:
+
+```tsx
+await validateCurrentRequest(auth, {
+  anyPermission: ['posts.edit', 'posts.delete'],
+  redirectTo: '/403',
+});
+```
+
+To require group membership:
+
+```tsx
+await validateCurrentRequest(auth, {
+  groups: ['admin', 'moderator'],
+  redirectTo: '/403',
+});
+```
+</Step>
+
+<Step>
+### Protect a route handler
+
+```ts title="app/api/posts/[id]/delete/route.ts"
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await auth.getSession();
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const canDelete = await auth.rbac.can(session.userId, 'posts.delete');
+  if (!canDelete) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  // Delete post logic here
+  return NextResponse.json({ success: true });
+}
+```
+</Step>
+
+<Step>
+### Use RBAC in client components
+
+The `@holeauth/react` package provides a `useRbac` hook:
+
+```tsx title="app/components/post-actions.tsx"
+'use client';
+import { useRbac } from '@holeauth/react';
+
+export function PostActions({ postId }: { postId: string }) {
+  const { can, loading } = useRbac();
+
+  if (loading) return <p>Loading permissions...</p>;
+
+  return (
+    <div>
+      {can('posts.edit') && <button>Edit</button>}
+      {can('posts.delete') && <button>Delete</button>}
+    </div>
+  );
+}
+```
+
+The hook lazy-loads the RBAC snapshot from `/api/auth/rbac/me` on first call and caches it for the session.
+</Step>
+
+<Step>
+### Assign users to groups
+
+Use the adapter directly or expose an admin API:
+
+```ts title="app/actions/rbac.ts"
+'use server';
+import { auth } from '@/lib/auth';
+
+export async function assignUserToGroup(userId: string, groupId: string) {
+  const session = await auth.getSession();
+  if (!session) throw new Error('Unauthorized');
+
+  const isAdmin = await auth.rbac.can(session.userId, 'admin.users.edit');
+  if (!isAdmin) throw new Error('Forbidden');
+
+  await auth.rbac.assignGroups(userId, [groupId]);
+}
+
+export async function removeUserFromGroup(userId: string, groupId: string) {
+  const session = await auth.getSession();
+  if (!session) throw new Error('Unauthorized');
+
+  const isAdmin = await auth.rbac.can(session.userId, 'admin.users.edit');
+  if (!isAdmin) throw new Error('Forbidden');
+
+  await auth.rbac.removeGroups(userId, [groupId]);
+}
+```
+</Step>
+</Steps>
+
+## Wildcard permissions and groups
+
+- `posts.*` matches `posts.create`, `posts.edit.own`, `posts.delete`, etc.
+- `*` matches all permissions.
+- `!posts.delete` negates a permission. If both `posts.*` and `!posts.delete` are in the effective list, `!posts.delete` wins and the user cannot delete posts.
+
+Groups can inherit from other groups via the `inherits` field. The plugin resolves inheritance before evaluating permissions. Circular inheritance is detected and throws an error at load time.
+
+## Hot-reloading RBAC YAML in development
+
+The `loadRbacYaml` function watches the YAML file when `watch: true`. On change, it re-parses and re-resolves inheritance, then fires the `onReload` callback. Your `auth.rbac.reload(groups)` call primes the plugin cache with the new definitions.
+
+<Callout type="warn">
+  Disable watching in production to avoid filesystem overhead. Set `watch: process.env.NODE_ENV !== 'production'`.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Sign in with Google, GitHub, OIDC"
+    href="/getting-started/nextjs-app-router/sso-consumer"
+    description="Add OAuth 2.0 / OpenID Connect as a Relying Party."
+  />
+  <Card
+    title="Become an OIDC provider"
+    href="/getting-started/nextjs-app-router/sso-provider"
+    description="Issue access tokens to other applications."
+  />
+</Cards>

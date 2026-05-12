@@ -1,0 +1,68 @@
+---
+title: OIDC Provider overview
+description: Turn holeauth into an OpenID Connect and OAuth 2.0 authorization server that issues tokens to other applications.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# OIDC Provider overview
+
+`@holeauth/plugin-idp` transforms your holeauth instance into a full-fledged **OpenID Connect and OAuth 2.0 Identity Provider**. Other applications — your own mobile app, a partner SaaS, a serverless function — can authenticate users against your holeauth deployment via standard OIDC flows.
+
+## What you get
+
+- **Authorization Code flow with PKCE** for public and confidential clients
+- **OIDC Discovery** (`/.well-known/openid-configuration`)
+- **JWKS endpoint** with automatic key rotation
+- **Refresh token rotation** with family-revoke on reuse (mirroring holeauth core)
+- **Token revocation** ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009))
+- **RP-initiated logout** (`/oauth2/end-session`)
+- **Team-based OAuth app ownership** with owner/developer roles
+- **Consent screen** with remembered decisions per user × app × scope set
+- **Rate limiting** on the token endpoint to defend against brute force
+
+## Spec compliance
+
+- [RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749) — OAuth 2.0 Authorization Framework
+- [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636) — Proof Key for Code Exchange (PKCE)
+- [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009) — Token Revocation
+- [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
+- [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html)
+
+## OIDC endpoints
+
+All endpoints are mounted relative to the `issuer` URL you configure. For example, if `issuer = "https://auth.example.com"`, the plugin exposes:
+
+| Endpoint | Path | Method | Purpose |
+| --- | --- | --- | --- |
+| Discovery | `/.well-known/openid-configuration` | GET | OIDC metadata document |
+| JWKS | `/oauth2/jwks` | GET | JSON Web Key Set (public keys) |
+| Authorization | `/oauth2/authorize` | GET | Initiate authorization code flow |
+| Consent | `/oauth2/authorize/consent` | POST | Submit user consent decision |
+| Token | `/oauth2/token` | POST | Exchange code or refresh token |
+| UserInfo | `/oauth2/userinfo` | GET | Fetch user claims |
+| Revocation | `/oauth2/revoke` | POST | Revoke refresh token ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)) |
+| End session | `/oauth2/end-session` | POST | RP-initiated logout |
+
+<Callout type="info">
+  The plugin registers these routes automatically when wired into `defineHoleauth`. You do not need to create Next.js route handlers or Express routes manually.
+</Callout>
+
+## Token signing
+
+Access tokens and ID tokens are signed with **RS256** (or the algorithm you configure). The plugin manages its own signing keys — distinct from holeauth's session JWT secret — and exposes the public keys via `/oauth2/jwks`. Refresh tokens are **opaque** (random 48-byte tokens stored as SHA-256 hashes) and support family-based revocation on reuse, matching holeauth core's session refresh behavior.
+
+<Callout type="warn">
+  Access token secrets are stored in the IdP adapter (via `@holeauth/idp-drizzle`), not in holeauth core's user table. Rotate keys regularly using the `keys.rotate()` API.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Provider setup"
+    href="/sso/provider/setup"
+    description="Install, configure, and register your first OAuth app"
+  />
+</Cards>

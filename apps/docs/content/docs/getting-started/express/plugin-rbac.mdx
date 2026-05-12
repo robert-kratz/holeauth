@@ -1,0 +1,456 @@
+---
+title: Role-based access control
+description: Add RBAC with groups, permissions, and YAML-based role definitions to your Express application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Role-based access control
+
+This guide walks you through adding role-based access control to your Express application using `@holeauth/plugin-rbac`. You will define roles, groups, and permissions in a YAML file, then enforce them in your route handlers.
+
+<Callout type="info">
+  This guide assumes you have completed the [core Express setup](/getting-started/express).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-rbac @holeauth/rbac-drizzle @holeauth/rbac-yaml
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+  If you are using a headless adapter, skip `@holeauth/rbac-drizzle` and implement the `RbacAdapter` interface yourself. See [`@holeauth/plugin-rbac`](/packages/plugin-rbac#RbacAdapter) for the contract. You can skip `@holeauth/rbac-yaml` if you prefer to define roles programmatically.
+</Callout>
+</Step>
+
+<Step>
+### Extend your database schema
+
+Import the RBAC table factory and add it to your schema:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,13-14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createRbacTables } from '@holeauth/rbac-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const rbac = createRbacTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,13-14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createRbacTables } from '@holeauth/rbac-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const rbac = createRbacTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,13-14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createRbacTables } from '@holeauth/rbac-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const rbac = createRbacTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` to apply the migration.
+</Step>
+
+<Step>
+### Define roles in YAML
+
+Create a YAML file defining your roles, groups, and permissions:
+
+```yaml title="holeauth.rbac.yml"
+groups:
+  admin:
+    name: Administrators
+    description: Full system access
+    permissions:
+      - "*"
+  
+  editor:
+    name: Editors
+    description: Can create and edit content
+    permissions:
+      - "content:read"
+      - "content:create"
+      - "content:update"
+      - "content:publish"
+  
+  viewer:
+    name: Viewers
+    description: Read-only access
+    permissions:
+      - "content:read"
+
+roles:
+  super_admin:
+    name: Super Admin
+    groups:
+      - admin
+  
+  content_manager:
+    name: Content Manager
+    groups:
+      - editor
+    permissions:
+      - "users:read"
+  
+  guest:
+    name: Guest
+    groups:
+      - viewer
+```
+
+<Callout type="info">
+  The YAML schema supports permission negation (`!permission:name`), group inheritance, and wildcard permissions (`resource:*` or `*`). See [`@holeauth/rbac-yaml`](/packages/rbac-yaml) for the full syntax.
+</Callout>
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts" {4-6,10,24-28}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '../db/client';
+import { holeauth, rbac } from '../db/schema';
+import { rbac as rbacPlugin } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/pg';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const rbacAdapter = createRbacAdapter({ db, tables: rbac.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    rbacPlugin({
+      adapter: rbacAdapter,
+      config: loadRbacYaml('./holeauth.rbac.yml'),
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts" {4-6,10,24-28}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '../db/client';
+import { holeauth, rbac } from '../db/schema';
+import { rbac as rbacPlugin } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/mysql';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const rbacAdapter = createRbacAdapter({ db, tables: rbac.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    rbacPlugin({
+      adapter: rbacAdapter,
+      config: loadRbacYaml('./holeauth.rbac.yml'),
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts" {4-6,10,24-28}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '../db/client';
+import { holeauth, rbac } from '../db/schema';
+import { rbac as rbacPlugin } from '@holeauth/plugin-rbac';
+import { createRbacAdapter } from '@holeauth/rbac-drizzle/sqlite';
+import { loadRbacYaml } from '@holeauth/rbac-yaml';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const rbacAdapter = createRbacAdapter({ db, tables: rbac.tables });
+
+export const auth = createExpressAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    rbacPlugin({
+      adapter: rbacAdapter,
+      config: loadRbacYaml('./holeauth.rbac.yml'),
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'The adapter returned by `createRbacAdapter`. Handles persistence of user-role assignments.',
+      type: 'RbacAdapter',
+      required: true,
+    },
+    config: {
+      description: 'The RBAC configuration loaded from YAML via `loadRbacYaml`, or a plain object defining groups and roles.',
+      type: 'RbacConfig',
+      required: true,
+    },
+  }}
+/>
+</Step>
+
+<Step>
+### Enforce permissions in routes
+
+Use the RBAC API to check permissions inside your route handlers:
+
+```ts title="routes/content.ts"
+import type { Request, Response } from 'express';
+import { getSession } from '@holeauth/express';
+import { auth } from '../lib/auth';
+
+export async function createPost(req: Request, res: Response) {
+  const session = await getSession(req, auth);
+  
+  if (!session) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  // Check if the user has the 'content:create' permission
+  const canCreate = await auth.can(session.userId, 'content:create');
+  
+  if (!canCreate) {
+    return res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+  }
+  
+  // Create the post...
+  return res.json({ ok: true, postId: 'new-post-id' });
+}
+
+export async function deletePost(req: Request, res: Response) {
+  const session = await getSession(req, auth);
+  
+  if (!session) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  // Check if the user has ALL of these permissions
+  const canDelete = await auth.canAll(session.userId, ['content:delete', 'content:read']);
+  
+  if (!canDelete) {
+    return res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+  }
+  
+  // Delete the post...
+  return res.json({ ok: true });
+}
+
+export async function manageUsers(req: Request, res: Response) {
+  const session = await getSession(req, auth);
+  
+  if (!session) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  // Check if the user has ANY of these permissions
+  const canManage = await auth.canAny(session.userId, ['users:manage', '*']);
+  
+  if (!canManage) {
+    return res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+  }
+  
+  // Manage users...
+  return res.json({ ok: true });
+}
+```
+
+<Callout type="info">
+  The `auth` object returned by `createExpressAuth` includes the RBAC API when the plugin is registered. Use `auth.can(userId, permission)`, `auth.canAll(userId, permissions[])`, or `auth.canAny(userId, permissions[])` to check permissions.
+</Callout>
+</Step>
+</Steps>
+
+## How it works
+
+The RBAC plugin:
+
+1. Loads the role and group definitions from YAML (or a plain object) at startup.
+2. Stores user-role assignments in the database via the `RbacAdapter`.
+3. At runtime, resolves a user effective permissions by:
+   - Looking up the user assigned roles in the database.
+   - Expanding each role into its groups and direct permissions.
+   - Expanding each group into its permissions.
+   - Applying negations (`!permission:name`).
+   - Returning the final set of allowed permissions.
+4. The `can` / `canAll` / `canAny` helpers match the requested permission(s) against the user effective permissions, supporting wildcards (`resource:*` or `*`).
+
+See [RBAC Concepts](/concepts/rbac) for details on permission resolution order and wildcard matching.
+
+## Configuration reference
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Adapter implementing the `RbacAdapter` interface. Handles persistence of user-role assignments.',
+      type: 'RbacAdapter',
+      required: true,
+    },
+    config: {
+      description: 'The RBAC configuration object. Use `loadRbacYaml(path)` to load from a YAML file, or define inline as `{ groups: {...}, roles: {...} }`.',
+      type: 'RbacConfig',
+      required: true,
+    },
+    reloadIntervalMs: {
+      description: 'Interval in milliseconds to reload the YAML file at runtime. Useful for hot-reloading role changes in development. Set to `0` to disable.',
+      type: 'number',
+      default: '0',
+    },
+  }}
+/>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="SSO Consumer"
+    href="/getting-started/express/sso-consumer"
+    description="Sign in with Google, GitHub, or any OIDC provider."
+  />
+  <Card
+    title="RBAC YAML"
+    href="/packages/rbac-yaml"
+    description="Full YAML schema reference for groups, roles, and permissions."
+  />
+  <Card
+    title="RBAC Concepts"
+    href="/concepts/rbac"
+    description="Learn how permission resolution and wildcard matching work."
+  />
+</Cards>

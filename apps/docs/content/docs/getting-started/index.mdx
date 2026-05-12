@@ -1,0 +1,44 @@
+---
+title: Getting started
+description: Choose your framework and follow the step-by-step guide to integrate holeauth into your application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Getting started
+
+Holeauth provides first-class integrations for multiple frameworks. Each guide walks you through setting up the core authentication system, then adding optional features like two-factor authentication, passkeys, role-based access control, and SSO.
+
+## Choose your framework
+
+<Cards>
+  <Card
+    title="Next.js App Router"
+    href="/getting-started/nextjs-app-router"
+    description="Full-featured auth with React Server Components and server actions."
+  />
+  <Card
+    title="Next.js Pages Router"
+    href="/getting-started/nextjs-pages-router"
+    description="Traditional Next.js pages with API routes and getServerSideProps."
+  />
+  <Card
+    title="Express"
+    href="/getting-started/express"
+    description="Node.js web framework with middleware-based request handling."
+  />
+  <Card
+    title="Hono"
+    href="/getting-started/hono"
+    description="Ultrafast edge-native web framework for Cloudflare Workers and Deno."
+  />
+</Cards>
+
+## Database adapters
+
+<Callout type="info">
+  Drizzle ORM is the default and recommended adapter. It supports Postgres, MySQL, and SQLite with full feature parity. If you need a different database or want complete control over data storage, you can implement the headless adapter interface described in [Adapters](/concepts/adapters).
+</Callout>
+
+Every framework guide offers tabs for Postgres, MySQL, SQLite, and Headless options so you can choose the adapter that fits your infrastructure.

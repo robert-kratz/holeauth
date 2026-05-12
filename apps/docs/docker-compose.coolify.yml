@@ -1,0 +1,28 @@
+services:
+  docs:
+    build:
+      # Build context must be the monorepo root so pnpm can resolve workspace packages.
+      context: ../..
+      dockerfile: apps/docs/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      PORT: "3001"
+      HOSTNAME: "0.0.0.0"
+      # Absolute URL of the marketing/landing site. Used by the docs sidebar
+      # "Home" link and brand wordmark to navigate back to the landing host.
+      NEXT_PUBLIC_LANDING_URL: "${NEXT_PUBLIC_LANDING_URL:-https://${SERVICE_FQDN_LANDING_3000:-holeauth.dev}}"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.docs.rule=Host(`${SERVICE_FQDN_DOCS_3001}`)
+      - traefik.http.routers.docs.entrypoints=https
+      - traefik.http.routers.docs.tls=true
+      - traefik.http.routers.docs.tls.certresolver=letsencrypt
+      - traefik.http.services.docs.loadbalancer.server.port=3001
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/docs/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

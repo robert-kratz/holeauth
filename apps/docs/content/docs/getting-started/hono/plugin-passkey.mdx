@@ -1,0 +1,350 @@
+---
+title: Passkeys
+description: Add WebAuthn passkey authentication with biometric login to your Hono application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Passkeys
+
+This guide walks you through adding WebAuthn passkey authentication to your Hono application. Users will register a passkey using their device's biometric sensor or security key, then sign in without a password. Passkeys are the most secure and user-friendly authentication method available today.
+
+<Callout type="info">
+  This guide assumes you have completed the [core Hono setup](/getting-started/hono).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-passkey @holeauth/passkey-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-passkey @holeauth/passkey-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-passkey @holeauth/passkey-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-passkey @holeauth/passkey-drizzle
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+  If you are using a headless adapter, skip `@holeauth/passkey-drizzle` and implement the `PasskeyAdapter` interface yourself. See [`@holeauth/plugin-passkey`](/packages/plugin-passkey#PasskeyAdapter) for the contract.
+</Callout>
+</Step>
+
+<Step>
+### Extend your database schema
+
+Import the passkey table factory and add it to your schema:
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,13-14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const passkeySchema = createPasskeyTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,13-14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const passkeySchema = createPasskeyTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,13-14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createPasskeyTables } from '@holeauth/passkey-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const passkeySchema = createPasskeyTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push` to apply the migration.
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="lib/auth.ts" {4,5,9,23-27}
+import { createHonoAuth } from '@holeauth/hono';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from '@/db/client';
+import { holeauth, passkeySchema } from '@/db/schema';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/pg';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeySchema.tables });
+
+export const auth = createHonoAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpName: 'MyApp',
+      rpId: process.env.APP_URL?.replace(/^https?:\/\//, '') ?? 'localhost',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="lib/auth.ts" {4,5,9,23-27}
+import { createHonoAuth } from '@holeauth/hono';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/mysql';
+import { db } from '@/db/client';
+import { holeauth, passkeySchema } from '@/db/schema';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/mysql';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeySchema.tables });
+
+export const auth = createHonoAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpName: 'MyApp',
+      rpId: process.env.APP_URL?.replace(/^https?:\/\//, '') ?? 'localhost',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="lib/auth.ts" {4,5,9,23-27}
+import { createHonoAuth } from '@holeauth/hono';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/sqlite';
+import { db } from '@/db/client';
+import { holeauth, passkeySchema } from '@/db/schema';
+import { passkey } from '@holeauth/plugin-passkey';
+import { createPasskeyAdapter } from '@holeauth/passkey-drizzle/sqlite';
+
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const passkeyAdapter = createPasskeyAdapter({ db, tables: passkeySchema.tables });
+
+export const auth = createHonoAuth({
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  plugins: [
+    passkey({
+      adapter: passkeyAdapter,
+      rpName: 'MyApp',
+      rpId: process.env.APP_URL?.replace(/^https?:\/\//, '') ?? 'localhost',
+    }),
+  ],
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  registration: {
+    selfServe: true,
+    inviteTtlSeconds: 7 * 24 * 60 * 60,
+    inviteUrl: ({ token }) =>
+      `${process.env.APP_URL}/register/accept?token=${encodeURIComponent(token)}`,
+  },
+  allowDangerousEmailAccountLinking: false,
+});
+```
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Adapter that persists WebAuthn credentials.',
+      type: 'PasskeyAdapter',
+      required: true,
+    },
+    rpName: {
+      description: 'Relying Party name shown in the browser during passkey ceremonies.',
+      type: 'string',
+      required: true,
+    },
+    rpId: {
+      description: 'Relying Party ID. Must match your domain (without protocol or port). Use `localhost` for local development.',
+      type: 'string',
+      required: true,
+    },
+  }}
+/>
+
+<Callout type="warn">
+  For production, set `rpId` to your root domain (e.g. `example.com`). Passkeys registered with one `rpId` cannot be used on a different one.
+</Callout>
+</Step>
+
+<Step>
+### New routes
+
+The plugin automatically registers the following routes under `/api/auth`:
+
+- `POST /api/auth/passkey/register/begin` — starts passkey registration, returns a WebAuthn challenge
+- `POST /api/auth/passkey/register/complete` — completes registration after the browser ceremony
+- `POST /api/auth/passkey/login/begin` — starts passkey login, returns a WebAuthn challenge
+- `POST /api/auth/passkey/login/complete` — completes login and issues session tokens
+- `POST /api/auth/passkey/delete` — removes a passkey by credential ID
+
+See [`@holeauth/plugin-passkey`](/packages/plugin-passkey) for detailed request and response schemas.
+</Step>
+
+<Step>
+### Browser integration
+
+Passkey registration and login require client-side JavaScript to invoke the WebAuthn API. The server routes return challenge objects that must be passed to `navigator.credentials.create()` (registration) or `navigator.credentials.get()` (login).
+
+For a complete client-side implementation, see the [passkeys guide](/guides/passkeys).
+</Step>
+</Steps>
+
+## Example: checking for existing passkeys
+
+```ts title="index.ts"
+import { Hono } from 'hono';
+import { auth } from './lib/auth';
+import { getSession } from '@holeauth/hono';
+
+const app = new Hono();
+
+app.route('/api/auth', auth.app);
+
+app.get('/api/passkeys', async (c) => {
+  const session = await getSession(c, auth);
+  if (!session) return c.json({ error: 'Unauthorized' }, 401);
+
+  const passkeys = await auth.passkey.listCredentials(session.user.id);
+
+  return c.json({ passkeys });
+});
+
+export default app;
+```
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Add roles and permissions"
+    description="Control access with RBAC and YAML-based permissions."
+    href="/getting-started/hono/plugin-rbac"
+  />
+  <Card
+    title="Sign in with Google and GitHub"
+    description="Add OAuth 2.0 / OpenID Connect social login."
+    href="/getting-started/hono/sso-consumer"
+  />
+  <Card
+    title="Passkeys guide"
+    description="Deep dive into WebAuthn registration and authentication ceremonies."
+    href="/guides/passkeys"
+  />
+</Cards>

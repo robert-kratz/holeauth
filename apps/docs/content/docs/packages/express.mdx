@@ -1,0 +1,231 @@
+---
+title: "@holeauth/express"
+description: Express router, session middleware, and tRPC context factory for holeauth.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/express
+
+Express bindings for holeauth. Provides a router for all auth endpoints, session middleware, `getSession` helper, and tRPC context factory.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/express
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/express
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/express
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/express
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { createExpressAuth } from '@holeauth/express';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from './db';
+
+export const auth = createExpressAuth({
+  adapter: drizzleAdapter(db),
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+});
+```
+
+```ts title="server.ts"
+import express from 'express';
+import { auth } from './lib/auth';
+
+const app = express();
+
+app.use('/api/auth', auth.router);
+
+app.listen(3000);
+```
+
+## createExpressAuth
+
+Creates an Express-compatible auth instance with a router.
+
+```ts
+function createExpressAuth<
+  const Plugins extends readonly HoleauthPlugin<string, unknown>[] = [],
+>(
+  config: HoleauthConfig,
+  opts?: DispatchOptions,
+): ExpressHoleauth<Plugins>;
+```
+
+Returns an `ExpressHoleauth` instance with:
+
+- `router` — Express router for `/api/auth/*`
+- All methods from `HoleauthInstance`
+- Plugin APIs when plugins are registered
+
+```ts title="server.ts"
+import express from 'express';
+import { auth } from './lib/auth';
+
+const app = express();
+
+app.use('/api/auth', auth.router);
+```
+
+## holeauthExpressRouter
+
+Build an Express router from an existing `HoleauthInstance`.
+
+```ts
+function holeauthExpressRouter(
+  auth: HoleauthInstance,
+  opts?: DispatchOptions,
+): Router;
+```
+
+Useful when the auth instance is constructed elsewhere (e.g., shared with a worker).
+
+```ts title="server.ts"
+import express from 'express';
+import { holeauthExpressRouter } from '@holeauth/express';
+import { auth } from './lib/auth';
+
+const app = express();
+
+app.use('/api/auth', holeauthExpressRouter(auth));
+```
+
+## holeauthSessionMiddleware
+
+Express middleware that resolves `req.holeauthSession` from the access-token cookie.
+
+```ts
+function holeauthSessionMiddleware(
+  auth: HoleauthInstance,
+): RequestHandler;
+```
+
+Does not require auth — handlers downstream decide what to do with the null vs. populated session.
+
+```ts title="server.ts"
+import express from 'express';
+import { holeauthSessionMiddleware } from '@holeauth/express';
+import { auth } from './lib/auth';
+
+const app = express();
+
+app.use(holeauthSessionMiddleware(auth));
+
+app.get('/api/me', (req, res) => {
+  if (!req.holeauthSession) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  res.json({ userId: req.holeauthSession.userId });
+});
+```
+
+## getSession
+
+Read the current session from an Express request.
+
+```ts
+async function getSession(
+  req: ExpressRequest,
+  auth: HoleauthInstance,
+): Promise<SessionData | null>;
+```
+
+```ts title="routes/protected.ts"
+import { getSession } from '@holeauth/express';
+import { auth } from '@/lib/auth';
+import type { RequestHandler } from 'express';
+
+export const handler: RequestHandler = async (req, res) => {
+  const session = await getSession(req, auth);
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  res.json({ userId: session.userId });
+};
+```
+
+## createHoleauthExpressContext
+
+tRPC context factory for Express.
+
+```ts
+function createHoleauthExpressContext(auth: HoleauthInstance) {
+  return async ({ req, res }: { req: ExpressRequest; res: ExpressResponse }) => {
+    const session = await getSession(req, auth);
+    return { session, auth };
+  };
+}
+```
+
+```ts title="server/trpc.ts"
+import { createHoleauthExpressContext } from '@holeauth/express';
+import { auth } from '@/lib/auth';
+import { initTRPC, TRPCError } from '@trpc/server';
+
+const t = initTRPC.context<ReturnType<typeof createHoleauthExpressContext>>().create();
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session } });
+});
+```
+
+## See also
+
+<Cards>
+  <Card
+    title="@holeauth/core"
+    href="/packages/core"
+    description="Core primitives used by this package."
+  />
+  <Card
+    title="Session management"
+    href="/concepts/sessions"
+    description="Understand refresh-token rotation and reuse detection."
+  />
+</Cards>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="@holeauth/hono"
+    href="/packages/hono"
+    description="Hono bindings for edge-ready auth."
+  />
+  <Card
+    title="@holeauth/react"
+    href="/packages/react"
+    description="React provider and hooks for client-side auth state."
+  />
+</Cards>

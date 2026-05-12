@@ -1,0 +1,522 @@
+---
+title: "@holeauth/plugin-idp"
+description: Run an OpenID Connect / OAuth 2.0 Identity Provider with Authorization Code + PKCE, refresh token rotation, and multi-tenant app management.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/plugin-idp
+
+Run an OpenID Connect / OAuth 2.0 Identity Provider with Authorization Code + PKCE, refresh token rotation, and multi-tenant app management.
+
+<Callout type="info">
+  This plugin turns your holeauth instance into an **OIDC Provider / OAuth 2.0 Authorization Server**. To consume an external OIDC provider (e.g., Google, GitHub), use [@holeauth/plugin-idp-consumer](/packages/plugin-idp-consumer) instead.
+</Callout>
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-idp
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-idp
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-idp
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-idp
+```
+</Tab>
+</Tabs>
+
+## Quick Example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { idp } from '@holeauth/plugin-idp';
+import { createIdpAdapter } from '@holeauth/idp-drizzle/pg';
+import { db } from '@/db';
+import { tables } from '@/db/schema';
+
+export const auth = defineHoleauth({
+  adapter: drizzleAdapter(db),
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  plugins: [
+    idp({
+      adapter: createIdpAdapter({ db, tables }),
+      issuer: 'https://auth.example.com',
+      scopesSupported: ['openid', 'profile', 'email', 'offline_access'],
+      accessTokenTtl: 900,
+      refreshTokenTtl: 2592000,
+    }),
+  ],
+});
+```
+
+## Factory Function
+
+### idp()
+
+Creates an OpenID Connect Identity Provider plugin instance.
+
+```ts
+function idp(options: IdpOptions): IdpPlugin
+```
+
+<TypeTable
+  type={{
+    adapter: {
+      description: 'Storage adapter implementing the IdpAdapter interface.',
+      type: 'IdpAdapter',
+      required: true,
+    },
+    issuer: {
+      description: 'OIDC issuer URL. Must match exactly what relying parties discover (no trailing slash).',
+      type: 'string',
+      required: true,
+    },
+    scopesSupported: {
+      description: 'Supported OAuth scopes.',
+      type: 'string[]',
+      default: '["openid", "profile", "email", "offline_access"]',
+    },
+    accessTokenTtl: {
+      description: 'Access token lifetime (seconds).',
+      type: 'number',
+      default: '900 (15 minutes)',
+    },
+    idTokenTtl: {
+      description: 'ID token lifetime (seconds).',
+      type: 'number',
+      default: '900 (15 minutes)',
+    },
+    refreshTokenTtl: {
+      description: 'Refresh token lifetime (seconds).',
+      type: 'number',
+      default: '2592000 (30 days)',
+    },
+    authorizationCodeTtl: {
+      description: 'Authorization code lifetime (seconds).',
+      type: 'number',
+      default: '600 (10 minutes)',
+    },
+    signingAlg: {
+      description: 'JWT signing algorithm for access and ID tokens.',
+      type: '"RS256" | "ES256"',
+      default: '"RS256"',
+    },
+    createAppPermission: {
+      description: 'Permission node required to create new OAuth apps (checked via plugin-rbac if present).',
+      type: 'string',
+      default: '"idp.apps.create"',
+    },
+    adminAppPermission: {
+      description: 'Permission node that grants admin access to all apps.',
+      type: 'string',
+      default: '"idp.apps.admin"',
+    },
+    tokenRateLimiter: {
+      description: 'Rate limiter for the token endpoint. Pass `false` to disable (not recommended). Supply a distributed implementation in production.',
+      type: 'IdpRateLimiter | false',
+      default: 'In-memory limiter (20 attempts / 60 sec)',
+    },
+  }}
+/>
+
+**Example**
+
+```ts title="lib/auth.ts"
+import { idp } from '@holeauth/plugin-idp';
+import { createIdpAdapter } from '@holeauth/idp-drizzle/pg';
+import { createRedisRateLimiter } from '@/lib/rate-limiter';
+import { db } from '@/db';
+import { tables } from '@/db/schema';
+
+const plugin = idp({
+  adapter: createIdpAdapter({ db, tables }),
+  issuer: 'https://auth.acme.com',
+  scopesSupported: ['openid', 'profile', 'email', 'offline_access', 'api.read', 'api.write'],
+  accessTokenTtl: 1800,
+  idTokenTtl: 3600,
+  refreshTokenTtl: 7776000,
+  authorizationCodeTtl: 300,
+  signingAlg: 'RS256',
+  tokenRateLimiter: createRedisRateLimiter(),
+});
+```
+
+## IdpAdapter Interface
+
+If you are not using [@holeauth/idp-drizzle](drizzle), implement this interface to provide custom storage.
+
+```ts
+interface IdpAdapter {
+  apps: {
+    create(data: {...}): Promise<IdpApp>;
+    get(id: string): Promise<IdpApp | null>;
+    list(): Promise<IdpApp[]>;
+    listByTeam(teamId: string): Promise<IdpApp[]>;
+    update(id: string, patch: {...}): Promise<void>;
+    delete(id: string): Promise<void>;
+  };
+  teams: {
+    create(data: {...}): Promise<IdpTeam>;
+    get(id: string): Promise<IdpTeam | null>;
+    listForUser(userId: string): Promise<Array<{...}>>;
+    getMembership(teamId: string, userId: string): Promise<IdpTeamMember | null>;
+    listMembers(teamId: string): Promise<IdpTeamMember[]>;
+    addMember(data: {...}): Promise<void>;
+    removeMember(teamId: string, userId: string): Promise<void>;
+  };
+  authorizationCodes: {
+    create(data: {...}): Promise<void>;
+    getByCodeHash(codeHash: string): Promise<IdpAuthorizationCode | null>;
+    consume(codeHash: string): Promise<void>;
+    purgeExpired(): Promise<number>;
+  };
+  refreshTokens: {
+    create(data: {...}): Promise<IdpRefreshToken>;
+    getByTokenHash(hash: string): Promise<IdpRefreshToken | null>;
+    revoke(id: string): Promise<void>;
+    revokeFamily(familyId: string): Promise<void>;
+    listForApp(appId: string): Promise<IdpRefreshToken[]>;
+    revokeAllForApp(appId: string): Promise<void>;
+    purgeExpired(): Promise<number>;
+  };
+  consents: {
+    upsert(data: {...}): Promise<void>;
+    get(userId: string, appId: string): Promise<IdpConsent | null>;
+    list(userId: string): Promise<IdpConsent[]>;
+    revoke(userId: string, appId: string): Promise<void>;
+  };
+  keys: {
+    create(data: {...}): Promise<IdpSigningKey>;
+    getCurrent(alg: SigningAlg): Promise<IdpSigningKey | null>;
+    list(alg: SigningAlg): Promise<IdpSigningKey[]>;
+    delete(kid: string): Promise<void>;
+  };
+}
+```
+
+## API Surface
+
+The plugin exposes the following methods on your auth instance at `auth.idp.*`:
+
+### apps.create()
+
+Creates a new OAuth application in a team.
+
+```ts
+auth.idp.apps.create(
+  callerUserId: string,
+  input: {
+    name: string;
+    description?: string | null;
+    type: 'confidential' | 'public';
+    redirectUris: string[];
+    allowedScopes?: string[];
+    requirePkce?: boolean;
+    teamId?: string;
+  }
+): Promise<{ app: IdpApp; clientSecret?: string }>
+```
+
+<Callout type="warn">
+  The `clientSecret` is returned **only once** for confidential apps. It is hashed before storage and cannot be retrieved later.
+</Callout>
+
+### apps.listForUser()
+
+Lists all apps the user has access to via team membership.
+
+```ts
+auth.idp.apps.listForUser(userId: string): Promise<IdpApp[]>
+```
+
+### apps.get()
+
+Fetches an app by ID. Caller must be a team member (or have admin permission).
+
+```ts
+auth.idp.apps.get(
+  callerUserId: string,
+  appId: string,
+  opts?: { admin?: boolean }
+): Promise<IdpApp>
+```
+
+### apps.update()
+
+Updates an app's configuration.
+
+```ts
+auth.idp.apps.update(
+  callerUserId: string,
+  appId: string,
+  patch: {
+    name?: string;
+    description?: string | null;
+    logoUrl?: string | null;
+    redirectUris?: string[];
+    allowedScopes?: string[];
+    requirePkce?: boolean;
+    disabled?: boolean;
+  },
+  opts?: { admin?: boolean }
+): Promise<IdpApp>
+```
+
+### apps.regenerateSecret()
+
+Regenerates the `client_secret` for a confidential app. Returns the plain-text secret once.
+
+```ts
+auth.idp.apps.regenerateSecret(
+  callerUserId: string,
+  appId: string
+): Promise<{ clientSecret: string }>
+```
+
+### apps.delete()
+
+Deletes an OAuth app.
+
+```ts
+auth.idp.apps.delete(
+  callerUserId: string,
+  appId: string,
+  opts?: { admin?: boolean }
+): Promise<void>
+```
+
+### teams.create()
+
+Creates a team with the caller as owner.
+
+```ts
+auth.idp.teams.create(ownerUserId: string, name: string): Promise<IdpTeam>
+```
+
+### teams.listForUser()
+
+Lists all teams the user belongs to, with their role.
+
+```ts
+auth.idp.teams.listForUser(userId: string): Promise<Array<IdpTeam & { role: TeamRole }>>
+```
+
+### teams.addMember()
+
+Adds a user to a team with a specific role (`owner` or `developer`).
+
+```ts
+auth.idp.teams.addMember(
+  callerUserId: string,
+  teamId: string,
+  userId: string,
+  role: 'owner' | 'developer'
+): Promise<void>
+```
+
+### teams.removeMember()
+
+Removes a user from a team.
+
+```ts
+auth.idp.teams.removeMember(
+  callerUserId: string,
+  teamId: string,
+  userId: string
+): Promise<void>
+```
+
+### tokens.listForApp()
+
+Lists all active refresh tokens for an app.
+
+```ts
+auth.idp.tokens.listForApp(
+  callerUserId: string,
+  appId: string
+): Promise<IdpRefreshToken[]>
+```
+
+### tokens.revokeAllForApp()
+
+Revokes all refresh tokens for an app (e.g., after a security breach).
+
+```ts
+auth.idp.tokens.revokeAllForApp(
+  callerUserId: string,
+  appId: string
+): Promise<void>
+```
+
+### keys.rotate()
+
+Rotates the signing key for access and ID tokens. Returns the new key.
+
+```ts
+auth.idp.keys.rotate(): Promise<IdpSigningKey>
+```
+
+### keys.bootstrap()
+
+Ensures a signing key exists. Called automatically during plugin initialization.
+
+```ts
+auth.idp.keys.bootstrap(): Promise<IdpSigningKey>
+```
+
+## Registered HTTP Routes
+
+The plugin registers the following OIDC / OAuth 2.0 endpoints:
+
+<TypeTable
+  type={{
+    "GET /.well-known/openid-configuration": {
+      description: 'OIDC Discovery document.',
+      type: 'Public',
+    },
+    "GET /oauth2/jwks": {
+      description: 'JSON Web Key Set (JWKS) for token verification.',
+      type: 'Public',
+    },
+    "GET /oauth2/authorize": {
+      description: 'Authorization endpoint (starts OAuth flow).',
+      type: 'Public',
+    },
+    "POST /oauth2/authorize/consent": {
+      description: 'User consent form submission.',
+      type: 'requireAuth: true',
+    },
+    "POST /oauth2/token": {
+      description: 'Token endpoint (exchanges code for tokens, refreshes tokens).',
+      type: 'Public (rate-limited)',
+    },
+    "GET /oauth2/userinfo": {
+      description: 'UserInfo endpoint (returns user claims from access token).',
+      type: 'Bearer token required',
+    },
+    "POST /oauth2/revoke": {
+      description: 'Token revocation (RFC 7009).',
+      type: 'Client authentication required',
+    },
+    "GET /oauth2/end-session": {
+      description: 'RP-initiated logout.',
+      type: 'Public',
+    },
+  }}
+/>
+
+## OAuth 2.0 Flows
+
+### Authorization Code + PKCE
+
+1. Relying Party redirects user to `/oauth2/authorize?...`.
+2. User authenticates and consents (or consent is remembered).
+3. Server issues an authorization code (10-minute TTL).
+4. RP exchanges the code for tokens at `/oauth2/token`.
+5. Access token (JWT, 15-minute TTL) and refresh token (30-day TTL) are returned.
+
+### Refresh Token Rotation
+
+Every refresh token has a `familyId`. When a token is refreshed:
+
+- The old token is revoked.
+- A new token is issued with the same `familyId`.
+- If an old token is reused, the entire family is revoked (reuse detection).
+
+This matches the holeauth core session refresh strategy.
+
+## Team-Based App Ownership
+
+OAuth apps are owned by **teams**, not individual users. A team has:
+
+- **Owners**: Full control (create/update/delete apps, manage members).
+- **Developers**: Can view and test apps, but cannot modify settings.
+
+Users can belong to multiple teams and create apps in any team they own.
+
+## Utility Exports
+
+### createMemoryRateLimiter()
+
+```ts
+function createMemoryRateLimiter(options?: MemoryRateLimiterOptions): IdpRateLimiter
+```
+
+Creates an in-memory rate limiter for development. Not recommended for production (no shared state across instances).
+
+<TypeTable
+  type={{
+    maxAttempts: {
+      description: 'Max attempts per key.',
+      type: 'number',
+      default: '20',
+    },
+    windowMs: {
+      description: 'Time window in milliseconds.',
+      type: 'number',
+      default: '60000 (1 min)',
+    },
+  }}
+/>
+
+### rotateSigningKey()
+
+```ts
+function rotateSigningKey(adapter: IdpAdapter, alg: SigningAlg): Promise<IdpSigningKey>
+```
+
+Generates and persists a new signing key. The old key remains in JWKS for token verification but is no longer used for signing.
+
+### ensureSigningKey()
+
+```ts
+function ensureSigningKey(adapter: IdpAdapter, alg: SigningAlg): Promise<IdpSigningKey>
+```
+
+Ensures a signing key exists. Creates one if none is found.
+
+### renderConsentPage()
+
+```ts
+function renderConsentPage(data: {
+  app: IdpApp;
+  user: AdapterUser;
+  scopes: string[];
+  csrfToken: string;
+  consentUrl: string;
+}): string
+```
+
+Renders a default HTML consent page. Override this by providing your own `/oauth2/authorize/consent` route handler.
+
+## See Also
+
+<Cards>
+  <Card title="@holeauth/idp-drizzle" href="drizzle" description="Drizzle ORM adapter for IDP storage" />
+  <Card title="SSO Provider Setup" href="/sso/provider/setup" description="Complete guide to running an OIDC provider" />
+  <Card title="Authorization Code Flow" href="/sso/provider/authorization-code" description="Deep dive into the OAuth flow" />
+  <Card title="JWKS Rotation" href="/sso/provider/jwks-rotation" description="Key management best practices" />
+</Cards>
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/idp-drizzle" href="drizzle" description="Drizzle adapter for PostgreSQL, MySQL, and SQLite" />
+  <Card title="@holeauth/plugin-idp-consumer" href="/packages/plugin-idp-consumer" description="Consume external OIDC providers" />
+</Cards>

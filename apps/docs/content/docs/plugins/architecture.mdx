@@ -1,0 +1,229 @@
+---
+title: Architecture
+description: Where and how plugins plug in to the holeauth lifecycle.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+# Architecture
+
+Plugins integrate with holeauth through five extension points. Each point grants plugins a different level of influence over authentication flows, HTTP handling, and the public API surface.
+
+## The five extension points
+
+### 1. Adapter
+
+Plugins can contribute their own adapter, opaque to core and typed internally to the plugin. The consumer supplies it via `defineHoleauth({ pluginAdapters: { [id]: ... } })`, and the plugin retrieves it with `ctx.getPluginAdapter<T>(id)`.
+
+**Scope:** Data access layer. Plugins use adapters to persist plugin-specific state (TOTP secrets, passkey credentials, RBAC assignments) in the same database or a separate store.
+
+**Example:** `@holeauth/plugin-2fa` expects a `TwoFactorAdapter` implementing `getByUserId`, `upsert`, `update`, and `delete` to persist TOTP secrets and recovery codes.
+
+### 2. Hooks
+
+Plugins register hook functions that run before or after core flows: `register`, `signIn`, `refresh`, `signOut`, `passwordChange`, `passwordReset`, `userUpdate`, `userDelete`, and session lifecycle events (`onIssue`, `onRotate`, `onRevoke`).
+
+**Scope:** Flow interception. `before` hooks may throw to abort a flow. `after` hooks run post-success and cannot abort (exceptions are caught, logged, and emitted as `plugin.error` events). The special `signIn.challenge` hook returns a `ChallengeResult` to halt sign-in and require a follow-up verification step.
+
+**Example:** `@holeauth/plugin-2fa` implements `signIn.challenge` to detect if a user has 2FA enabled and return a pending token, preventing immediate session issuance.
+
+### 3. Routes
+
+Plugins mount HTTP routes that framework bindings (Next.js, Express, Hono) auto-mount under the same basePath as core routes. Routes receive a `PluginRouteContext` with request primitives, parsed body, cookie helpers, and a `getSession()` shortcut. Routes can opt into `requireAuth` and `requireCsrf` enforcement.
+
+**Scope:** HTTP layer. Plugins expose endpoints for setup, verification, management (e.g. `/2fa/setup`, `/2fa/verify`, `/passkey/register`, `/rbac/check`).
+
+**Example:** `@holeauth/plugin-2fa` mounts four routes: `POST /2fa/setup`, `POST /2fa/activate`, `POST /2fa/verify`, `POST /2fa/disable`.
+
+### 4. API surface
+
+Every plugin defines an `api(ctx)` function that returns a typed object. This object is merged into the `HoleauthInstance` at `auth[plugin.id]`, giving full IntelliSense to consumers. The API surface is the primary way application code interacts with plugins.
+
+**Scope:** Public SDK. Plugins expose imperative methods (e.g. `auth.twofa.setup(userId)`, `auth.passkey.register(userId, options)`) that abstract over adapter calls, validation, and flow orchestration.
+
+**Example:** `@holeauth/plugin-2fa` exposes `setup`, `activate`, `verify`, `disable`, `isEnabled`, `renderQrDataUrl`, and `renderQrBuffer`.
+
+### 5. Events
+
+Plugins subscribe to and emit events via `ctx.events`. Core emits well-known events (`user.registered`, `user.signed_in`, `session.created`, etc.), and plugins emit their own namespaced events (e.g. `twofa.verified`, `rbac.permission_checked`). Events are awaited and persisted via the `AuditLogAdapter`.
+
+**Scope:** Observability and cross-plugin communication. Plugins use events for audit logging, analytics, and triggering side effects.
+
+**Example:** `@holeauth/plugin-2fa` could emit a `twofa.setup_completed` event after `activate` succeeds, allowing downstream plugins or application code to react.
+
+## Where they sit in the request lifecycle
+
+### Sign-in flow
+
+1. Client sends `POST /signin` with `{ email, password }`.
+2. Core dispatcher matches the route and calls the core `signIn` handler.
+3. **`signIn.before` hooks run** (all plugins, in topo-sort order). May throw to abort.
+4. Core adapter looks up the user by email and verifies the password hash.
+5. **`signIn.challenge` hooks run**. First non-null `ChallengeResult` wins. If a challenge is issued:
+   - Core issues a short-lived pending token (JWT) and sets it as a cookie.
+   - The response is `{ kind: 'pending', pluginId, pendingToken, expiresAt, data }`.
+   - Client must drive the plugin's follow-up route (e.g. `POST /2fa/verify`) with the pending token + verification code.
+6. If no challenge, or after challenge is successfully completed:
+   - Core issues session tokens (access, refresh, CSRF).
+   - **`session.onIssue` hooks run** (all plugins, in topo-sort order).
+   - **`signIn.after` hooks run** (all plugins, in topo-sort order).
+7. Core dispatcher serializes tokens into cookies and returns `{ kind: 'ok', user, tokens }`.
+
+### Register flow
+
+1. Client sends `POST /register` with `{ email, password, name? }`.
+2. **`register.before` hooks run**. May throw to abort.
+3. Core adapter creates the user record.
+4. **`register.after` hooks run**.
+5. Core emits `user.registered` event.
+6. Response: `{ ok: true, user }`.
+
+### Refresh flow
+
+1. Client sends `POST /refresh` with the refresh token cookie.
+2. **`refresh.before` hooks run**.
+3. Core verifies the refresh token, detects reuse, and rotates the session.
+4. **`session.onRotate` hooks run**.
+5. **`refresh.after` hooks run**.
+6. New tokens are issued and set as cookies.
+
+### Sign-out flow
+
+1. Client sends `POST /signout`.
+2. Core revokes the session (deletes from adapter).
+3. **`session.onRevoke` hooks run**.
+4. **`signOut.after` hooks run**.
+5. Core clears cookies.
+
+### Password change flow
+
+1. Client sends `POST /password/change` with `{ currentPassword, newPassword }`.
+2. **`passwordChange.before` hooks run**. May throw to abort.
+3. Core verifies current password and updates hash.
+4. **`passwordChange.after` hooks run**.
+5. Core emits `password.changed` event.
+
+### Password reset flow
+
+1. **Request:** Client sends `POST /password/reset/request` with `{ email }`.
+   - **`passwordReset.before` hooks run** with `{ email }`.
+   - Core generates a reset token and persists it via `VerificationTokenAdapter`.
+   - **`passwordReset.after` hooks run** with `{ userId, stage: 'request' }`.
+   - Core emits `password.reset_requested` event.
+2. **Consume:** Client sends `POST /password/reset/consume` with `{ token, newPassword }`.
+   - **`passwordReset.before` hooks run** with `{ email, token, newPassword }`.
+   - Core verifies the token, updates the password hash, and deletes the token.
+   - **`passwordReset.after` hooks run** with `{ userId, stage: 'consume' }`.
+   - Core emits `password.reset_consumed` event.
+
+### User update / delete flows
+
+- **Update:** After adapter updates the user record, **`userUpdate.after` hooks run** with `{ user, patch }`.
+- **Delete:** After adapter deletes the user, **`userDelete.after` hooks run** with `{ userId }`.
+
+## What core does for you
+
+- **Type inference:** The `plugins: [...] as const` tuple drives `PluginsApi<Plugins>`, so `auth[plugin.id]` is fully typed without `declare module` augmentation.
+- **Auto-mounting:** Framework bindings mount plugin routes under the same basePath as core routes. No additional routing config needed.
+- **Topological sort:** `dependsOn` constraints are validated and enforced via Kahn's algorithm. Cycles, missing dependencies, and duplicate ids throw at startup.
+- **Route collision detection:** Plugin routes cannot overlap with core routes (see list below) or with other plugins. Violations throw at startup.
+- **Hook error handling:** Exceptions from `after` hooks are caught, logged via `ctx.logger`, and emitted as `plugin.error` events. They do not crash the server.
+- **Challenge coordination:** The `signIn.challenge` hook allows multiple plugins to compete; only the first non-null winner halts the flow, and subsequent winners trigger a warning.
+
+## What plugins MUST NOT do
+
+<Callout type="warn">
+  **Never directly mutate `config.adapters`.** Core adapters are immutable after `defineHoleauth` returns. Plugins contribute adapters via `pluginAdapters[id]`.
+</Callout>
+
+<Callout type="warn">
+  **Never call `console.*` directly.** Use `ctx.logger` so consumers can control verbosity and silence logs in tests.
+</Callout>
+
+<Callout type="warn">
+  **Never throw from `after` hooks.** They run post-success and exceptions do not abort the flow. Core catches them and emits `plugin.error` events. Throw only from `before` hooks to abort a flow.
+</Callout>
+
+<Callout type="warn">
+  **Never register a path matching a core route.** Core routes (listed below) are reserved. Plugins attempting to override them will fail at startup with a route collision error.
+</Callout>
+
+## Reserved core route paths
+
+Plugin routes cannot conflict with these core routes:
+
+| Method | Path |
+| --- | --- |
+| GET | `/session` |
+| GET | `/csrf` |
+| GET | `/authorize/:provider` |
+| GET | `/callback/:provider` |
+| POST | `/register` |
+| POST | `/signin` |
+| POST | `/signout` |
+| POST | `/refresh` |
+| POST | `/password/change` |
+| POST | `/password/reset/request` |
+| POST | `/password/reset/consume` |
+| GET | `/invite/info` |
+| GET | `/invite/list` |
+| POST | `/invite/create` |
+| POST | `/invite/consume` |
+| POST | `/invite/revoke` |
+
+## HoleauthPlugin shape
+
+<TypeTable
+  type={{
+    id: {
+      description: 'Unique plugin identifier. Must be a literal string for type inference.',
+      type: 'string',
+      required: true,
+    },
+    version: {
+      description: 'Semantic version string. Informational only.',
+      type: 'string',
+    },
+    dependsOn: {
+      description: 'Array of plugin ids that must be loaded before this plugin.',
+      type: 'readonly string[]',
+    },
+    adapter: {
+      description: 'Plugin-owned adapter instance. Opaque to core; typed inside the plugin.',
+      type: 'unknown',
+    },
+    hooks: {
+      description: 'Hook implementations. Every key is optional.',
+      type: 'HoleauthHooks',
+    },
+    routes: {
+      description: 'HTTP routes auto-mounted by the framework binding.',
+      type: 'readonly PluginRoute[]',
+    },
+    api: {
+      description: 'Construct the public API surface. Called once per defineHoleauth().',
+      type: '(ctx: PluginContext) => Api',
+      required: true,
+    },
+    onInit: {
+      description: 'Called after all plugins have been wired. Safe to call ctx.getPlugin(otherId) here.',
+      type: '(ctx: PluginContext) => Promise<void> | void',
+    },
+    onShutdown: {
+      description: 'Called on shutdown (best-effort; consumer-controlled).',
+      type: '() => Promise<void> | void',
+    },
+  }}
+/>
+
+## Next
+
+<Cards>
+  <Card
+    title="definePlugin"
+    href="/plugins/define-plugin"
+    description="API reference for the plugin definition helper."
+  />
+</Cards>

@@ -403,6 +403,96 @@ await login('user@example.com'); // optional email hint for conditional UI
 
 ---
 
+### `usePasskeyList()`
+
+List all registered passkeys for the current user. Auto-fetches on mount and refreshes when the session changes.
+
+```tsx
+import { usePasskeyList } from '@holeauth/react';
+
+function PasskeyManagement() {
+  const { passkeys, loading, error, refresh } = usePasskeyList();
+
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>{error.message}</p>;
+  if (!passkeys || passkeys.length === 0) return <p>No passkeys registered.</p>;
+
+  return (
+    <ul>
+      {passkeys.map((pk) => (
+        <li key={pk.id}>
+          {pk.deviceName ?? 'Unnamed'} — {pk.createdAt}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+**Returns:**
+
+<TypeTable
+  type={{
+    passkeys: { description: 'Array of registered passkeys, or null while loading.', type: 'PasskeySummary[] | null', required: true },
+    loading: { description: 'True while fetching.', type: 'boolean', required: true },
+    error: { description: 'Last error or null.', type: '{ message: string } | null', required: true },
+    refresh: { description: 'Re-fetch the passkey list.', type: '() => Promise<void>', required: true },
+  }}
+/>
+
+```ts
+interface PasskeySummary {
+  id: string;
+  credentialId: string;
+  deviceName: string | null;
+  transports: string[] | null;
+  createdAt: string | null; // ISO-8601
+}
+```
+
+---
+
+### `usePasskeyDelete()`
+
+Delete a registered passkey by its `credentialId`.
+
+```tsx
+import { usePasskeyDelete, usePasskeyList } from '@holeauth/react';
+
+function DeletePasskeyButton({ credentialId }: { credentialId: string }) {
+  const { delete: deletePasskey, loading, error } = usePasskeyDelete();
+  const { refresh } = usePasskeyList();
+
+  const handleDelete = async () => {
+    const result = await deletePasskey(credentialId);
+    if (result.ok) {
+      await refresh(); // Reload the list
+    }
+  };
+
+  return (
+    <>
+      <button onClick={handleDelete} disabled={loading}>
+        Delete
+      </button>
+      {error && <p>{error.message}</p>}
+    </>
+  );
+}
+```
+
+**Returns:**
+
+<TypeTable
+  type={{
+    delete: { description: 'Call with credentialId to remove a passkey.', type: '(credentialId: string) => Promise<{ ok: boolean }>', required: true },
+    loading: { description: 'True while the request is in-flight.', type: 'boolean', required: true },
+    error: { description: 'Last error or null.', type: '{ message: string } | null', required: true },
+  }}
+/>
+
+---
+
 ## SSO hook
 
 ### `useSso(providerId)`
@@ -686,8 +776,8 @@ export type {
 ```
 
 <Cards>
-  <Card title="@holeauth/nextjs" href="/docs/packages/nextjs" description="Server-side session reads, route protection, and cookies." />
-  <Card title="@holeauth/plugin-2fa" href="/docs/packages/plugin-2fa" description="TOTP 2FA plugin — pairs with use2faSetup and use2faVerify." />
-  <Card title="@holeauth/plugin-passkey" href="/docs/packages/plugin-passkey" description="WebAuthn passkeys — pairs with usePasskeyRegister and usePasskeyLogin." />
-  <Card title="@holeauth/plugin-rbac" href="/docs/packages/plugin-rbac" description="RBAC — pairs with usePermission and useGroups." />
+  <Card title="@holeauth/nextjs" href="/packages/nextjs" description="Server-side session reads, route protection, and cookies." />
+  <Card title="@holeauth/plugin-2fa" href="/packages/plugin-2fa" description="TOTP 2FA plugin — pairs with use2faSetup and use2faVerify." />
+  <Card title="@holeauth/plugin-passkey" href="/packages/plugin-passkey" description="WebAuthn passkeys — pairs with usePasskeyRegister and usePasskeyLogin." />
+  <Card title="@holeauth/plugin-rbac" href="/packages/plugin-rbac" description="RBAC — pairs with usePermission and useGroups." />
 </Cards>

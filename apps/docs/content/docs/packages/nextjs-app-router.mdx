@@ -1,0 +1,261 @@
+---
+title: "@holeauth/nextjs-app-router"
+description: Next.js App Router bindings with route handler, middleware, and server helpers.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/nextjs-app-router
+
+Next.js App Router bindings for holeauth. Provides a route handler for all auth endpoints, middleware for session management, and server helpers for React Server Components.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/nextjs-app-router
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/nextjs-app-router
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/nextjs-app-router
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/nextjs-app-router
+```
+</Tab>
+</Tabs>
+
+## Quick example
+
+```ts title="lib/auth.ts"
+import { createAuthHandler } from '@holeauth/nextjs-app-router';
+import { drizzleAdapter } from '@holeauth/adapter-drizzle/pg';
+import { db } from './db';
+
+export const auth = createAuthHandler({
+  adapter: drizzleAdapter(db),
+  secrets: {
+    jwtSecret: process.env.HOLEAUTH_SECRET!,
+  },
+});
+```
+
+```ts title="app/api/auth/[...holeauth]/route.ts"
+import { auth } from '@/lib/auth';
+
+export const { GET, POST } = auth.handlers;
+```
+
+## createAuthHandler
+
+Creates a Next.js App Router-compatible auth instance with GET and POST handlers.
+
+```ts
+function createAuthHandler<
+  const Plugins extends readonly HoleauthPlugin<string, unknown>[] = [],
+>(
+  config: HoleauthConfig,
+  opts?: DispatchOptions,
+): NextHoleauth<Plugins>;
+```
+
+<TypeTable
+  type={{
+    config: {
+      description: 'Holeauth configuration (adapter, secrets, session, plugins).',
+      type: 'HoleauthConfig',
+      required: true,
+    },
+    opts: {
+      description: 'Optional dispatcher options (custom route overrides).',
+      type: 'DispatchOptions',
+    },
+  }}
+/>
+
+Returns a `NextHoleauth` instance with:
+
+- `handlers.GET` — GET route handler for `/api/auth/*`
+- `handlers.POST` — POST route handler for `/api/auth/*`
+- `getSession(accessToken?)` — Validate an access token or read from `cookies()` in an RSC
+- All methods from `HoleauthInstance` (flows, jwt, session, password, otp, sso, etc.)
+- Plugin APIs when plugins are registered
+
+```ts title="app/api/auth/[...holeauth]/route.ts"
+import { auth } from '@/lib/auth';
+
+export const { GET, POST } = auth.handlers;
+```
+
+## getSession
+
+Server helper: validate an access token or read the current session from Next.js cookies.
+
+```ts
+async function getSession(accessToken?: string): Promise<SessionData | null>;
+```
+
+When called without an `accessToken` argument, reads the access token from `cookies()` in a React Server Component.
+
+```ts title="app/dashboard/page.tsx"
+import { auth } from '@/lib/auth';
+import { redirect } from 'next/navigation';
+
+export default async function DashboardPage() {
+  const session = await auth.getSession();
+  if (!session) {
+    redirect('/login');
+  }
+
+  return <div>Welcome, {session.userId}</div>;
+}
+```
+
+## Middleware
+
+Middleware export for session validation and refresh.
+
+```ts title="middleware.ts"
+import { createMiddleware } from '@holeauth/nextjs-app-router/middleware';
+import { auth } from '@/lib/auth';
+
+export default createMiddleware(auth, {
+  protectedPaths: ['/dashboard', '/settings'],
+  publicPaths: ['/login', '/register'],
+  redirectTo: '/login',
+});
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+};
+```
+
+<TypeTable
+  type={{
+    protectedPaths: {
+      description: 'Array of path prefixes that require authentication.',
+      type: 'string[]',
+    },
+    publicPaths: {
+      description: 'Array of path prefixes that are always accessible.',
+      type: 'string[]',
+    },
+    redirectTo: {
+      description: 'Path to redirect unauthenticated users.',
+      type: 'string',
+      default: '"/login"',
+    },
+  }}
+/>
+
+## validateCurrentRequest
+
+Low-level helper: validate the current request and return the session.
+
+```ts
+async function validateCurrentRequest(
+  auth: HoleauthInstance,
+): Promise<SessionData | null>;
+```
+
+Reads cookies from the Next.js `cookies()` API and validates the access token.
+
+```ts title="app/api/protected/route.ts"
+import { validateCurrentRequest } from '@holeauth/nextjs-app-router';
+import { auth } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  const session = await validateCurrentRequest(auth);
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return NextResponse.json({ userId: session.userId });
+}
+```
+
+## getFullSession
+
+Server helper: validate the current request and return the session with user data and RBAC snapshot.
+
+```ts
+async function getFullSession(
+  auth: HoleauthInstance,
+): Promise<{
+  session: SessionData;
+  user: AdapterUser;
+  permissions?: string[];
+  groups?: string[];
+} | null>;
+```
+
+<Callout type="info">
+  This helper automatically fetches the user record and RBAC snapshot (if `plugin-rbac` is registered) in a single database query. Use it when you need user data or permissions in a Server Component.
+</Callout>
+
+```ts title="app/admin/page.tsx"
+import { getFullSession } from '@holeauth/nextjs-app-router';
+import { auth } from '@/lib/auth';
+import { redirect } from 'next/navigation';
+
+export default async function AdminPage() {
+  const result = await getFullSession(auth);
+  if (!result) {
+    redirect('/login');
+  }
+
+  if (!result.permissions?.includes('admin.access')) {
+    redirect('/');
+  }
+
+  return <div>Welcome, {result.user.email}</div>;
+}
+```
+
+## See also
+
+<Cards>
+  <Card
+    title="@holeauth/core"
+    href="/packages/core"
+    description="Core primitives used by this package."
+  />
+  <Card
+    title="@holeauth/react"
+    href="/packages/react"
+    description="Client-side provider and hooks for Next.js App Router."
+  />
+  <Card
+    title="Session management"
+    href="/concepts/sessions"
+    description="Understand refresh-token rotation and reuse detection."
+  />
+</Cards>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="@holeauth/nextjs-pages-router"
+    href="/packages/nextjs-pages-router"
+    description="Next.js Pages Router bindings for API routes and getServerSideProps."
+  />
+  <Card
+    title="@holeauth/react"
+    href="/packages/react"
+    description="React provider and hooks for client-side auth state."
+  />
+</Cards>
