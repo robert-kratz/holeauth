@@ -20,11 +20,11 @@ services:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/',r=>process.exit(r.statusCode<400?0:1)).on('error',()=>process.exit(1))\""]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   # ── Docs / Fumadocs site ──────────────────────────────────────────────────
   docs:
@@ -42,8 +42,8 @@ services:
       PORT: "3001"
       HOSTNAME: "0.0.0.0"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3001/docs/"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3001/docs/',r=>process.exit(r.statusCode<400?0:1)).on('error',()=>process.exit(1))\""]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
