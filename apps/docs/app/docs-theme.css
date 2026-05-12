@@ -56,3 +56,22 @@
   background: rgba(255, 255, 255, 0.05);
   color: #ededed;
 }
+
+/* ── Site footer ──────────────────────────────────────────────────────────── */
+.footer-link:hover {
+  color: #ededed !important;
+}
+
+.footer-avatar:hover {
+  outline-color: rgba(255, 255, 255, 0.30) !important;
+}
+
+/* Responsive grid: 2-col on mobile, 5-col on md+ */
+@media (min-width: 768px) {
+  .footer-grid {
+    grid-template-columns: repeat(5, 1fr) !important;
+  }
+  .footer-brand {
+    grid-column: span 1 !important;
+  }
+}

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { source } from '@/lib/source';
 import { Github, Home } from 'lucide-react';
+import { Footer } from '@/components/footer';
 
 // The landing site lives on its own host (https://holeauth.dev in production).
 // In dev it's on localhost:3000, provided via NEXT_PUBLIC_LANDING_URL in .env.local.
@@ -94,20 +95,23 @@ const SidebarFooter = (
 
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <DocsLayout
-      tree={source.pageTree}
-      githubUrl="https://github.com/robert-kratz/holeauth"
-      nav={{
-        // nav.url tells Fumadocs where the title Link should point.
-        // In dev: LANDING = 'http://localhost:3000' → links to landing app.
-        // In prod: LANDING = 'https://holeauth.dev' → cross-host link back to landing.
-        url: LANDING || '/',
-        title: HoleauthLogo,
-      }}
-      // sidebar={{ footer: SidebarFooter }}
-    >
-      {children}
-    </DocsLayout>
+    <>
+      <DocsLayout
+        tree={source.pageTree}
+        githubUrl="https://github.com/robert-kratz/holeauth"
+        nav={{
+          // nav.url tells Fumadocs where the title Link should point.
+          // In dev: LANDING = 'http://localhost:3000' → links to landing app.
+          // In prod: LANDING = 'https://holeauth.dev' → cross-host link back to landing.
+          url: LANDING || '/',
+          title: HoleauthLogo,
+        }}
+        // sidebar={{ footer: SidebarFooter }}
+      >
+        {children}
+      </DocsLayout>
+      <Footer />
+    </>
   );
 }
 
