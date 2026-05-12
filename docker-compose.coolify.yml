@@ -1,39 +1,16 @@
 # docker-compose.coolify.yml — monorepo root
 #
-# Deploys BOTH the landing app (port 3000) and the docs app (port 3001) under
-# a SINGLE public Coolify service named `landing`.
-#
-# Coolify/Traefik routes https://holeauth.dev to the `landing` nginx gateway
-# container on port 80. Nginx then proxies internally.
+# Deploys BOTH the landing app (port 3000) and the docs app (port 3001).
+# Path routing is handled natively by Coolify's proxy via the UI.
 
 services:
-  # ── Public gateway ────────────────────────────────────────────────────────
-  # Coolify nutzt das Feld "Domains for landing" aus der UI, um diesen Dienst 
-  # an holeauth.dev zu binden. Manuelle Labels sind hier nicht nötig.
-  landing:
-    build:
-      context: .
-      dockerfile: deploy/coolify/Dockerfile
-    restart: unless-stopped
-    expose:
-      - "80"
-    depends_on:
-      - landing-app
-      - docs
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
   # ── Landing / Marketing site ─────────────────────────────────────────────
-  landing-app:
+  landing:
     build:
       context: .
       dockerfile: apps/landing/Dockerfile
       args:
-        NEXT_PUBLIC_DOCS_URL: ""
+        NEXT_PUBLIC_DOCS_URL: "https://holeauth.dev/docs"
     restart: unless-stopped
     expose:
       - "3000"
