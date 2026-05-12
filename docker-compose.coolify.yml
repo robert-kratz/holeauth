@@ -36,8 +36,12 @@ services:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
     labels:
-      # Let Coolify manage the router for the main domain automatically.
-      # Only declare the backend port so Coolify wires up Traefik correctly.
+      - traefik.enable=true
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.rule=Host(`${SERVICE_FQDN_LANDING}`)"
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.entrypoints=https"
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.tls=true"
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${COOLIFY_CONTAINER_NAME:-landing}.priority=1"
       - "traefik.http.services.${COOLIFY_CONTAINER_NAME:-landing}.loadbalancer.server.port=3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
