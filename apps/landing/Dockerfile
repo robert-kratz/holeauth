@@ -18,6 +18,7 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules               ./node_modules
 COPY --from=deps /app/apps/landing/node_modules  ./apps/landing/node_modules
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY turbo.json tsconfig.base.json ./
 COPY apps/landing apps/landing
 COPY packages     packages
