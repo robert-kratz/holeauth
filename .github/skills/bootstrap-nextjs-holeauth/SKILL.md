@@ -39,6 +39,7 @@ Use `vscode_askQuestions`. **Never skip any question.** Group them logically; do
 | 9 | `ssoProviders` | multi-select | Google · GitHub · None |
 | 9b | `useReactUi` | radio | Yes — use `@holeauth/react-ui` headless components · No — build own UI |
 | 9c | `uiStyle` (only if `useReactUi === Yes`) | radio | Tailwind CSS · CSS Modules · Inline styles (unstyled) |
+| 9d | `pagePattern` | radio | **Server shell** — `page.tsx` is a Server Component (session check + redirect), co-located `<RouteName>Page.tsx` is the Client Component (recommended) · **Client only** — `page.tsx` is a single `'use client'` file |
 | 10 | `registration` | radio | Self-serve · Invite-only · Both |
 | 11 | `superuser` | radio | Seed script · Bootstrap CLI · Env-driven · Manual SQL · None |
 | 12 | `afterAuthPath` | text | default `/` |
@@ -178,6 +179,53 @@ If any of these are missing, **create them before proceeding to Step 6.** Refere
 
 ---
 
+### Step 5d — Apply page component pattern
+
+Use `pagePattern` to decide how each MVP page is scaffolded:
+
+#### `server-shell` (recommended)
+
+`page.tsx` is a **Server Component** — it checks the session server-side and redirects, then renders a co-located Client Component that owns all interactivity.
+
+```
+app/(guest)/login/
+  page.tsx          ← Server Component: getSession() → redirect if authed → <LoginPage />
+  LoginPage.tsx     ← 'use client': form state, submit handler, error display
+```
+
+Pattern for `page.tsx`:
+
+```ts
+// app/(guest)/login/page.tsx
+import { auth } from '@/lib/auth';
+import { redirect } from 'next/navigation';
+import { LoginPage } from './LoginPage';
+
+export default async function Page() {
+  const session = await auth.getSession();
+  if (session) redirect('<afterAuthPath>');
+  return <LoginPage />;
+}
+```
+
+Pattern for `LoginPage.tsx`:
+
+```ts
+// app/(guest)/login/LoginPage.tsx
+'use client';
+// form state, submit handler, error display — no session checks here
+```
+
+Apply the same split to every guest route (`/register`, `/register/accept`, etc.) and every protected route (`/dashboard`, `/settings/2fa`, `/settings/passkeys`, etc.). Protected route `page.tsx` redirects to `/login` when there is **no** session.
+
+#### `client-only`
+
+`page.tsx` is a single `'use client'` file. Session checks happen inside the component via the holeauth React hooks or a tRPC query. No co-located file needed, but session validation runs on the client instead of the server.
+
+> **Note:** when `useReactUi === Yes`, the `@holeauth/react-ui` components are rendered inside the Client Component layer regardless of which `pagePattern` is chosen.
+
+---
+
 ### Step 6 — Superuser bootstrap
 
 Based on `superuser`:
@@ -263,6 +311,19 @@ git commit -m "feat: bootstrap with holeauth"
 5. **Skip Step 1 = brittle project.** Always interview. Defaults are NOT safe.
 6. **Disabled plugins → commented stubs**, not omission. The user must be able to enable them later by uncommenting.
 7. **On Next.js 16+: the middleware file is `proxy.ts`.** Place it **at the same level as `app/`** — so `src/proxy.ts` for the `src/` layout, otherwise the project root. Next.js will silently ignore it if it sits at the project root while `app/` lives under `src/`. On Next.js 15 and earlier the file is `middleware.ts` with the same placement rule.
+8. **Always pass the second `DispatchOptions` argument to `createAuthHandler`.** Without it, the SSO callback (GitHub, Google, etc.) falls back to a hardcoded `'/dashboard'` redirect inside the package — regardless of what `AFTER_AUTH_PATH` is set to. Always pass both `basePath` and `defaultRedirect`:
+
+   ```ts
+   export const auth = createAuthHandler(
+     { /* HoleauthConfig */ },
+     {
+       basePath: AUTH_BASE_PATH,       // e.g. '/api/auth'
+       defaultRedirect: AFTER_AUTH_PATH, // e.g. '/'
+     },
+   );
+   ```
+
+9. **Prefer the server-shell page pattern (`pagePattern === 'server-shell'`).** `page.tsx` must be a Server Component; session checks and redirects belong there. All client-side interactivity (forms, state, event handlers) lives in a co-located `<RouteName>Page.tsx` marked `'use client'`. Never put `'use client'` on `page.tsx` itself when using the server-shell pattern — Next.js will silently lose the server-side session check and the redirect will never fire.
 
 ---
 
