@@ -41,6 +41,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     '/packages/plugin-2fa',
     '/packages/plugin-passkey',
     '/packages/plugin-rbac',
+    '/packages/plugin-magic-link',
+    '/packages/plugin-magic-link/drizzle',
     '/packages/plugin-idp',
     '/packages/plugin-idp-consumer',
     // Plugins

@@ -1,0 +1,413 @@
+---
+title: "@holeauth/plugin-magic-link"
+description: Passwordless sign-in via one-click magic links and numeric email OTP codes, with optional second-factor mode.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/plugin-magic-link
+
+Passwordless authentication: send a one-click magic link, a six-digit email OTP, or both. Works as the primary sign-in method or as a second factor on top of password.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-magic-link
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-magic-link
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-magic-link
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-magic-link
+```
+</Tab>
+</Tabs>
+
+For production-grade storage, install the Drizzle adapter as well — see [`@holeauth/magic-link-drizzle`](drizzle).
+
+## Quick Example
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { magicLink } from '@holeauth/plugin-magic-link';
+import { createMagicLinkAdapter } from '@holeauth/magic-link-drizzle/pg';
+import { db } from '@/db/client';
+import { magicLinkSchema } from '@/db/schema';
+
+const magicLinkAdapter = createMagicLinkAdapter({ db, tables: magicLinkSchema.tables });
+
+export const auth = defineHoleauth({
+  // ...core config
+  plugins: [
+    magicLink({
+      adapter: magicLinkAdapter,
+      baseUrl: 'https://example.com/api/auth',
+      sendEmail: async ({ email, url, code, type }) => {
+        if (type === 'magic-link') {
+          await sendmail(email, `Sign in: ${url}`);
+        } else {
+          await sendmail(email, `Your code is ${code}`);
+        }
+      },
+      mode: 'both',
+      successRedirect: '/dashboard',
+      errorRedirect: '/magic-link',
+      expiredRedirect: '/magic-link/expired',
+    }),
+  ] as const,
+});
+```
+
+## Factory Function
+
+### magicLink()
+
+Creates a magic-link / email-OTP plugin instance.
+
+```ts
+function magicLink(options: MagicLinkOptions): MagicLinkPlugin
+```
+
+<TypeTable
+  type={{
+    sendEmail: {
+      description: 'Consumer-provided email sender. Receives `{ email, url?, code?, type, expiresAt }`. Throwing aborts the request.',
+      type: '(args: SendEmailArgs) => Promise<void> | void',
+      required: true,
+    },
+    baseUrl: {
+      description: 'Absolute URL of the auth base path (no trailing slash), used to build the magic-link consume URL. Example: `https://example.com/api/auth`.',
+      type: 'string',
+      required: true,
+    },
+    adapter: {
+      description: 'Plugin-owned storage. Use `@holeauth/magic-link-drizzle` for production. Defaults to an in-memory adapter (single-process dev only).',
+      type: 'MagicLinkAdapter',
+      default: 'createMemoryAdapter()',
+    },
+    mode: {
+      description: '`magic-link` (URL only), `otp` (numeric code only), or `both` (caller chooses per request).',
+      type: '"magic-link" | "otp" | "both"',
+      default: '"magic-link"',
+    },
+    role: {
+      description: '`primary` issues a session immediately. `secondFactor` issues a pending token and acts as a sign-in challenge after another factor.',
+      type: '"primary" | "secondFactor"',
+      default: '"primary"',
+    },
+    useFor: {
+      description: '`login` accepts only existing users (unknown emails → silent no-op). `register` accepts only new users (always allowed in this scope). `both` follows `allowRegistration`.',
+      type: '"login" | "register" | "both"',
+      default: '"both"',
+    },
+    tokenTtlSeconds: {
+      description: 'Lifetime of magic links and OTP codes, in seconds.',
+      type: 'number',
+      default: '600',
+    },
+    otpLength: {
+      description: 'OTP digit count. Must be between 4 and 10.',
+      type: 'number',
+      default: '6',
+    },
+    allowRegistration: {
+      description: 'Auto-create a user when the email is unknown. Only consulted when `useFor === "both"`.',
+      type: 'boolean',
+      default: 'true',
+    },
+    onAutoRegister: {
+      description: 'Optional override for auto-registration. Called instead of the default `adapters.user.createUser` path — useful for setting `name`, `image`, or enforcing custom invariants.',
+      type: '(email: string, ctx: PluginContext) => Promise<AdapterUser>',
+    },
+    markEmailVerified: {
+      description: 'When `true`, sets `emailVerified = now()` on first successful consume / OTP verify.',
+      type: 'boolean',
+      default: 'true',
+    },
+    blockLoginBeforeEmailVerification: {
+      description: 'When `true`, throws `MAGIC_LINK_EMAIL_NOT_VERIFIED` (HTTP 403) for users whose `emailVerified` is still `null` after the `markEmailVerified` step.',
+      type: 'boolean',
+      default: 'false',
+    },
+    resendCooldownSeconds: {
+      description: 'Minimum seconds between two `request` calls for the same email+type pair after a token has been consumed. While a valid token exists, `request()` is silently idempotent.',
+      type: 'number',
+      default: '60',
+    },
+    requestLimiter: {
+      description: 'Rate limiter for `/magic-link/request` (per email + per IP). Supply a Redis-backed limiter for multi-instance deployments.',
+      type: 'MagicLinkRateLimiter',
+      default: 'In-memory limiter (5 attempts / 5 min)',
+    },
+    verifyLimiter: {
+      description: 'Rate limiter for `/magic-link/verify-otp`. Kept separate from `requestLimiter` so request spam cannot exhaust a user’s verify budget.',
+      type: 'MagicLinkRateLimiter',
+      default: 'In-memory limiter (5 attempts / 5 min)',
+    },
+    pendingTtlSeconds: {
+      description: 'Pending-token TTL when `role === "secondFactor"`, in seconds.',
+      type: 'number',
+      default: 'cfg.tokens.pendingTtl ?? 300',
+    },
+    successRedirect: {
+      description: 'If set, `GET /magic-link/consume` returns a 302 to this path after sign-in. Cookies are set in both redirect and JSON modes.',
+      type: 'string',
+    },
+    errorRedirect: {
+      description: 'If set, `GET /magic-link/consume` redirects here on failure with `?error=<code>` appended.',
+      type: 'string',
+    },
+    expiredRedirect: {
+      description: 'Separate redirect target for expired tokens. Falls back to `errorRedirect` if unset.',
+      type: 'string',
+    },
+  }}
+/>
+
+## MagicLinkAdapter Interface
+
+If you are not using [@holeauth/magic-link-drizzle](drizzle), implement this interface to provide custom storage.
+
+```ts
+interface MagicLinkAdapter {
+  createToken(input: CreateMagicLinkInput): Promise<MagicLinkRecord>;
+  findByTokenHash(tokenHash: string): Promise<MagicLinkRecord | null>;
+  findActiveToken(identifier: string, type: MagicLinkTokenType): Promise<MagicLinkRecord | null>;
+  atomicConsumeByHash(tokenHash: string): Promise<MagicLinkRecord | null>;
+  atomicConsumeById(id: string): Promise<MagicLinkRecord | null>;
+  deleteByIdentifier(identifier: string, type?: MagicLinkTokenType): Promise<void>;
+  deleteByUserId(userId: string): Promise<void>;
+  deleteExpired(): Promise<void>;
+  findLatestByIdentifier(identifier: string, type: MagicLinkTokenType): Promise<MagicLinkRecord | null>;
+}
+```
+
+<TypeTable
+  type={{
+    id: {
+      description: 'Server-generated row id (UUID).',
+      type: 'string',
+    },
+    identifier: {
+      description: 'The email address the token was issued for.',
+      type: 'string',
+    },
+    tokenHash: {
+      description: 'SHA-256 hash of the plaintext token / OTP (base64url). The raw value is never persisted.',
+      type: 'string',
+    },
+    type: {
+      description: 'Either `magic-link` (URL token) or `otp` (numeric code).',
+      type: '"magic-link" | "otp"',
+    },
+    userId: {
+      description: 'FK to the user, set when the address resolves to a known user at creation time.',
+      type: 'string | null',
+    },
+    usedAt: {
+      description: 'Timestamp the token was consumed. `null` while pending.',
+      type: 'Date | null',
+    },
+    expiresAt: {
+      description: 'Absolute expiry.',
+      type: 'Date',
+    },
+    createdAt: {
+      description: 'Insert time.',
+      type: 'Date',
+    },
+  }}
+/>
+
+<Callout type="warn">
+  `atomicConsumeByHash` must mark the row used in a single UPDATE statement so concurrent consume attempts cannot succeed twice. The Drizzle adapter handles this correctly; custom implementations must as well.
+</Callout>
+
+## API Surface
+
+The plugin merges its API onto `auth.magicLink.*`:
+
+### request()
+
+Send a magic link or OTP to the given email. Silently no-ops when the policy disallows the user (e.g. unknown email with `useFor: 'login'`).
+
+```ts
+auth.magicLink.request(input: {
+  email: string;
+  /** Override `options.mode`. Ignored when mode is fixed (not `'both'`). */
+  type?: 'magic-link' | 'otp';
+  ip?: string;
+  userAgent?: string;
+}): Promise<{ sent: boolean }>
+```
+
+**Throws**
+
+- `MAGIC_LINK_INVALID_INPUT` — Email format invalid.
+- `MAGIC_LINK_RATE_LIMITED` — Too many recent attempts (per email + IP).
+- `MAGIC_LINK_RESEND_TOO_SOON` — `resendCooldownSeconds` not yet elapsed.
+
+### consume()
+
+Verify a magic-link token (read from URL query) and issue session tokens.
+
+```ts
+auth.magicLink.consume(input: {
+  token: string;
+  ip?: string;
+  userAgent?: string;
+}): Promise<{ user: AdapterUser; tokens: IssuedTokens }>
+```
+
+**Throws**
+
+- `MAGIC_LINK_INVALID_INPUT` — Token format invalid.
+- `MAGIC_LINK_NOT_FOUND` — Token does not exist.
+- `MAGIC_LINK_ALREADY_USED` — Token already consumed.
+- `MAGIC_LINK_EXPIRED` — Token past `expiresAt`.
+- `MAGIC_LINK_EMAIL_NOT_VERIFIED` — Set only when `blockLoginBeforeEmailVerification === true`.
+
+### verifyOtp()
+
+Verify a numeric OTP code and issue session tokens.
+
+```ts
+auth.magicLink.verifyOtp(input: {
+  email: string;
+  code: string;
+  ip?: string;
+  userAgent?: string;
+}): Promise<{ user: AdapterUser; tokens: IssuedTokens }>
+```
+
+**Throws**
+
+- `MAGIC_LINK_INVALID_INPUT` — Code format invalid (non-digit or wrong length).
+- `MAGIC_LINK_RATE_LIMITED` — Too many verify attempts.
+- `MAGIC_LINK_INVALID_CODE` — Code did not match the active OTP.
+- `MAGIC_LINK_EXPIRED` — Active OTP expired before verification.
+
+## Registered HTTP Routes
+
+The plugin registers the following routes on your auth handler:
+
+<TypeTable
+  type={{
+    "POST /magic-link/request": {
+      description: 'Request a magic-link URL or OTP for an email address. No session required; rate-limited per email + IP.',
+      type: 'requireAuth: false, requireCsrf: false',
+    },
+    "POST /magic-link/verify-otp": {
+      description: 'Submit a numeric OTP code. Issues session cookies on success.',
+      type: 'requireAuth: false, requireCsrf: false',
+    },
+    "GET /magic-link/consume": {
+      description: 'Verify a magic-link URL token (`?token=...`). Sets session cookies and either returns JSON or redirects according to `successRedirect` / `errorRedirect` / `expiredRedirect`.',
+      type: 'requireAuth: false',
+    },
+  }}
+/>
+
+<Callout type="info">
+  CSRF is intentionally disabled on `request` and `verify-otp` because the user has no session at that point. The endpoints are protected by per-email and per-IP rate limiting instead.
+</Callout>
+
+## Modes
+
+### Magic link only (default)
+
+```ts
+magicLink({ mode: 'magic-link', sendEmail, baseUrl, adapter })
+```
+
+The user enters their email, receives a URL, clicks it, and `GET /magic-link/consume?token=…` signs them in.
+
+### OTP only
+
+```ts
+magicLink({ mode: 'otp', sendEmail, baseUrl, adapter })
+```
+
+The user enters their email, receives a six-digit code, types it into a verify form, and `POST /magic-link/verify-otp` signs them in. Useful for native apps and email clients that mangle long URLs.
+
+### Both
+
+```ts
+magicLink({ mode: 'both', sendEmail, baseUrl, adapter })
+```
+
+The client picks per request by passing `{ type: 'magic-link' | 'otp' }` on `request()` (or the corresponding form field on `POST /magic-link/request`).
+
+## Roles
+
+### Primary
+
+The plugin is a complete sign-in method. Successful `consume` / `verifyOtp` issues access + refresh tokens.
+
+### Second factor
+
+```ts
+magicLink({ role: 'secondFactor', sendEmail, baseUrl, adapter })
+```
+
+Used in combination with another primary plugin (e.g. password). After the primary plugin signs in, the plugin emits a `signIn.challenge` instead of issuing tokens. The pending token is short-lived (`pendingTtlSeconds`). The client then collects an OTP or follows the email link to complete sign-in.
+
+## Useful For
+
+- `useFor: 'login'` — login-only; unknown emails return `{ sent: true }` but no email is sent (prevents account enumeration).
+- `useFor: 'register'` — registration-only; existing emails return `{ sent: true }` but no email is sent. Registration is always enabled in this scope.
+- `useFor: 'both'` — default; whether unknown emails are auto-registered is controlled by `allowRegistration`.
+
+## Security
+
+<Callout type="warn">
+  Magic-link tokens and OTP codes are stored only as SHA-256 hashes (base64url). The raw value is in the email and in the URL the user clicks — never on the server. Even with full database access, an attacker cannot reuse a previously delivered token.
+</Callout>
+
+- **Constant-time comparison.** Hash lookup and OTP comparison both use constant-time string equality.
+- **Single-use atomic consume.** `atomicConsumeByHash` marks the row used in one UPDATE statement; concurrent clicks of the same link can only succeed once.
+- **Email enumeration protection.** All `useFor` policies return the same shape regardless of whether the email is known.
+- **Per-email + per-IP rate limiting.** Defaults to 5 attempts per 5 minutes for both request and verify endpoints. Swap for a distributed limiter in production.
+- **Cookie security.** Sets `Secure` cookies when `baseUrl` uses `https:`. Locked to `HttpOnly` and `SameSite=Lax`.
+
+## Utility Exports
+
+The plugin also exports:
+
+```ts
+import {
+  createMemoryRateLimiter,
+  generateMagicToken,
+  generateOtp,
+  hashToken,
+  constantTimeEquals,
+} from '@holeauth/plugin-magic-link';
+```
+
+- `createMemoryRateLimiter(options?)` — in-memory limiter for dev. Pass a Redis-backed implementation in production.
+- `generateMagicToken()` — 32-byte cryptographically random token (base64url).
+- `generateOtp(length)` — numeric OTP of the given length.
+- `hashToken(token)` — SHA-256 hash (base64url).
+- `constantTimeEquals(a, b)` — timing-safe string comparison.
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/magic-link-drizzle" href="drizzle" description="Production-ready Drizzle adapter for Postgres, MySQL, and SQLite" />
+  <Card title="Build your own plugin" href="/plugins/tutorial" description="Walkthrough of the same concepts at a lower level" />
+  <Card title="Plugin system" href="/plugins" description="How plugins extend holeauth flows and routes" />
+</Cards>

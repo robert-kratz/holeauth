@@ -17,6 +17,7 @@
     "plugin-2fa",
     "plugin-passkey",
     "plugin-rbac",
+    "plugin-magic-link",
     "plugin-idp",
     "plugin-idp-consumer"
   ]

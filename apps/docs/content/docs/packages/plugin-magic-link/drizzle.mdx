@@ -1,0 +1,282 @@
+---
+title: "@holeauth/magic-link-drizzle"
+description: Drizzle ORM adapter for magic-link and email-OTP token storage across PostgreSQL, MySQL, and SQLite.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# @holeauth/magic-link-drizzle
+
+Drizzle ORM adapter for [`@holeauth/plugin-magic-link`](index) supporting PostgreSQL, MySQL, and SQLite.
+
+## Installation
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/magic-link-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/magic-link-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/magic-link-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/magic-link-drizzle
+```
+</Tab>
+</Tabs>
+
+## Subpath Exports
+
+This package provides dialect-specific entry points:
+
+- `@holeauth/magic-link-drizzle/pg` — PostgreSQL
+- `@holeauth/magic-link-drizzle/mysql` — MySQL
+- `@holeauth/magic-link-drizzle/sqlite` — SQLite
+
+All three expose the same API: `createMagicLinkTables` and `createMagicLinkAdapter`.
+
+## Usage by Dialect
+
+<Tabs items={['PostgreSQL', 'MySQL', 'SQLite']}>
+  <Tab value="PostgreSQL">
+```ts title="db/schema.ts"
+import { pgTable, text } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createMagicLinkTables } from '@holeauth/magic-link-drizzle/pg';
+
+export const users = pgTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  emailVerified: text('email_verified'),
+  name: text('name'),
+  image: text('image'),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const magicLinkSchema = createMagicLinkTables({ usersTable: users });
+```
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { magicLink } from '@holeauth/plugin-magic-link';
+import { createMagicLinkAdapter } from '@holeauth/magic-link-drizzle/pg';
+import { db } from '@/db/client';
+import { magicLinkSchema } from '@/db/schema';
+
+const magicLinkAdapter = createMagicLinkAdapter({ db, tables: magicLinkSchema.tables });
+
+export const auth = defineHoleauth({
+  // ...core config
+  plugins: [
+    magicLink({
+      adapter: magicLinkAdapter,
+      baseUrl: 'https://example.com/api/auth',
+      sendEmail: async ({ email, url, code, type }) => {
+        // your transactional email provider
+      },
+    }),
+  ] as const,
+});
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts"
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createMagicLinkTables } from '@holeauth/magic-link-drizzle/mysql';
+
+export const users = mysqlTable('users', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  emailVerified: timestamp('email_verified'),
+  name: varchar('name', { length: 255 }),
+  image: varchar('image', { length: 512 }),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const magicLinkSchema = createMagicLinkTables({ usersTable: users });
+```
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { magicLink } from '@holeauth/plugin-magic-link';
+import { createMagicLinkAdapter } from '@holeauth/magic-link-drizzle/mysql';
+import { db } from '@/db/client';
+import { magicLinkSchema } from '@/db/schema';
+
+const magicLinkAdapter = createMagicLinkAdapter({ db, tables: magicLinkSchema.tables });
+
+export const auth = defineHoleauth({
+  // ...core config
+  plugins: [
+    magicLink({
+      adapter: magicLinkAdapter,
+      baseUrl: 'https://example.com/api/auth',
+      sendEmail: async ({ email, url, code, type }) => {
+        // your transactional email provider
+      },
+    }),
+  ] as const,
+});
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts"
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createMagicLinkTables } from '@holeauth/magic-link-drizzle/sqlite';
+
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  emailVerified: integer('email_verified', { mode: 'timestamp' }),
+  name: text('name'),
+  image: text('image'),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const magicLinkSchema = createMagicLinkTables({ usersTable: users });
+```
+
+```ts title="lib/auth.ts"
+import { defineHoleauth } from '@holeauth/core';
+import { magicLink } from '@holeauth/plugin-magic-link';
+import { createMagicLinkAdapter } from '@holeauth/magic-link-drizzle/sqlite';
+import { db } from '@/db/client';
+import { magicLinkSchema } from '@/db/schema';
+
+const magicLinkAdapter = createMagicLinkAdapter({ db, tables: magicLinkSchema.tables });
+
+export const auth = defineHoleauth({
+  // ...core config
+  plugins: [
+    magicLink({
+      adapter: magicLinkAdapter,
+      baseUrl: 'https://example.com/api/auth',
+      sendEmail: async ({ email, url, code, type }) => {
+        // your transactional email provider
+      },
+    }),
+  ] as const,
+});
+```
+</Tab>
+</Tabs>
+
+## API Reference
+
+### createMagicLinkTables()
+
+Creates Drizzle table definitions for magic-link and OTP storage.
+
+```ts
+function createMagicLinkTables<U extends UsersTable>(
+  options: CreateMagicLinkTablesOptions<U>
+): {
+  tables: { magicLinkTokens: ... };
+  relations: { magicLinkTokensRelations: ... };
+}
+```
+
+<TypeTable
+  type={{
+    usersTable: {
+      description: 'Your Drizzle users table (must expose an `id` column). The token table foreign-keys to it with `ON DELETE CASCADE`.',
+      type: 'DrizzleTable',
+      required: true,
+    },
+    prefix: {
+      description: 'Prefix for the generated table name. The final table name is `${prefix}tokens`.',
+      type: 'string',
+      default: '"holeauth_magic_link_"',
+    },
+  }}
+/>
+
+**Returns**
+
+- `tables.magicLinkTokens` — Drizzle table with columns: `id` (PK), `identifier`, `tokenHash` (unique), `type`, `userId` (FK → users, cascade), `usedAt`, `expiresAt`, `createdAt`.
+- `relations.magicLinkTokensRelations` — Drizzle relation joining `magicLinkTokens.userId` → `users.id`.
+
+### createMagicLinkAdapter()
+
+Constructs a `MagicLinkAdapter` that implements the plugin's storage interface against the tables created above.
+
+```ts
+function createMagicLinkAdapter(
+  options: CreateMagicLinkAdapterOptions
+): MagicLinkAdapter
+```
+
+<TypeTable
+  type={{
+    db: {
+      description: 'Drizzle database instance.',
+      type: 'DrizzleDB',
+      required: true,
+    },
+    tables: {
+      description: 'Tables object returned by `createMagicLinkTables()`.',
+      type: 'Tables',
+      required: true,
+    },
+  }}
+/>
+
+## Schema Details
+
+The `magicLinkTokens` table has the following columns (PostgreSQL example):
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `varchar(36)` | Primary key, default `crypto.randomUUID()` |
+| `identifier` | `text` | Not null, indexed — the user's email address |
+| `tokenHash` | `text` | Not null, unique — SHA-256 hash of the plaintext token / OTP (base64url) |
+| `type` | `varchar(16)` | Not null — `magic-link` or `otp` |
+| `userId` | `text` | Foreign key → `users.id` (on delete cascade), nullable |
+| `usedAt` | `timestamp` | Nullable; set once the token is consumed |
+| `expiresAt` | `timestamp` | Not null, indexed |
+| `createdAt` | `timestamp` | Not null, default now |
+
+<Callout type="warn">
+  Only the **hash** of each token is persisted. The raw token lives in the user's email; the column is sufficient to verify but not to forge new sign-ins, even given full database access.
+</Callout>
+
+## Maintenance
+
+Call `adapter.deleteExpired()` on a schedule (cron, scheduled function, queue worker) to prune used and expired rows. The plugin does not run a background sweeper.
+
+```ts
+import { magicLinkAdapter } from '@/lib/auth';
+
+// daily cron
+await magicLinkAdapter.deleteExpired();
+```
+
+## Migration
+
+After defining your schema, generate and run a migration:
+
+```bash
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/plugin-magic-link" href="index" description="Plugin options, API surface, routes, and security model" />
+  <Card title="@holeauth/adapter-drizzle" href="/packages/adapter-drizzle" description="Core users / sessions / accounts / audit tables" />
+</Cards>

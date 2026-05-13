@@ -53,11 +53,12 @@ Plugins extend holeauth in five fundamental ways:
 
 ## Official plugins
 
-holeauth ships with four official plugins:
+holeauth ships with five official plugins:
 
 - `@holeauth/plugin-2fa` — TOTP two-factor authentication with recovery codes
 - `@holeauth/plugin-passkey` — WebAuthn / FIDO2 passwordless authentication
 - `@holeauth/plugin-rbac` — Role-based access control with YAML-driven policies
+- `@holeauth/plugin-magic-link` — Passwordless magic-link and email-OTP sign-in
 - `@holeauth/plugin-idp` — OAuth 2.0 / OpenID Connect identity provider (SSO server)
 
 ## Learn more
@@ -102,6 +103,11 @@ holeauth ships with four official plugins:
     title="Build your own plugin"
     href="/plugins/tutorial"
     description="Step-by-step tutorial building a magic link sign-in plugin."
+  />
+  <Card
+    title="plugin-magic-link"
+    href="/packages/plugin-magic-link"
+    description="Official magic-link and email-OTP plugin — the production-ready counterpart to the tutorial."
   />
 </Cards>
 

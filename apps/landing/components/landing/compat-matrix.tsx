@@ -40,6 +40,7 @@ const GROUPS: Group[] = [
     rows: [
       { label: 'totp + recovery codes', cells: ['yes', 'yes', 'yes', 'yes'], docsPath: '/packages/plugin-2fa' },
       { label: 'passkey register + login', cells: ['yes', 'yes', 'yes', 'yes'], docsPath: '/packages/plugin-passkey' },
+      { label: 'magic link / email otp', cells: ['yes', 'yes', 'yes', 'yes'], docsPath: '/packages/plugin-magic-link' },
     ],
   },
   {
@@ -81,6 +82,7 @@ const DRIZZLE_ADAPTERS: { pkg: string; docsPath: string }[] = [
   { pkg: '@holeauth/2fa-drizzle', docsPath: '/packages/plugin-2fa' },
   { pkg: '@holeauth/passkey-drizzle', docsPath: '/packages/plugin-passkey' },
   { pkg: '@holeauth/rbac-drizzle', docsPath: '/packages/plugin-rbac' },
+  { pkg: '@holeauth/magic-link-drizzle', docsPath: '/packages/plugin-magic-link/drizzle' },
   { pkg: '@holeauth/idp-drizzle', docsPath: '/packages/plugin-idp' },
 ] as const;
 

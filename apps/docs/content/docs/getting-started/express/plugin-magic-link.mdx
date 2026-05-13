@@ -1,0 +1,216 @@
+---
+title: Magic link and email OTP
+description: Add passwordless sign-in via magic links and numeric email OTP codes to your Express application.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Magic link and email OTP
+
+Add passwordless sign-in to your Express server. Users hit `POST /auth/magic-link/request` with an email and receive either a one-click magic link or a six-digit OTP.
+
+<Callout type="info">
+  This guide assumes you have completed the [core Express setup](/getting-started/express).
+</Callout>
+
+<Steps>
+<Step>
+### Install packages
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab value="pnpm">
+```bash
+pnpm add @holeauth/plugin-magic-link @holeauth/magic-link-drizzle
+```
+</Tab>
+  <Tab value="npm">
+```bash
+npm install @holeauth/plugin-magic-link @holeauth/magic-link-drizzle
+```
+</Tab>
+  <Tab value="yarn">
+```bash
+yarn add @holeauth/plugin-magic-link @holeauth/magic-link-drizzle
+```
+</Tab>
+  <Tab value="bun">
+```bash
+bun add @holeauth/plugin-magic-link @holeauth/magic-link-drizzle
+```
+</Tab>
+</Tabs>
+</Step>
+
+<Step>
+### Extend your database schema
+
+<Tabs items={['Postgres', 'MySQL', 'SQLite']}>
+  <Tab value="Postgres">
+```ts title="db/schema.ts" {3,14}
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/pg';
+import { createMagicLinkTables } from '@holeauth/magic-link-drizzle/pg';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  emailVerified: timestamp('email_verified', { withTimezone: true, mode: 'date' }),
+  name: text('name'),
+  image: text('image'),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const magicLinkSchema = createMagicLinkTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="MySQL">
+```ts title="db/schema.ts" {3,14}
+import { mysqlTable, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/mysql';
+import { createMagicLinkTables } from '@holeauth/magic-link-drizzle/mysql';
+
+export const users = mysqlTable('user', {
+  id: varchar('id', { length: 255 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  emailVerified: timestamp('email_verified'),
+  name: varchar('name', { length: 255 }),
+  image: varchar('image', { length: 512 }),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const magicLinkSchema = createMagicLinkTables({ usersTable: users });
+```
+</Tab>
+  <Tab value="SQLite">
+```ts title="db/schema.ts" {3,14}
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createHoleauthTables } from '@holeauth/adapter-drizzle/sqlite';
+import { createMagicLinkTables } from '@holeauth/magic-link-drizzle/sqlite';
+
+export const users = sqliteTable('user', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text('email').notNull().unique(),
+  emailVerified: integer('email_verified', { mode: 'timestamp' }),
+  name: text('name'),
+  image: text('image'),
+});
+
+export const holeauth = createHoleauthTables({ usersTable: users });
+export const magicLinkSchema = createMagicLinkTables({ usersTable: users });
+```
+</Tab>
+</Tabs>
+
+Run `drizzle-kit generate` and `drizzle-kit push`.
+</Step>
+
+<Step>
+### Wire the plugin into your auth instance
+
+```ts title="lib/auth.ts" {5,6,11,30-44}
+import { createExpressAuth } from '@holeauth/express';
+import { createHoleauthAdapters } from '@holeauth/adapter-drizzle/pg';
+import { db } from './db/client';
+import { holeauth, magicLinkSchema } from './db/schema';
+import { magicLink } from '@holeauth/plugin-magic-link';
+import { createMagicLinkAdapter } from '@holeauth/magic-link-drizzle/pg';
+import { sendTransactionalEmail } from './email';
+
+const AUTH_BASE_PATH = '/auth';
+const adapters = createHoleauthAdapters({ db, tables: holeauth.tables });
+const magicLinkAdapter = createMagicLinkAdapter({ db, tables: magicLinkSchema.tables });
+
+export const auth = createExpressAuth({
+  secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+  adapters: {
+    user: adapters.user,
+    session: adapters.session,
+    account: adapters.account,
+    auditLog: adapters.auditLog,
+    verificationToken: adapters.verificationToken,
+    transaction: adapters.transaction,
+  },
+  tokens: {
+    accessTtl: 60 * 15,
+    refreshTtl: 60 * 60 * 24 * 30,
+    cookiePrefix: 'holeauth',
+    sameSite: 'lax',
+  },
+  plugins: [
+    magicLink({
+      adapter: magicLinkAdapter,
+      baseUrl: `${process.env.APP_URL}${AUTH_BASE_PATH}`,
+      mode: 'both',
+      role: 'primary',
+      tokenTtlSeconds: 600,
+      otpLength: 6,
+      successRedirect: '/dashboard',
+      errorRedirect: '/magic-link',
+      expiredRedirect: '/magic-link/expired',
+      sendEmail: async ({ email, url, code, type }) => {
+        if (type === 'magic-link') await sendTransactionalEmail(email, 'Sign in', `Click: ${url}`);
+        else await sendTransactionalEmail(email, 'Your code', `Code: ${code}`);
+      },
+    }),
+  ] as const,
+});
+```
+
+Mount the auth router as usual:
+
+```ts title="server.ts"
+import express from 'express';
+import { auth } from './lib/auth';
+
+const app = express();
+app.use('/auth', auth.router);
+app.listen(3000);
+```
+
+The plugin registers three new endpoints under that mount:
+
+- `POST /auth/magic-link/request`
+- `GET /auth/magic-link/consume?token=…`
+- `POST /auth/magic-link/verify-otp`
+</Step>
+
+<Step>
+### Call from your client
+
+```ts
+// request a magic link
+await fetch('/auth/magic-link/request', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({ email, type: 'magic-link' }),
+});
+
+// or verify an OTP
+await fetch('/auth/magic-link/verify-otp', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({ email, code }),
+});
+```
+
+For the magic-link flow, `GET /auth/magic-link/consume?token=…` sets the session cookies and redirects to `successRedirect`. No additional client work needed.
+</Step>
+</Steps>
+
+## Security notes
+
+<Callout type="warn">
+  Only the **hash** of each token / OTP is persisted. Use `https://` in production. Swap the default in-memory rate limiter for a Redis-backed one when scaling beyond a single process.
+</Callout>
+
+## Next
+
+<Cards>
+  <Card title="@holeauth/plugin-magic-link" href="/packages/plugin-magic-link" description="Full option reference and API surface" />
+  <Card title="@holeauth/magic-link-drizzle" href="/packages/plugin-magic-link/drizzle" description="Schema details and adapter API" />
+</Cards>

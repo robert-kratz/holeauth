@@ -1,4 +1,4 @@
 {
   "title": "Express",
-  "pages": ["index", "plugin-2fa", "plugin-passkey", "plugin-rbac", "sso-consumer", "sso-provider"]
+  "pages": ["index", "plugin-2fa", "plugin-passkey", "plugin-rbac", "plugin-magic-link", "sso-consumer", "sso-provider"]
 }

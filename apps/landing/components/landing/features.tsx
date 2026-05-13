@@ -5,6 +5,7 @@ import {
   Shield,
   Fingerprint,
   Users,
+  Mail,
   LogIn,
   Building2,
   Code2,
@@ -44,6 +45,13 @@ const FEATURES: Feature[] = [
     description:
       'roles, groups, wildcard permissions, direct user overrides, ttl-cached lookups, yaml config.',
     docsPath: '/packages/plugin-rbac',
+  },
+  {
+    icon: Mail,
+    title: 'magic link / otp',
+    description:
+      'passwordless sign-in via one-click links or six-digit email codes. hash-only storage, rate-limited.',
+    docsPath: '/packages/plugin-magic-link',
   },
   {
     icon: LogIn,

@@ -1,5 +1,5 @@
 export type FeatureCategory = 'core' | 'plugin' | 'adapter';
-export type IconName = 'Shield' | 'Fingerprint' | 'Users' | 'LogIn' | 'Building2' | 'Code2' | 'Database';
+export type IconName = 'Shield' | 'Fingerprint' | 'Users' | 'LogIn' | 'Building2' | 'Code2' | 'Database' | 'Mail';
 export type CodeLang = 'bash' | 'typescript' | 'yaml';
 
 export interface CodeStep {

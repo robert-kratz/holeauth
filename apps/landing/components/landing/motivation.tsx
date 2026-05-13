@@ -70,7 +70,7 @@ export function Motivation() {
         {/* CTA */}
         <div className="mt-12 flex justify-center">
           <a
-            href={docsUrl('/docs/skills')}
+            href={docsUrl('/skills')}
             className="group inline-flex items-center gap-2 rounded-full border border-[var(--color-line)] bg-[#0c0c0f]/70 px-5 py-2.5 text-[13px] text-ink-dim backdrop-blur-md transition hover:border-[var(--color-line-strong)] hover:text-ink"
           >
             use holeauth skills with your ai agent
