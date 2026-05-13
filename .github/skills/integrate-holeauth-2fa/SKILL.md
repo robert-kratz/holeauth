@@ -2,6 +2,7 @@
 name: integrate-holeauth-2fa
 description: "Add Two-Factor Authentication (TOTP / 2FA) to a holeauth project using @holeauth/plugin-2fa and @holeauth/2fa-drizzle. Use when: adding 2FA, adding TOTP, adding two-factor auth, adding OTP, setting up authenticator app support, recovery codes. Requires integrate-holeauth-core to be completed first."
 argument-hint: "Inherits dialect + usersTable from core skill"
+domain: "authentication, authorization, holeauth, 2fa, totp, otp, plugins, drizzle"
 ---
 
 # Integrate holeauth — Two-Factor (TOTP)

@@ -2,6 +2,7 @@
 name: integrate-holeauth-rbac
 description: "Add Role-Based Access Control (RBAC) to a holeauth project using @holeauth/plugin-rbac, @holeauth/rbac-drizzle, and @holeauth/rbac-yaml. Use when: adding roles, adding permissions, adding RBAC, adding authorization, protecting routes, restricting access, adding groups, adding user roles, wildcard permissions. Requires integrate-holeauth-core to be completed first."
 argument-hint: "Inherits dialect + usersTable from core skill"
+domain: "authentication, authorization, holeauth, rbac, plugins, drizzle, yaml"
 ---
 
 # Integrate holeauth — RBAC

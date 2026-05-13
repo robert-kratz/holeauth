@@ -2,6 +2,7 @@
 name: integrate-holeauth
 description: "Entry-point skill for adding holeauth authentication to an existing project. Use when: adding authentication, setting up auth, integrating holeauth, installing holeauth, adding login, adding 2FA, adding passkeys, adding RBAC, adding SSO, becoming an OIDC provider, consuming an OIDC provider, adding sessions. Asks what features are needed and routes to the right per-package skills."
 argument-hint: "Optional: comma-separated plugin list to skip the multi-select (e.g. '2fa,rbac')"
+domain: "authentication, authorization, holeauth, integrations, 2fa, passkeys, rbac, sso, oidc"
 ---
 
 # Integrate holeauth

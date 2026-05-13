@@ -2,6 +2,7 @@
 name: integrate-holeauth-passkey
 description: "Add Passkey (WebAuthn / FIDO2) authentication to a holeauth project using @holeauth/plugin-passkey and @holeauth/passkey-drizzle. Use when: adding passkeys, adding WebAuthn, adding biometric login, adding FIDO2, passwordless login, passkey registration. Requires integrate-holeauth-core to be completed first."
 argument-hint: "Inherits dialect + usersTable from core skill"
+domain: "authentication, authorization, holeauth, passkeys, webauthn, fido2, plugins, drizzle"
 ---
 
 # Integrate holeauth — Passkeys (WebAuthn)

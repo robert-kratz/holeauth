@@ -4,10 +4,15 @@ description: Extend holeauth with first-class plugins that hook into flows, moun
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
 
 # Plugin system
 
 A holeauth plugin is a first-class extension that can contribute its own adapter, hook into core flows, mount HTTP routes, and expose a typed API surface that merges into the returned `HoleauthInstance` at `auth[plugin.id]`.
+
+<Callout type="info">
+  Building a custom plugin? The [`holeauth-plugin-design`](/skills) skill scaffolds the full package structure for you. [Browse all skills →](/skills)
+</Callout>
 
 Plugins are registered via `defineHoleauth({ plugins: [...] as const })`. The returned instance type is inferred from the tuple so consumers get full IntelliSense without any `declare module` augmentation.
 

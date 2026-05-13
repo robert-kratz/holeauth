@@ -2,6 +2,7 @@
 name: integrate-holeauth-core
 description: "Set up the holeauth core packages (@holeauth/core, @holeauth/adapter-drizzle, and the matching platform adapter) in any supported framework. Use when: installing holeauth core, setting up the auth instance, creating Drizzle schema for auth, wiring the route handler, adding the HoleauthProvider, configuring middleware. Required first step before any plugin skill. Supports: Next.js App Router, Next.js Pages Router, Express, Hono."
 argument-hint: "Inherits answers from integrate-holeauth or bootstrap-nextjs-holeauth"
+domain: "authentication, authorization, holeauth, core, adapter-drizzle, nextjs, express, hono"
 ---
 
 # Integrate holeauth — Core

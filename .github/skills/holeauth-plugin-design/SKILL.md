@@ -2,6 +2,7 @@
 name: holeauth-plugin-design
 description: "Design and scaffold a new holeauth plugin package from scratch using definePlugin. Use when: building a custom holeauth plugin, creating a holeauth extension, adding domain-specific auth logic via the plugin system, custom hooks on auth events, custom auth routes, custom auth API surface, custom auth adapter. Slim scaffold + delegation to the docs."
 argument-hint: "Optional: plugin name (kebab-case)"
+domain: "holeauth, plugins, definePlugin, plugin development, authentication, authorization"
 ---
 
 # Holeauth Plugin Design

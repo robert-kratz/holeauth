@@ -2,6 +2,8 @@
   "title": "holeauth",
   "pages": [
     "index",
+    "---AI Toolkit---",
+    "skills",
     "---Learn---",
     "concepts",
     "getting-started",
@@ -10,8 +12,6 @@
     "---Reference---",
     "packages",
     "sso",
-    "integrations",
-    "---AI Toolkit---",
-    "skills"
+    "integrations"
   ]
 }

@@ -2,6 +2,7 @@
 name: integrate-holeauth-idp
 description: "Run an OAuth 2.0 / OpenID Connect Identity Provider (SSO server) using @holeauth/plugin-idp and @holeauth/idp-drizzle. Use when: becoming an OIDC provider, issuing access tokens to other apps, running an authorization server, exposing /.well-known/openid-configuration, multi-tenant OAuth app registry, JWKS, refresh token rotation, signing key rotation. This is the SERVER side. To CONSUME an external IDP, use integrate-holeauth-idp-consumer. Requires integrate-holeauth-core."
 argument-hint: "Inherits dialect + usersTable from core skill"
+domain: "authentication, authorization, holeauth, sso, oidc, oauth, plugins, drizzle"
 ---
 
 # Integrate holeauth — IDP Server (OIDC)

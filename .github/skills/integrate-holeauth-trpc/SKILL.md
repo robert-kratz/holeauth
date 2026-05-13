@@ -2,6 +2,7 @@
 name: integrate-holeauth-trpc
 description: "Wire tRPC v11 into a holeauth-protected Next.js App Router app with auth-aware context, transparent refresh, and optional RBAC-gated procedures. Use when: adding tRPC, setting up tRPC with holeauth, auth-aware tRPC context, RBAC tRPC procedures, getSessionOrRefresh, tRPC refresh rotation."
 argument-hint: "Inherits answers from integrate-holeauth"
+domain: "authentication, authorization, holeauth, tRPC, integrations, nextjs"
 ---
 
 # Integrate holeauth — tRPC

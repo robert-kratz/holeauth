@@ -4,10 +4,15 @@ description: Run an OIDC provider or consume external identity providers for fed
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
 
 # Single sign-on
 
 holeauth supports SSO in two directions: you can **issue** tokens (become an Identity Provider) or **accept** tokens from external IDPs (act as a Relying Party / OAuth client).
+
+<Callout type="info">
+  Use [`integrate-holeauth-idp`](/skills) to scaffold an OIDC Provider setup, or [`integrate-holeauth-idp-consumer`](/skills) to wire a Relying Party. [Browse all skills →](/skills)
+</Callout>
 
 ## Provider vs. Consumer
 

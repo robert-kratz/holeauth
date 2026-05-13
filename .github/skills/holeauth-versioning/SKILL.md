@@ -2,6 +2,7 @@
 name: holeauth-versioning
 description: "Manage all versioning and release operations for the holeauth monorepo using Changesets. Use when: adding a changeset, bumping versions, releasing packages, publishing to npm, switching between pre-release and stable mode, triggering a snapshot, recovering from a broken version state, version packages, release alpha, release stable, changeset add, create changeset, broken release, wrong version published, unpublish, fix pre.json, pre-release mode, enter alpha, exit alpha."
 argument-hint: "Optional: list of changed packages and bump type (patch/minor/major)"
+domain: "versioning, releases, changesets, npm, monorepo management, CI/CD"
 ---
 
 # holeauth Versioning & Release Management

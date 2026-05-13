@@ -2,6 +2,7 @@
 name: integrate-holeauth-idp-consumer
 description: "Consume an external OAuth 2.0 / OpenID Connect Identity Provider as a Relying Party (RP). Use when: signing users in via another holeauth IDP, signing users in via Auth0 / Keycloak / Okta / generic OIDC, building an SSO client, OIDC RP, OAuth client app, federated login, third-party login. The OPPOSITE of integrate-holeauth-idp (which IS the IDP). Note: Google and GitHub are built into @holeauth/core/sso — use that instead for those two."
 argument-hint: "Optional: upstream issuer URL"
+domain: "authentication, authorization, holeauth, sso, oidc, oauth, plugins, drizzle"
 ---
 
 # Integrate holeauth — IDP Consumer (OIDC Relying Party)

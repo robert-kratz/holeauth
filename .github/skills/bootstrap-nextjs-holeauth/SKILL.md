@@ -2,6 +2,7 @@
 name: bootstrap-nextjs-holeauth
 description: "Bootstrap a brand-new Next.js project with TypeScript, Drizzle ORM (or headless), tRPC (optional), and a fully wired holeauth integration covering ALL plugins (2FA, passkey, RBAC, IDP server, IDP consumer). Use when: starting a new Next.js project with auth, scaffolding Next.js + Drizzle + holeauth from scratch, creating a fresh app with login, generating a greenfield holeauth setup, 'create new nextjs holeauth project'. Interviews via vscode_askQuestions, scaffolds the app, then delegates to the per-package skills."
 argument-hint: "Optional: target directory name (default: my-app)"
+domain: "nextjs, drizzle, trpc, authentication, authorization, sso, 2fa, passkeys, rbac, idp"
 ---
 
 # Bootstrap Next.js + holeauth
