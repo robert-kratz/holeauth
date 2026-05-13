@@ -352,18 +352,35 @@ interface TwoFaSetupResult {
 
 ### `use2faVerify()`
 
-Complete a pending 2FA challenge after sign-in.
+Complete a pending 2FA challenge after sign-in. The `pendingToken` is read from the `holeauth.pending` HttpOnly cookie server-side — no token needs to be passed from the client.
 
 ```tsx
 import { use2faVerify } from '@holeauth/react';
 
 const { verify, loading, error } = use2faVerify();
 
-await verify({ pendingToken, code });
+await verify({ code });
 // On success, session is refreshed automatically
 ```
 
-**Returns:** `{ verify: (input: { pendingToken: string; code: string }) => Promise<{ ok: boolean }>; loading; error }`
+**Returns:** `{ verify: (input: { code: string }) => Promise<{ ok: boolean }>; loading; error }`
+
+---
+
+### `use2faCancel()`
+
+Cancel the current 2FA challenge. Calls `POST /api/auth/2fa/cancel`, which clears the `holeauth.pending` cookie server-side, returning the user to an unauthenticated state so they can restart sign-in.
+
+```tsx
+import { use2faCancel } from '@holeauth/react';
+
+const { cancel, loading, error } = use2faCancel();
+
+await cancel();
+// holeauth.pending cookie cleared — redirect to /login
+```
+
+**Returns:** `{ cancel: () => Promise<{ ok: boolean }>; loading; error }`
 
 ---
 

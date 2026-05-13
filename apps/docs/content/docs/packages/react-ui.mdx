@@ -149,20 +149,23 @@ import { PasswordChangeForm } from '@holeauth/react-ui';
 
 ### TwoFactorVerifyForm
 
-Two-factor verification form (for pending challenges).
+Two-factor verification form. Reads the `holeauth.pending` cookie automatically — no `pendingToken` prop needed. Render this on a dedicated `/2fa/verify` page; do **not** embed it inline in the login page.
 
 ```tsx
 import { TwoFactorVerifyForm } from '@holeauth/react-ui';
 
 <TwoFactorVerifyForm.Root
-  pendingToken={challenge.token}
-  onSuccess={(session) => console.log(session)}
+  onSuccess={() => router.push('/dashboard')}
+  onCancel={() => router.push('/login')}
 >
   <TwoFactorVerifyForm.Code placeholder="6-digit code" required />
   <TwoFactorVerifyForm.Submit>Verify</TwoFactorVerifyForm.Submit>
   <TwoFactorVerifyForm.Error />
+  <TwoFactorVerifyForm.Cancel>← Back to login</TwoFactorVerifyForm.Cancel>
 </TwoFactorVerifyForm.Root>
 ```
+
+`TwoFactorVerifyForm.Cancel` calls `POST /api/auth/2fa/cancel` to clear the pending cookie server-side, then triggers `onCancel`.
 
 ### PasskeySetup
 

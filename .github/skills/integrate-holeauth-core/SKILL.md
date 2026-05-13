@@ -225,8 +225,8 @@ export const COOKIE_PREFIX = '<cookiePrefix>';
 Configure request-level middleware to validate JWTs, protect routes, and handle token refresh. Use the `protectAllExcept` strategy (recommended): all routes require authentication except the explicitly listed public paths.
 
 **This step is platform-specific** — the AI agent must implement it in the pattern appropriate for `framework`:
-- **Next.js App Router 16+:** file is `proxy.ts` at the project root
-- **Next.js App Router 15 and earlier:** file is `middleware.ts`
+- **Next.js App Router 16+:** file is `proxy.ts` next to `app/` — i.e. `src/proxy.ts` for the `src/` layout, otherwise project root. **Next.js will silently ignore the file if `app/` lives under `src/` but `proxy.ts` is at the project root.**
+- **Next.js App Router 15 and earlier:** file is `middleware.ts` with the same placement rule
 - **Express / Hono:** middleware registered on the router
 
 Docs:
@@ -331,12 +331,17 @@ These cannot be derived from the docs alone — **embed them in the generated co
 
 1. **`plugins: [...] as const`** — without `as const`, TypeScript cannot infer `auth.<pluginKey>.<method>()` and downstream skills break.
 2. **`adapters: {} as any`** in `holeauthMiddleware` is intentional — the middleware only validates JWTs, never touches the DB. Do NOT pass real adapters there.
-3. **File is `proxy.ts` on Next.js 16+**, `middleware.ts` on Next.js 15 and earlier.
+3. **File is `proxy.ts` on Next.js 16+**, `middleware.ts` on Next.js 15 and earlier. **It must sit next to `app/`** — `src/proxy.ts` for the `src/` layout, otherwise project root. Wrong location = no middleware runs = no session refresh.
 4. **Event name is `'user.registered'`** — NOT `'user.created'`. The other reliable events: `user.login`, `user.logout`, `user.invite_consumed`, `session.created`, `token.rotated`.
 5. **`cookiePrefix` must match exactly** in three places: `createAuthHandler({ tokens })`, `holeauthMiddleware({ config: { tokens }})`, `<HoleauthProvider cookiePrefix>`.
 6. **`core.tables` does NOT contain `users`** — that's app-owned. Adding it again to the schema spread produces a Drizzle duplicate-table error.
 7. **`runtime = 'nodejs'`** on the route handler — `@node-rs/argon2` and scrypt-fallback need Node APIs.
 8. **`@holeauth/react-ui` ships zero CSS.** It is fully headless — never import a stylesheet from it. All styling is done by passing `className` / `style` props to each compound-component slot. Forgetting this leads to completely unstyled forms with no error in the console.
+9. **`getFullSession` does NOT load the user row by default.** `result.user` is `undefined` unless `{ loadUser: true }` is passed as the second argument. Always pass it when rendering user data (e.g. email, name) in a Server Component:
+   ```ts
+   const result = await getFullSession(auth, { loadUser: true });
+   // result.user.email is now defined
+   ```
 
 ---
 

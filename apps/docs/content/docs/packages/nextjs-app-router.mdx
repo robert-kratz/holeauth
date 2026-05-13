@@ -125,40 +125,163 @@ export default async function DashboardPage() {
 
 ## Middleware
 
-Middleware export for session validation and refresh.
+Edge-compatible middleware factory for session validation, transparent token refresh, and automatic route protection.
 
-```ts title="middleware.ts"
-import { createMiddleware } from '@holeauth/nextjs-app-router/middleware';
-import { auth } from '@/lib/auth';
+Import from the dedicated sub-path so the Edge Runtime never pulls in Node.js/adapter dependencies:
 
-export default createMiddleware(auth, {
-  protectedPaths: ['/dashboard', '/settings'],
-  publicPaths: ['/login', '/register'],
-  redirectTo: '/login',
+```ts title="src/proxy.ts"
+import { holeauthMiddleware } from '@holeauth/nextjs-app-router/middleware';
+import type { NextRequest } from 'next/server';
+
+const holemw = holeauthMiddleware({
+  config: {
+    secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! },
+    tokens: { cookiePrefix: 'holeauth' },
+  },
+  // Every route is protected EXCEPT the paths listed here.
+  protectAllExcept: ['/', '/login', '/register', '/register/accept', '/2fa/verify'],
+  signInPath: '/login',
+  pendingPath: '/2fa/verify',
+  afterSignInPath: '/dashboard',
+  guestOnly: ['/register', '/register/accept'],
+  basePath: '/api/auth',
 });
 
+export async function proxy(req: NextRequest) {
+  return holemw(req);
+}
+
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
 };
 ```
 
+<Callout type="info">
+  In Next.js 16+ with a `src/` layout, the middleware file is `src/proxy.ts` and exports a named `proxy` function. In earlier versions it is `middleware.ts` with a default export.
+</Callout>
+
+### Route protection rules
+
+The middleware enforces four automatic rules on every incoming request:
+
+| Situation | Outcome |
+|---|---|
+| Protected route + no session + refresh cookie present | Transparent token rotation; request continues |
+| Protected route + no session + no refresh | Redirect to `signInPath` |
+| Protected route + active pending-2FA cookie | Redirect to `pendingPath` instead of login |
+| `pendingPath` + **no** pending cookie | Redirect to `signInPath` |
+| `signInPath` + pending cookie present | Redirect to `pendingPath` |
+| `signInPath` / `guestOnly` paths + valid session | Redirect to `afterSignInPath` |
+
+### `protect` vs `protectAllExcept`
+
+Use `protect` to explicitly list the routes that require auth:
+
+```ts title="src/proxy.ts"
+holeauthMiddleware({
+  config: { secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! } },
+  protect: ['/dashboard', '/settings', '/api/trpc'],
+  signInPath: '/login',
+  afterSignInPath: '/dashboard',
+});
+```
+
+Use `protectAllExcept` for a secure-by-default approach (recommended):
+
+```ts title="src/proxy.ts"
+holeauthMiddleware({
+  config: { secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! } },
+  protectAllExcept: ['/', '/login', '/register', '/2fa/verify'],
+  signInPath: '/login',
+  pendingPath: '/2fa/verify',
+  afterSignInPath: '/dashboard',
+  guestOnly: ['/register'],
+});
+```
+
+Do not pass both options at the same time — the middleware will throw at startup.
+
+### `MiddlewareOptions` reference
+
 <TypeTable
   type={{
-    protectedPaths: {
-      description: 'Array of path prefixes that require authentication.',
-      type: 'string[]',
+    config: {
+      description: 'Edge-compatible config subset. Pass `auth.config` directly or a plain object with `secrets.jwtSecret` to avoid importing Node.js/adapter code into the Edge Runtime.',
+      type: 'MiddlewareConfig',
+      required: true,
     },
-    publicPaths: {
-      description: 'Array of path prefixes that are always accessible.',
-      type: 'string[]',
+    protect: {
+      description: 'Paths that require a valid session. Mutually exclusive with `protectAllExcept`.',
+      type: '(string | RegExp)[]',
     },
-    redirectTo: {
-      description: 'Path to redirect unauthenticated users.',
+    protectAllExcept: {
+      description: 'Every route is protected except the paths listed here. Mutually exclusive with `protect`.',
+      type: '(string | RegExp)[]',
+    },
+    signInPath: {
+      description: 'Where to redirect unauthenticated users.',
       type: 'string',
       default: '"/login"',
     },
+    pendingPath: {
+      description: 'Where to redirect users whose sign-in is pending a plugin challenge (2FA, etc.).',
+      type: 'string',
+      default: '"/2fa/verify"',
+    },
+    afterSignInPath: {
+      description: 'Where to redirect already-authenticated users who try to access `signInPath`, `pendingPath`, or any `guestOnly` path.',
+      type: 'string',
+      default: '"/"',
+    },
+    guestOnly: {
+      description: 'Additional paths that authenticated users must not access (e.g. `/register`). `signInPath` and `pendingPath` are included automatically.',
+      type: '(string | RegExp)[]',
+    },
+    refreshOnExpired: {
+      description: 'When the access token is expired but a refresh cookie is present, attempt a transparent token rotation before bouncing the user to sign-in.',
+      type: 'boolean',
+      default: 'true',
+    },
+    basePath: {
+      description: 'Mount point of the auth route handler. Used to build the refresh sub-request URL.',
+      type: 'string',
+      default: '"/api/auth"',
+    },
   }}
 />
+
+### Combining with other middleware
+
+Wrap `holeauthMiddleware` to run i18n rewrites, feature flags, or A/B cookies before the auth check:
+
+```ts title="src/proxy.ts"
+import { holeauthMiddleware } from '@holeauth/nextjs-app-router/middleware';
+import { NextRequest, NextResponse } from 'next/server';
+
+const holemw = holeauthMiddleware({
+  config: { secrets: { jwtSecret: process.env.HOLEAUTH_SECRET! } },
+  protectAllExcept: ['/', '/login'],
+  signInPath: '/login',
+  afterSignInPath: '/dashboard',
+});
+
+export async function proxy(req: NextRequest) {
+  // Custom logic before auth.
+  const locale = req.cookies.get('locale')?.value ?? 'en';
+  if (!req.nextUrl.pathname.startsWith(`/${locale}`)) {
+    return NextResponse.redirect(new URL(`/${locale}${req.nextUrl.pathname}`, req.url));
+  }
+  return holemw(req);
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
+};
+```
+
+<Callout type="warn">
+  Always exclude `api/auth` from the matcher. The auth route handler manages its own cookies; running the middleware over it can drop `Set-Cookie` headers during refresh rotation.
+</Callout>
 
 ## validateCurrentRequest
 
@@ -194,13 +317,23 @@ Server helper: validate the current request and return the session with user dat
 ```ts
 async function getFullSession(
   auth: HoleauthInstance,
+  opts?: {
+    loadUser?: boolean;
+    permissions?: string | string[];
+    anyPermission?: string[];
+    groups?: string | string[];
+  },
 ): Promise<{
   session: SessionData;
-  user: AdapterUser;
+  user?: AdapterUser; // only present when loadUser: true is passed
   permissions?: string[];
   groups?: string[];
 } | null>;
 ```
+
+<Callout type="warn">
+  `result.user` is `undefined` by default. Pass `{ loadUser: true }` to fetch the user row from the database and access fields like `email` or `name`.
+</Callout>
 
 <Callout type="info">
   This helper automatically fetches the user record and RBAC snapshot (if `plugin-rbac` is registered) in a single database query. Use it when you need user data or permissions in a Server Component.
@@ -212,7 +345,7 @@ import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 
 export default async function AdminPage() {
-  const result = await getFullSession(auth);
+  const result = await getFullSession(auth, { loadUser: true });
   if (!result) {
     redirect('/login');
   }
@@ -269,27 +402,6 @@ export const POST = handlers.POST;
 
 ## Middleware Patterns
 
-The middleware helper composes with any other Next.js middleware. The patterns below cover the most common production setups.
-
-### Restricting to authenticated paths
-
-```ts title="middleware.ts"
-import { createMiddleware } from '@holeauth/nextjs-app-router/middleware';
-import { auth } from '@/lib/auth';
-
-export default createMiddleware(auth, {
-  protectedPaths: ['/dashboard', '/settings'],
-  publicPaths: ['/', '/login', '/register'],
-  redirectTo: '/login',
-});
-
-export const config = {
-  // Exclude static assets and the auth API itself so the middleware never
-  // intercepts its own refresh roundtrip.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
-};
-```
-
 ### Combining with RBAC
 
 The middleware only validates the session; route-level permission checks belong in the page or route handler. Use `getFullSession` in a Server Component to short-circuit a request when a permission is missing:
@@ -300,44 +412,12 @@ import { getFullSession } from '@holeauth/nextjs-app-router';
 import { auth } from '@/lib/auth';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const result = await getFullSession(auth);
+  const result = await getFullSession(auth, { permissions: 'admin.access' });
   if (!result) redirect('/login');
   if (!result.permissions?.includes('admin.access')) redirect('/');
   return <>{children}</>;
 }
 ```
-
-### Chaining with other middleware
-
-Wrap the holeauth middleware to add i18n redirection, feature flags, or A/B test cookies before authentication runs.
-
-```ts title="middleware.ts"
-import { NextRequest, NextResponse } from 'next/server';
-import { createMiddleware } from '@holeauth/nextjs-app-router/middleware';
-import { auth } from '@/lib/auth';
-
-const authMiddleware = createMiddleware(auth, {
-  protectedPaths: ['/dashboard'],
-  redirectTo: '/login',
-});
-
-export default async function middleware(req: NextRequest) {
-  // Locale rewrite first — keeps cookies on the right URL.
-  const locale = req.cookies.get('locale')?.value ?? 'en';
-  if (!req.nextUrl.pathname.startsWith(`/${locale}`)) {
-    return NextResponse.redirect(new URL(`/${locale}${req.nextUrl.pathname}`, req.url));
-  }
-  return authMiddleware(req);
-}
-
-export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
-};
-```
-
-<Callout type="info">
-  Keep `api/auth` excluded from the matcher. The auth route handler manages its own cookies; running middleware on top of it can drop `Set-Cookie` headers during refresh rotation.
-</Callout>
 
 ## See also
 

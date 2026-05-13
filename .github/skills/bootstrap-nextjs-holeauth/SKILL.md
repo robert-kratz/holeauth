@@ -262,7 +262,7 @@ git commit -m "feat: bootstrap with holeauth"
 4. **Adapter factories all take `{ db, tables }`:** `createHoleauthAdapters`, `createRbacAdapter`, `createTwoFactorAdapter`, `createPasskeyAdapter`, `createIdpAdapter`.
 5. **Skip Step 1 = brittle project.** Always interview. Defaults are NOT safe.
 6. **Disabled plugins → commented stubs**, not omission. The user must be able to enable them later by uncommenting.
-7. **On Next.js 16+: the middleware file is `proxy.ts`** at the project root. On 15 and earlier it is `middleware.ts`.
+7. **On Next.js 16+: the middleware file is `proxy.ts`.** Place it **at the same level as `app/`** — so `src/proxy.ts` for the `src/` layout, otherwise the project root. Next.js will silently ignore it if it sits at the project root while `app/` lives under `src/`. On Next.js 15 and earlier the file is `middleware.ts` with the same placement rule.
 
 ---
 

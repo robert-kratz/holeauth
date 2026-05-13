@@ -1,4 +1,11 @@
-# @holeauth/nextjs
+# @holeauth/nextjs-app-router
+
+## 0.0.3-alpha.0
+
+### Patch Changes
+
+- Middleware: new `protectAllExcept`, `afterSignInPath`, `guestOnly` options; automatic pending-cookie redirects; structural `MiddlewareRequestLike` type fixes `NextRequest` version mismatch.
+- Dispatch: `await runPluginRoute` for correct error propagation; new `POST /2fa/cancel` endpoint.
 
 ## 1.0.0-alpha.1
 
@@ -11,6 +18,12 @@
 - @holeauth/core@1.0.0-alpha.1
 
 ## 0.0.1-alpha.0
+
+### Patch Changes
+
+- e09e883: Initial public alpha release of the holeauth ecosystem.
+- Updated dependencies [e09e883]
+  - @holeauth/core@0.0.1-alpha.0
 
 ### Patch Changes
 

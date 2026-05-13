@@ -380,78 +380,50 @@ export function EnrollTwoFactor() {
 <Step>
 ### Handle the verification step at sign-in
 
-When a user with 2FA enabled signs in, the plugin intercepts the flow and returns a `pending2fa` challenge. The client must collect a six-digit code (or a recovery code) and POST it to `/api/auth/2fa/verify` with the `pendingToken` from the challenge response.
+When a user with 2FA enabled signs in, the plugin intercepts the flow and returns a `pending2fa` challenge. The `pendingToken` is written to the `holeauth.pending` HttpOnly cookie automatically. Use `onPending` to redirect straight to `/2fa/verify` — do **not** render `TwoFactorVerifyForm` inline inside the login page.
 
-```tsx title="app/login/page.tsx"
+```tsx title="app/(guest)/login/page.tsx"
 'use client';
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { SignInForm } from '@holeauth/react-ui';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [pendingToken, setPendingToken] = useState<string | null>(null);
-  const [twoFaCode, setTwoFaCode] = useState('');
   const router = useRouter();
 
-  async function handleLogin() {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
+  return (
+    <SignInForm.Root
+      onSuccess={() => router.push('/dashboard')}
+      onPending={() => router.push('/2fa/verify')}
+    >
+      <SignInForm.Email />
+      <SignInForm.Password />
+      <SignInForm.Submit>Sign in</SignInForm.Submit>
+      <SignInForm.Error />
+    </SignInForm.Root>
+  );
+}
+```
 
-    if (data.challenge?.pluginId === 'twofa') {
-      setPendingToken(data.challenge.pendingToken);
-    } else if (data.tokens) {
-      router.push('/dashboard');
-    }
-  }
+The `/2fa/verify` page uses `TwoFactorVerifyForm` to collect and submit the TOTP code. It reads the pending state from the `holeauth.pending` cookie — no token prop needed.
 
-  async function handleVerify2FA() {
-    const res = await fetch('/api/auth/2fa/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pendingToken, code: twoFaCode }),
-    });
-    if (res.ok) {
-      router.push('/dashboard');
-    }
-  }
+```tsx title="app/2fa/verify/page.tsx"
+'use client';
+import { useRouter } from 'next/navigation';
+import { TwoFactorVerifyForm } from '@holeauth/react-ui';
 
-  if (pendingToken) {
-    return (
-      <div>
-        <h2>Enter your 2FA code</h2>
-        <input
-          type="text"
-          placeholder="6-digit code"
-          value={twoFaCode}
-          onChange={(e) => setTwoFaCode(e.target.value)}
-        />
-        <button onClick={handleVerify2FA}>Verify</button>
-      </div>
-    );
-  }
+export default function TwoFAVerifyPage() {
+  const router = useRouter();
 
   return (
-    <div>
-      <h1>Sign in</h1>
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <button onClick={handleLogin}>Sign in</button>
-    </div>
+    <TwoFactorVerifyForm.Root
+      onSuccess={() => router.push('/dashboard')}
+      onCancel={() => router.push('/login')}
+    >
+      <TwoFactorVerifyForm.Code placeholder="000000" />
+      <TwoFactorVerifyForm.Submit>Verify</TwoFactorVerifyForm.Submit>
+      <TwoFactorVerifyForm.Error />
+      <TwoFactorVerifyForm.Cancel>← Back to login</TwoFactorVerifyForm.Cancel>
+    </TwoFactorVerifyForm.Root>
   );
 }
 ```
@@ -471,9 +443,9 @@ Users can use a recovery code in place of a TOTP code when signing in. Each reco
 ## How it works
 
 1. User signs in with email and password.
-2. If 2FA is enabled, the plugin issues a `pendingToken` (short-lived JWT) instead of session tokens.
+2. If 2FA is enabled, the plugin issues a `pendingToken` (short-lived JWT) and writes it to the `holeauth.pending` HttpOnly cookie. Session tokens are not issued yet.
 3. The client collects a six-digit TOTP code (or a recovery code) from the user.
-4. The client POSTs `{ pendingToken, code }` to `/api/auth/2fa/verify`.
+4. The client POSTs `{ code }` to `/api/auth/2fa/verify`. The `pendingToken` is read from the cookie server-side — no URL parameter or body field needed.
 5. The plugin verifies the code, consumes the `pendingToken`, and issues full session tokens.
 6. The browser receives the access and refresh cookies and the user is fully authenticated.
 

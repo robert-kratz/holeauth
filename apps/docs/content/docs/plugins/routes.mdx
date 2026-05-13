@@ -400,7 +400,7 @@ if (rateLimited) return jsonError('RATE_LIMITED', 429, { retryAfterSeconds: 60 }
 ```
 
 <Callout type="info">
-  Framework dispatchers do not catch exceptions from plugin route handlers. Uncaught exceptions will crash the request (and potentially the process). Always wrap risky code in `try`/`catch`.
+  Framework dispatchers automatically catch `HoleauthError` (and cross-bundle duck-typed variants) thrown from plugin route handlers and convert them to a `{ error: { code, message } }` JSON response with the matching HTTP status code. Truly unexpected errors (non-`HoleauthError`) still produce a `500` response with `code: 'INTERNAL'` and a `console.error` log. Throw `HoleauthError` (or its subclasses) for all expected failure paths to get correct status codes.
 </Callout>
 
 ## Next

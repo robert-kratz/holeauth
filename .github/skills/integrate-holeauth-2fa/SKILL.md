@@ -126,7 +126,20 @@ After a normal password sign-in, the response may include a `pending` state when
 }
 ```
 
-When this is received, the user must be routed to a verification step (e.g. `/2fa/verify?token=...`) where they enter their TOTP code. That page calls `auth.twofa.verify({ pendingToken, code })` server-side, or posts to `<basePath>/2fa/verify` client-side.
+The `pendingToken` is automatically stored as a `holeauth.pending` HttpOnly cookie — no URL parameter is needed. When the challenge is received, redirect the user to the dedicated `/2fa/verify` page using `onPending`:
+
+```tsx title="app/(guest)/login/page.tsx (headless)"
+<SignInForm.Root
+  onSuccess={() => router.push('/')}
+  onPending={() => router.push('/2fa/verify')}
+>
+  ...
+</SignInForm.Root>
+```
+
+The `/2fa/verify` page uses `TwoFactorVerifyForm` (from `@holeauth/react-ui`) to collect and submit the code. No `pendingToken` prop is required — the form reads the cookie automatically.
+
+**Do not** render `TwoFactorVerifyForm` inline inside the login page. Always redirect to the dedicated verify page.
 
 **The AI agent generates the login page and the `/2fa/verify` page in a platform-appropriate way.** Refer to:
 - Platform docs: `https://docs.holeauth.dev/docs/getting-started/<framework>/plugin-2fa`
@@ -166,7 +179,7 @@ If `enrollmentPolicy === 'required for specific RBAC group'`, also check `auth.r
 
 1. **Default rate limiter is in-memory** — replace with a distributed limiter (Redis-backed) for production. Pass via `rateLimiter` option.
 2. **Recovery codes are shown exactly once** — UI must download/copy them at activation time. There is no `getRecoveryCodes()` API.
-3. **`pendingToken` is single-use** — re-submitting an expired token returns `pending_expired`. UI must surface this and restart the sign-in.
+3. **`pendingToken` is single-use** — re-submitting an expired token returns `pending_expired`. When using `TwoFactorVerifyForm` from `@holeauth/react-ui` this is handled automatically. For raw fetch / server-side code: surfacing this error and restarting sign-in is the caller's responsibility.
 4. **The headless `TwoFactorAdapter` interface** is: `getByUserId(userId)`, `upsert(record)`, `delete(userId)`. Use this only if not using the Drizzle adapter.
 
 ---
