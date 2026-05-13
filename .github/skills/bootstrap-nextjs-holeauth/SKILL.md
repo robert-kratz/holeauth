@@ -35,7 +35,7 @@ Use `vscode_askQuestions`. **Never skip any question.** Group them logically; do
 | 4 | `persistence` | radio | Drizzle Postgres · Drizzle MySQL · Drizzle SQLite · Headless |
 | 5 | `dbHosting` | radio | Local Docker (compose file) · Existing DATABASE_URL · Skip |
 | 6 | `trpc` | radio | Yes · No |
-| 7 | `plugins` | multi-select | 2FA · Passkeys · RBAC · IDP server · IDP consumer · (none) |
+| 7 | `plugins` | multi-select | 2FA · Passkeys · Magic Link · RBAC · IDP server · IDP consumer · (none) |
 | 8 | (per-plugin) | inline | Ask each selected plugin's interview inline |
 | 9 | `ssoProviders` | multi-select | Google · GitHub · None |
 | 9b | `useReactUi` | radio | Yes — use `@holeauth/react-ui` headless components · No — build own UI |
@@ -131,10 +131,11 @@ Run in strict order, passing all interview answers as inherited context:
 1. `integrate-holeauth-core` (always) — **must complete Steps 1–11 including guest UI pages**
 2. If `2FA` selected: `integrate-holeauth-2fa`
 3. If `Passkeys` selected: `integrate-holeauth-passkey`
-4. If `RBAC` selected: `integrate-holeauth-rbac`
-5. If `IDP server` selected: `integrate-holeauth-idp`
-6. If `IDP consumer` selected: `integrate-holeauth-idp-consumer`
-7. If `trpc === Yes`: `integrate-holeauth-trpc`
+4. If `Magic Link` selected: `integrate-holeauth-magic-link`
+5. If `RBAC` selected: `integrate-holeauth-rbac`
+6. If `IDP server` selected: `integrate-holeauth-idp`
+7. If `IDP consumer` selected: `integrate-holeauth-idp-consumer`
+8. If `trpc === Yes`: `integrate-holeauth-trpc`
 
 **Always emit fully-filled config blocks.** For plugins the user did NOT select, leave commented stubs in `lib/auth.ts` so they can be flipped on later without re-deriving the API surface.
 
