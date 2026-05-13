@@ -25,18 +25,19 @@ All releases flow **exclusively through CI** — the GitHub Actions workflows in
 ### When to use
 Every PR that changes user-facing behaviour in a published package needs a changeset. CI will block the PR if changesets are required but missing (if enforced).
 
-### Step 1 — Create the file
+**The agent performs this workflow end-to-end — the user never edits changeset files manually.**
 
-Create `.changeset/<kebab-description>.md`. Name the file after the **change**, not the package (e.g. `cookie-pending-flow.md`, not `core-update.md`).
+### Step 1 — Interview the user
 
-```md
----
-"@holeauth/core": patch
-"@holeauth/react": patch
----
+Ask only what is missing. Collect:
 
-Brief imperative description of what changed (shown in CHANGELOG).
-```
+| Question | How to infer without asking |
+|---|---|
+| Which packages changed? | Read `git diff --name-only` or the list of modified files — map paths to packages |
+| What type of change? (`patch` / `minor` / `major`) | Infer from the diff: API removal/rename → `major`; new export → `minor`; bug fix/refactor → `patch` |
+| One-line description for the CHANGELOG? | Draft from the diff/PR title, confirm with the user |
+
+Do **not** ask questions that can be answered by reading the diff. If you have enough information to make a confident proposal, present it for confirmation instead of asking open questions.
 
 ### Step 2 — Choose the bump type
 
@@ -60,9 +61,41 @@ The `fixed` group in `.changeset/config.json` currently contains 13 core package
 
 **Rule:** If your changeset lists **any** of these packages at `minor`, all 13 will bump to the same minor version. Listing even one at `major` escalates all 13. Only list packages that actually changed; do not add uninvolved packages just to "signal" intent.
 
-### Step 4 — Commit and push
+When proposing the bump type to the user, explicitly state: *"Because `@holeauth/X` is in the fixed group, all 13 fixed-group packages will also bump to [type]."* Let the user confirm or downgrade before writing the file.
 
-Commit the `.changeset/*.md` file as part of your branch. No version numbers change at this point.
+### Step 4 — Write the changeset file
+
+Derive the filename from the change description: lowercase-kebab, max 5 words, no package names.  
+Examples: `cookie-pending-flow`, `add-cancel-hook`, `fix-session-expiry`, `passkey-registration-error`.
+
+Write `.changeset/<filename>.md` with this exact format:
+
+```md
+---
+"@holeauth/core": patch
+"@holeauth/react": patch
+---
+
+Add `use2faCancel` hook and remove `pendingToken` from `use2faVerify` input.
+```
+
+Rules for the body:
+- One imperative sentence, written for a developer reading the CHANGELOG
+- Do not repeat the package name
+- Do not use Markdown headings or lists — plain prose only
+- If multiple distinct changes are bundled, use two sentences max
+
+After writing the file, show the full content to the user for a final review before committing.
+
+### Step 5 — Commit and push
+
+```bash
+git add .changeset/<filename>.md
+git commit -m "chore: add changeset for <short description>"
+git push
+```
+
+No version numbers change at this point — CI handles that when the "Version Packages" PR is merged.
 
 ---
 
