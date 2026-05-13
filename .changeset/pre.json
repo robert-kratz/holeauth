@@ -25,10 +25,11 @@
     "@holeauth/hono": "0.0.2-alpha.0",
     "@holeauth/nextjs-pages-router": "0.0.2-alpha.0",
     "@holeauth/react-ui": "0.0.2-alpha.0",
-    "@holeauth/trpc": "0.0.2-alpha.0"
+    "@holeauth/trpc": "0.0.2-alpha.0",
+    "@holeauth/magic-link-drizzle": "0.0.0",
+    "@holeauth/plugin-magic-link": "0.0.0"
   },
   "changesets": [
-    "initial-alpha-release",
-    "itchy-cameras-lead"
+    "add-magic-link-packages"
   ]
 }
