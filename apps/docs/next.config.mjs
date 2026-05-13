@@ -1,7 +1,13 @@
 import { createMDX } from 'fumadocs-mdx/next';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { version } = require('../../packages/core/package.json');
+
+let version = 'dev';
+try {
+  version = require('../../packages/core/package.json').version;
+} catch (e) {
+  console.warn('Failed to load version from packages/core/package.json, using fallback:', e.message);
+}
 
 const withMDX = createMDX();
 
