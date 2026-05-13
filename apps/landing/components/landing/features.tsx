@@ -85,13 +85,13 @@ const FEATURES: Feature[] = [
       'postgres, mysql, sqlite — for core, 2fa, passkey, rbac, idp. headless if you prefer.',
     docsPath: '/packages/adapter-drizzle',
   },
-  {
-    icon: LayoutTemplate,
-    title: 'headless react ui',
-    description:
-      'signin, signup, password reset, 2fa verify, passkey setup, sso button — bring your own styles.',
-    docsPath: '/packages/react-ui',
-  },
+  // {
+  //   icon: LayoutTemplate,
+  //   title: 'headless react ui',
+  //   description:
+  //     'signin, signup, password reset, 2fa verify, passkey setup, sso button — bring your own styles.',
+  //   docsPath: '/packages/react-ui',
+  // },
 ];
 
 /** Individual feature card with mouse-position spotlight hover. */
