@@ -1,6 +1,7 @@
 import { Navbar } from './navbar';
 import { Hero } from './hero';
 import { Features } from './features';
+import { Motivation } from './motivation';
 import { CompatMatrix } from './compat-matrix';
 import { Quickstart } from './quickstart';
 import { WhyHoleauth } from './testimonials';
@@ -21,6 +22,9 @@ export function Landing() {
           {/* Below-fold sections fade in on scroll via IntersectionObserver */}
           <FadeSection>
             <Features />
+          </FadeSection>
+          <FadeSection delay={60}>
+            <Motivation />
           </FadeSection>
           <FadeSection delay={60}>
             <CompatMatrix />
