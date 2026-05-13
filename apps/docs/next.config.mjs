@@ -24,6 +24,23 @@ const config = {
     '/api/og': ['./assets/fonts/**', '../../branding/logo-512.png'],
   },
   env: { NEXT_PUBLIC_HOLEAUTH_VERSION: version },
+
+  async headers() {
+    return [
+      {
+        // Allow the landing page to prefetch RSC payloads cross-origin.
+        source: '/(.*)',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: 'https://holeauth.dev' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, HEAD, OPTIONS' },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Url, Next-HMR-Refresh',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default withMDX(config);
