@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react';
+import { HOLEAUTH_VERSION } from '@/lib/version';
 
 interface QA {
   q: string;
@@ -24,7 +25,7 @@ const QAS: QA[] = [
   },
   {
     q: 'is it production-ready?',
-    a: 'current release is v0.0.2-alpha.0 — the public api is stabilizing and breaking changes are still possible. early adopters welcome; check the compatibility matrix for per-feature support tiers before depending on it for a regulated workload.',
+    a: `current release is v${HOLEAUTH_VERSION} — the public api is stabilizing and breaking changes are still possible. early adopters welcome; check the compatibility matrix for per-feature support tiers before depending on it for a regulated workload.`,
   },
   {
     q: 'what is the license?',

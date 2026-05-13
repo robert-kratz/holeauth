@@ -1,3 +1,7 @@
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { version } = require('../../packages/core/package.json');
+
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
@@ -5,6 +9,7 @@ const config = {
   images: { unoptimized: true },
   trailingSlash: true,
   typescript: { ignoreBuildErrors: true },
+  env: { NEXT_PUBLIC_HOLEAUTH_VERSION: version },
 
   async redirects() {
     return [

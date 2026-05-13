@@ -1,4 +1,7 @@
 import { createMDX } from 'fumadocs-mdx/next';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { version } = require('../../packages/core/package.json');
 
 const withMDX = createMDX();
 
@@ -8,6 +11,13 @@ const config = {
   // No basePath: routes live at the root of the host (e.g. /, /getting-started).
   // Static assets are served from /_next/static/... on the same subdomain.
   output: 'standalone',
+  // sharp is a native Node.js addon — must not be bundled by webpack.
+  serverExternalPackages: ['sharp'],
+  // Ensure font + branding assets are included in the standalone output trace.
+  outputFileTracingIncludes: {
+    '/api/og': ['./assets/fonts/**', '../../branding/logo-512.png'],
+  },
+  env: { NEXT_PUBLIC_HOLEAUTH_VERSION: version },
 };
 
 export default withMDX(config);

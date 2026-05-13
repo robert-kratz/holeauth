@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { HOLEAUTH_VERSION } from '@/lib/version';
 
 const COLS: { title: string; links: { label: string; href: string; external?: boolean }[] }[] = [
   {
@@ -239,7 +240,7 @@ export function Footer() {
               />
             </a>
             <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 11, color: '#6e6e78' }}>
-              v0.0.2-alpha.0
+              v{HOLEAUTH_VERSION}
             </span>
           </div>
         </div>

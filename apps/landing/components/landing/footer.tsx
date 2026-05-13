@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { docsUrl } from '@/lib/docs-url';
+import { HOLEAUTH_VERSION } from '@/lib/version';
 
 const COLS: { title: string; links: { label: string; href: string; external?: boolean }[] }[] = [
   {
@@ -147,7 +148,7 @@ export function Footer() {
                 style={{ boxShadow: '0 0 12px rgba(204,75,194,0.50)' }}
               />
             </a>
-            <span className="font-mono text-[11px] text-muted">v0.0.2-alpha.0</span>
+            <span className="font-mono text-[11px] text-muted">v{HOLEAUTH_VERSION}</span>
           </div>
         </div>
       </div>

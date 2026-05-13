@@ -80,7 +80,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         url: 'https://holeauth.dev',
         logo: {
           '@type': 'ImageObject',
-          url: 'https://holeauth.dev/favicon.ico',
+          url: 'https://holeauth.dev/logo.png',
+          width: 512,
+          height: 512,
+        },
+        image: {
+          '@type': 'ImageObject',
+          url: 'https://holeauth.dev/og-image.png',
+          width: 1200,
+          height: 630,
         },
         sameAs: [
           'https://github.com/robert-kratz/holeauth',

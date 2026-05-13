@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import { TerminalSnippet } from './terminal-snippet';
 import { TypedWord } from './typed-word';
 import { docsUrl } from '@/lib/docs-url';
+import { HOLEAUTH_VERSION } from '@/lib/version';
 
 export function Hero() {
   return (
@@ -13,7 +14,7 @@ export function Hero() {
           style={{ animationDelay: '100ms' }}
         >
           <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line)] bg-black/40 px-3 py-1 text-[12px] text-ink-dim backdrop-blur-md">
-            modular auth · edge-native · v0.0.2-alpha
+            modular auth · edge-native · v{HOLEAUTH_VERSION}
           </span>
           {/* TypeScript badge */}
           <span className="inline-flex items-center gap-1 rounded-full border border-[#3178c6]/40 bg-[#3178c6]/10 px-2.5 py-1 text-[11px] font-medium text-[#60a5e8]">
