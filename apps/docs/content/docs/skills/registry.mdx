@@ -1,0 +1,52 @@
+---
+title: Skills registry
+description: Complete list of all holeauth skills — one row per skill with trigger phrases, raw URLs, and docs links.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Skills registry
+
+All available holeauth skills, grouped by category. Each skill contains a trigger description that tells your AI agent when to invoke it automatically.
+
+<Callout type="info">
+  Skills call the [Search API](/skills/search-api) at runtime when they need deeper documentation detail — that keeps the `SKILL.md` files small and always up to date.
+</Callout>
+
+## Setup
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `bootstrap-nextjs-holeauth` | "create a new Next.js app with auth", greenfield projects | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/bootstrap-nextjs-holeauth/SKILL.md) | [Getting Started](/getting-started) |
+| `integrate-holeauth` | "add holeauth to my existing project", dispatcher to per-feature skills | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth/SKILL.md) | [Getting Started](/getting-started) · [Integrations](/integrations) |
+
+## Core & Framework
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `integrate-holeauth-core` | "set up the auth instance", route handler, adapters, provider | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-core/SKILL.md) | [@holeauth/core](/packages/core) · [Drizzle adapter](/packages/adapter-drizzle) |
+| `integrate-holeauth-trpc` | "add tRPC with holeauth", auth-aware context, RBAC procedures | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-trpc/SKILL.md) | [tRPC integration](/integrations/trpc) |
+
+## Plugins
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `integrate-holeauth-2fa` | "add 2FA", TOTP, authenticator app, recovery codes | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-2fa/SKILL.md) | [plugin-2fa](/packages/plugin-2fa) · [2fa-drizzle](/packages/plugin-2fa/drizzle) |
+| `integrate-holeauth-passkey` | "add passkeys", WebAuthn, biometric login, FIDO2 | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-passkey/SKILL.md) | [plugin-passkey](/packages/plugin-passkey) · [passkey-drizzle](/packages/plugin-passkey/drizzle) |
+| `integrate-holeauth-rbac` | "add roles and permissions", RBAC, group hierarchy | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-rbac/SKILL.md) | [plugin-rbac](/packages/plugin-rbac) · [RBAC YAML](/packages/plugin-rbac) |
+| `integrate-holeauth-magic-link` | "add magic link", "add email OTP", passwordless sign-in | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-magic-link/SKILL.md) | [plugin-magic-link](/packages/plugin-magic-link) · [magic-link-drizzle](/packages/plugin-magic-link/drizzle) |
+| `integrate-holeauth-idp` | "become an OIDC provider", run an SSO server | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-idp/SKILL.md) | [plugin-idp](/packages/plugin-idp) |
+| `integrate-holeauth-idp-consumer` | "sign in via Google/GitHub/external holeauth", RP, OIDC client | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-idp-consumer/SKILL.md) | [IDP consumer](/packages/plugin-idp-consumer) · [SSO](/sso) |
+
+## Utilities
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `holeauth-compat-matrix` | "audit holeauth support status", KPI snapshot, support matrix | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/holeauth-compat-matrix/SKILL.md) | — |
+| `holeauth-versioning` | "add a changeset", bump versions, release packages, publish to npm | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/holeauth-versioning/SKILL.md) | — |
+
+## Plugin development
+
+| Skill | When the agent should invoke it | SKILL.md | Docs |
+| --- | --- | --- | --- |
+| `holeauth-plugin-design` | "build a custom holeauth plugin", scaffold extension package | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/holeauth-plugin-design/SKILL.md) | [Plugin architecture](/plugins) · [definePlugin](/plugins/define-plugin) · [Hooks](/plugins/hooks) |

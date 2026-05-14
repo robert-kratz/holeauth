@@ -1,157 +1,141 @@
 ---
-title: Skills for AI Agents
-description: Machine-readable registry of holeauth skills for AI coding agents. Each skill is a SKILL.md file installable via raw URL.
+title: AI agent integration guide
+description: Step-by-step guide to wiring holeauth skills into your AI coding agent — custom instructions, skill installation, and the bootstrap prompt.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
-# Skills for AI Agents
+# AI agent integration guide
 
 Holeauth ships **skills** — self-contained `SKILL.md` files that teach an AI coding agent (Claude, Copilot, Cursor, etc.) exactly how to [integrate](/getting-started) or [extend](/plugins) holeauth without hallucinating the API.
 
 Each skill is:
 
-- **Trigger-driven** — front-matter description tells the agent when to invoke it
-- **Interactive** — uses `vscode_askQuestions` (or equivalent) to interview the user before generating code
-- **Context-frugal** — embeds only hardcoded gotchas; everything else is fetched on demand from this docs site via the [Search API](#search-api)
+- **Trigger-driven** — front-matter description tells the agent when to invoke it automatically
+- **Interactive** — uses `vscode_askQuestions` (or equivalent) to interview you before generating code
+- **Context-frugal** — embeds only hardcoded gotchas; everything else is fetched on demand from the [Search API](/skills/search-api)
 
-## Install a skill
+## Setup
 
-Every skill lives at a stable raw URL on GitHub:
+<Steps>
+<Step>
 
-```
-https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/<skill-name>/SKILL.md
-```
+### Install the custom instructions file
 
-<Tabs items={['Claude Code', 'GitHub Copilot', 'Cursor', 'Manual']}>
-  <Tab value="Claude Code">
-    Add to your project's `AGENTS.md`:
-
-    ```md
-    ## Skills
-    - [bootstrap-nextjs-holeauth](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/bootstrap-nextjs-holeauth/SKILL.md)
-    - [integrate-holeauth](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth/SKILL.md)
-    ```
-  </Tab>
-  <Tab value="GitHub Copilot">
-    Drop each `SKILL.md` into `.github/skills/<name>/SKILL.md` in your repo. VS Code Copilot auto-discovers them via the front-matter `description`.
-  </Tab>
-  <Tab value="Cursor">
-    Reference the raw URLs from `.cursorrules` or paste the contents into a project rule.
-  </Tab>
-  <Tab value="Manual">
-    Open the raw URL, copy the contents, and feed it to your agent as a system instruction.
-  </Tab>
-</Tabs>
-
-<Callout type="info">
-  Skills are versioned alongside the rest of holeauth. Pin to a tag (`/tree/v1.2.0/`) for reproducible scaffolds, or track `main` for the latest API surface.
-</Callout>
-
-### Custom instructions file
-
-For a persistent holeauth context that applies to every file in your project, install the custom instruction file. It tells your AI agent where the docs live, which packages exist, and enforces key runtime rules (e.g. Edge-safe middleware).
+The instructions file gives your agent persistent context about holeauth: which packages exist, where the docs live, and key runtime constraints (e.g. Edge-safe middleware). It applies to every file in your project.
 
 ```
 https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/instructions/holeauth.instructions.md
 ```
 
-Save it to `.github/instructions/holeauth.instructions.md` in your project. VS Code Copilot and compatible agents auto-discover files in that directory.
+<Tabs items={['GitHub Copilot', 'Claude Code', 'Cursor', 'Manual']}>
+  <Tab value="GitHub Copilot">
+    Save the file to `.github/instructions/holeauth.instructions.md` in your repo. VS Code Copilot auto-discovers instruction files in that directory and applies them globally.
 
-### Install via agent prompt
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/instructions/holeauth.instructions.md \
+      -o .github/instructions/holeauth.instructions.md
+    ```
+  </Tab>
+  <Tab value="Claude Code">
+    Paste the raw URL into your `AGENTS.md` under a `## Instructions` section:
 
-Paste this prompt into your AI agent to pick and install skills **and** the custom instructions file interactively:
+    ```md title="AGENTS.md"
+    ## Instructions
+    - [holeauth context](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/instructions/holeauth.instructions.md)
+    ```
+  </Tab>
+  <Tab value="Cursor">
+    Add the raw URL to your `.cursorrules`, or paste the file contents directly into a project rule in Cursor settings.
+  </Tab>
+  <Tab value="Manual">
+    Open the raw URL, copy the contents, and paste them into your agent's system prompt or project-level instructions.
+  </Tab>
+</Tabs>
 
-```text title="Install holeauth skills + instructions (copy → agent)"
+</Step>
+<Step>
+
+### Install skills
+
+Skills are scoped to specific tasks. Install the ones you need — start with `integrate-holeauth` for existing projects or `bootstrap-nextjs-holeauth` for greenfield setups.
+
+Every skill lives at a stable raw URL:
+
+```
+https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/<skill-name>/SKILL.md
+```
+
+<Tabs items={['GitHub Copilot', 'Claude Code', 'Cursor', 'Manual']}>
+  <Tab value="GitHub Copilot">
+    Drop each `SKILL.md` into `.github/skills/<name>/SKILL.md` in your repo. VS Code Copilot auto-discovers and registers them via the front-matter `description` field.
+
+    ```bash
+    # Example: install the core integration skill
+    mkdir -p .github/skills/integrate-holeauth
+    curl -fsSL https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth/SKILL.md \
+      -o .github/skills/integrate-holeauth/SKILL.md
+    ```
+  </Tab>
+  <Tab value="Claude Code">
+    Add skill URLs to your project's `AGENTS.md`:
+
+    ```md title="AGENTS.md"
+    ## Skills
+    - [bootstrap-nextjs-holeauth](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/bootstrap-nextjs-holeauth/SKILL.md)
+    - [integrate-holeauth](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth/SKILL.md)
+    ```
+  </Tab>
+  <Tab value="Cursor">
+    Reference the raw URLs from `.cursorrules` or paste the skill contents into a project rule.
+  </Tab>
+  <Tab value="Manual">
+    Open the raw URL for each skill you need, copy the contents, and feed them to your agent as a system instruction.
+  </Tab>
+</Tabs>
+
+<Callout type="info">
+  Skills are versioned alongside holeauth packages. Pin to a release tag (`/tree/v1.2.0/`) for reproducible scaffolds, or track `main` for the latest API surface.
+</Callout>
+
+</Step>
+<Step>
+
+### Bootstrap with the agent prompt
+
+Paste this prompt into your AI agent to interactively pick and install skills **and** the instructions file in one shot. The agent will ask which skills you want, then fetch and write all files automatically.
+
+```text title="Copy → paste into your AI agent"
 Browse https://github.com/robert-kratz/holeauth/tree/main/.github/skills to list available skills. Use vscode_askQuestions to ask: (1, multiSelect) which skills to install; (2, boolean) whether to install the holeauth context instructions file. For each selected skill: fetch https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/<name>/SKILL.md → write to .github/skills/<name>/SKILL.md. If installing instructions: fetch https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/instructions/holeauth.instructions.md → write to .github/instructions/holeauth.instructions.md. For any file that already exists, overwrite only if remote content changed (report updates).
 ```
 
-## Search API
+</Step>
+</Steps>
 
-Skills that need deeper detail call the docs search API rather than ballooning their own context:
+## Next steps
 
-```
-GET https://docs.holeauth.dev/api/search?q=<term>
-```
-
-Example queries an agent might issue:
-
-- `?q=rbac+yaml+wildcards` → [RBAC docs](/packages/plugin-rbac)
-- `?q=passkey+rpID+origin` → [Passkey docs](/packages/plugin-passkey)
-- `?q=plugin+definePlugin+hooks` → [Plugin architecture](/plugins/define-plugin)
-- `?q=middleware+protectAllExcept` → [Next.js App Router](/getting-started/nextjs-app-router)
-
-The response is a flat list of `{ id, url, content, type }` records covering every page on this site.
-
-## Registry
-
-### Setup
-
-| Skill | When the agent should invoke it | SKILL.md | Docs |
-| --- | --- | --- | --- |
-| `bootstrap-nextjs-holeauth` | "create a new Next.js app with auth", greenfield projects | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/bootstrap-nextjs-holeauth/SKILL.md) | [Getting Started](/getting-started) |
-| `integrate-holeauth` | "add holeauth to my existing project", dispatcher to per-feature skills | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth/SKILL.md) | [Getting Started](/getting-started) · [Integrations](/integrations) |
-
-### Core & Framework
-
-| Skill | When the agent should invoke it | SKILL.md | Docs |
-| --- | --- | --- | --- |
-| `integrate-holeauth-core` | "set up the auth instance", route handler, adapters, provider | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-core/SKILL.md) | [@holeauth/core](/packages/core) · [Drizzle adapter](/packages/adapter-drizzle) |
-| `integrate-holeauth-trpc` | "add tRPC with holeauth", auth-aware context, RBAC procedures | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-trpc/SKILL.md) | [tRPC integration](/integrations/trpc) |
-
-### Plugins
-
-| Skill | When the agent should invoke it | SKILL.md | Docs |
-| --- | --- | --- | --- |
-| `integrate-holeauth-2fa` | "add 2FA", TOTP, authenticator app, recovery codes | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-2fa/SKILL.md) | [plugin-2fa](/packages/plugin-2fa) · [2fa-drizzle](/packages/plugin-2fa/drizzle) |
-| `integrate-holeauth-passkey` | "add passkeys", WebAuthn, biometric login, FIDO2 | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-passkey/SKILL.md) | [plugin-passkey](/packages/plugin-passkey) · [passkey-drizzle](/packages/plugin-passkey/drizzle) |
-| `integrate-holeauth-rbac` | "add roles and permissions", RBAC, group hierarchy | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-rbac/SKILL.md) | [plugin-rbac](/packages/plugin-rbac) · [RBAC YAML](/packages/plugin-rbac) |
-| `integrate-holeauth-magic-link` | "add magic link", "add email OTP", passwordless sign-in | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-magic-link/SKILL.md) | [plugin-magic-link](/packages/plugin-magic-link) · [magic-link-drizzle](/packages/plugin-magic-link/drizzle) |
-| `integrate-holeauth-idp` | "become an OIDC provider", run an SSO server | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-idp/SKILL.md) | [plugin-idp](/packages/plugin-idp) |
-| `integrate-holeauth-idp-consumer` | "sign in via Google/GitHub/external holeauth", RP, OIDC client | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/integrate-holeauth-idp-consumer/SKILL.md) | [IDP consumer](/packages/plugin-idp-consumer) · [SSO](/sso) |
-
-### Utilities
-
-| Skill | When the agent should invoke it | SKILL.md | Docs |
-| --- | --- | --- | --- |
-| `holeauth-compat-matrix` | "audit holeauth support status", KPI snapshot, support matrix | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/holeauth-compat-matrix/SKILL.md) | — |
-| `holeauth-versioning` | "add a changeset", bump versions, release packages, publish to npm | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/holeauth-versioning/SKILL.md) | — |
-
-### Plugin Development
-
-| Skill | When the agent should invoke it | SKILL.md | Docs |
-| --- | --- | --- | --- |
-| `holeauth-plugin-design` | "build a custom holeauth plugin", scaffold extension package | [Raw](https://raw.githubusercontent.com/robert-kratz/holeauth/main/.github/skills/holeauth-plugin-design/SKILL.md) | [Plugin architecture](/plugins) · [definePlugin](/plugins/define-plugin) · [Hooks](/plugins/hooks) |
-
-## How a skill is structured
-
-Every `SKILL.md` follows the same shape so agents can parse them deterministically:
-
-```md title=".github/skills/<name>/SKILL.md"
----
-name: <kebab-case-name>
-description: "<comprehensive trigger phrases — first line that VS Code/Copilot uses>"
-argument-hint: "<optional hint>"
----
-
-# <Title>
-
-<one-sentence purpose>
-
-## Prerequisites
-## Source of truth
-## Procedure
-### Step 1 — Interview (vscode_askQuestions table)
-### Step 2 — Install
-### Step 3+ — Implementation
-## Hardcoded gotchas
-## Need more detail?
-GET https://docs.holeauth.dev/api/search?q=<topic>
-```
-
-The `## Prerequisites` section references the [core setup skill](/skills) as a prerequisite for all plugin skills. The `## Hardcoded gotchas` section documents known pitfalls such as [Edge runtime constraints](/getting-started/nextjs-app-router) and [peer dependency mismatches](/packages/core).
-
-<Callout type="info">
-  Want to contribute a skill? Open a PR adding a folder under `.github/skills/<name>/SKILL.md` and a row in the registry above. See the [plugin architecture docs](/plugins/define-plugin) for how skills map to the plugin API.
-</Callout>
+<Cards>
+  <Card
+    title="Skills registry"
+    href="/skills/registry"
+    description="Browse all available skills grouped by category — setup, plugins, utilities, and plugin development."
+  />
+  <Card
+    title="Search API"
+    href="/skills/search-api"
+    description="REST endpoint that skills use to fetch up-to-date documentation at runtime."
+  />
+  <Card
+    title="Skill anatomy"
+    href="/skills/anatomy"
+    description="The standard SKILL.md shape and how to contribute your own skill."
+  />
+  <Card
+    title="Getting started"
+    href="/getting-started"
+    description="Set up holeauth manually with the full framework guides."
+  />
+</Cards>

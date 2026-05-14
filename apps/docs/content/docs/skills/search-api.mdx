@@ -1,0 +1,40 @@
+---
+title: Search API
+description: REST endpoint that skills use to fetch up-to-date documentation at runtime instead of embedding full docs in each SKILL.md.
+---
+
+# Search API
+
+Skills are intentionally slim — they embed only hardcoded gotchas and delegate everything else to this endpoint. When a skill needs deeper detail it issues a `GET` request at runtime so the answer is always based on the current docs.
+
+```
+GET https://docs.holeauth.dev/api/search?q=<term>
+```
+
+The response is a flat JSON array:
+
+```json
+[
+  { "id": "...", "url": "...", "content": "...", "type": "..." }
+]
+```
+
+## Example queries
+
+| Query | Returns |
+| --- | --- |
+| `?q=rbac+yaml+wildcards` | [RBAC docs](/packages/plugin-rbac) |
+| `?q=passkey+rpID+origin` | [Passkey docs](/packages/plugin-passkey) |
+| `?q=plugin+definePlugin+hooks` | [Plugin architecture](/plugins/define-plugin) |
+| `?q=middleware+protectAllExcept` | [Next.js App Router](/getting-started/nextjs-app-router) |
+
+## Usage in skills
+
+Every `SKILL.md` ends with a `## Need more detail?` section that instructs the agent to query this endpoint rather than hallucinating the API surface:
+
+```md title=".github/skills/<name>/SKILL.md"
+## Need more detail?
+GET https://docs.holeauth.dev/api/search?q=<topic>
+```
+
+This keeps skills small and version-stable — the docs site is the single source of truth.

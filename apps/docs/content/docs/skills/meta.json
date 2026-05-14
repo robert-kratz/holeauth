@@ -1,3 +1,4 @@
 {
-  "pages": ["index"]
+  "title": "AI Toolkit",
+  "pages": ["index", "registry", "search-api", "anatomy"]
 }

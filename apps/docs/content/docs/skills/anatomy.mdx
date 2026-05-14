@@ -1,0 +1,52 @@
+---
+title: Skill anatomy
+description: The standard SKILL.md shape that every holeauth skill follows, plus guidance for contributing your own skill.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Skill anatomy
+
+Every `SKILL.md` follows the same shape so agents can parse them deterministically.
+
+```md title=".github/skills/<name>/SKILL.md"
+---
+name: <kebab-case-name>
+description: "<comprehensive trigger phrases — first line that VS Code/Copilot uses>"
+argument-hint: "<optional hint>"
+---
+
+# <Title>
+
+<one-sentence purpose>
+
+## Prerequisites
+## Source of truth
+## Procedure
+### Step 1 — Interview (vscode_askQuestions table)
+### Step 2 — Install
+### Step 3+ — Implementation
+## Hardcoded gotchas
+## Need more detail?
+GET https://docs.holeauth.dev/api/search?q=<topic>
+```
+
+## Key sections
+
+**`description`** — The front-matter description is what VS Code Copilot and compatible agents use to decide when to invoke the skill automatically. Make it comprehensive: include the user-facing phrases someone would naturally type.
+
+**`## Prerequisites`** — References the [core setup skill](/skills) for plugin skills. Agents use this to detect and run prerequisite skills before the current one.
+
+**`## Hardcoded gotchas`** — Documents known pitfalls such as [Edge runtime constraints](/getting-started/nextjs-app-router) and peer dependency mismatches. Only put facts here that are unlikely to change between releases.
+
+**`## Need more detail?`** — Points to the [Search API](/skills/search-api). Agents call it at runtime instead of embedding the full docs in the skill file.
+
+## Contributing a skill
+
+<Callout type="info">
+  Want to contribute a skill? Open a PR adding a folder under `.github/skills/<name>/SKILL.md` and a row in the [registry](/skills/registry). See the [plugin architecture docs](/plugins/define-plugin) for how skills map to the plugin API.
+</Callout>
+
+1. Create `.github/skills/<your-skill-name>/SKILL.md` following the shape above.
+2. Add a row to the appropriate table in the [registry](/skills/registry).
+3. Test the skill by pasting it into your AI agent as a system instruction and running through the procedure end-to-end.
