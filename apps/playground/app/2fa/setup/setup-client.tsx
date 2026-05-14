@@ -15,7 +15,7 @@ type Stage = 'idle' | 'pending-activate' | 'done' | 'enabled' | 'disabling';
 interface SetupData {
   secret: string;
   otpauthUrl: string;
-  qrCodeDataUrl: string;
+  qrUrl: string;
 }
 
 export function TwoFactorSetupClient({ initiallyEnabled }: { initiallyEnabled: boolean }) {
@@ -49,7 +49,7 @@ export function TwoFactorSetupClient({ initiallyEnabled }: { initiallyEnabled: b
       setSetup({
         secret: json.secret,
         otpauthUrl: json.otpauthUrl,
-        qrCodeDataUrl: json.qrCodeDataUrl,
+        qrUrl: json.qrUrl,
       });
       setStage('pending-activate');
     } catch (e) {
@@ -150,9 +150,9 @@ export function TwoFactorSetupClient({ initiallyEnabled }: { initiallyEnabled: b
             Scan the QR code below with your authenticator app (or copy the secret manually),
             then enter the 6-digit code to activate.
           </p>
-          {setup.qrCodeDataUrl && (
+          {setup.qrUrl && (
             <img
-              src={setup.qrCodeDataUrl}
+              src={setup.qrUrl}
               alt="2FA QR code"
               width={224}
               height={224}

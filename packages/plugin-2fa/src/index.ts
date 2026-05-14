@@ -83,7 +83,7 @@ export interface TwoFactorOptions {
 export interface TwoFactorApi {
   /** Begin enrollment — generates (and persists) a secret, returns the otpauth URL
    *  plus a ready-to-render PNG data URL of the QR code. */
-  setup(userId: string): Promise<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }>;
+  setup(userId: string): Promise<{ secret: string; otpauthUrl: string; qrUrl: string }>;
   /** Render any `otpauth://…` URI (or arbitrary payload) as a PNG data URL
    *  suitable for `<img src>`. */
   renderQrDataUrl(payload: string): Promise<string>;
@@ -293,8 +293,8 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
             issuer,
             label: user.email,
           });
-          const qrCodeDataUrl = await renderQrDataUrl(otpauthUrl);
-          return { secret, otpauthUrl, qrCodeDataUrl };
+          const qrUrl = await renderQrDataUrl(otpauthUrl);
+          return { secret, otpauthUrl, qrUrl };
         },
 
         renderQrDataUrl(payload) {

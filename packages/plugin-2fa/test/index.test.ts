@@ -157,7 +157,7 @@ describe('twofa.api — setup()', () => {
     const out = await h.api.setup('user-1');
     expect(out.secret).toMatch(/^[A-Z2-7]{32}$/);
     expect(out.otpauthUrl).toContain('otpauth://totp/');
-    expect(out.qrCodeDataUrl.startsWith('data:image/png;base64,')).toBe(true);
+    expect(out.qrUrl.startsWith('data:image/png;base64,')).toBe(true);
     const stored = h.adapter.store.get('user-1');
     expect(stored?.enabled).toBe(false);
     expect(stored?.recoveryCodes).toEqual([]);

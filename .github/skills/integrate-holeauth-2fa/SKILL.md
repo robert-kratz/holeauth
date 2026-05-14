@@ -103,7 +103,7 @@ The plugin auto-registers these routes on the catch-all handler:
 The plugin appends a namespace to `auth`:
 
 ```ts
-auth.twofa.setup(userId)                      // → { secret, otpauthUrl, qrCodeDataUrl }
+auth.twofa.setup(userId)                      // → { secret, otpauthUrl, qrUrl }
 auth.twofa.activate(userId, code)             // → { recoveryCodes: string[] }
 auth.twofa.isEnabled(userId)                  // → boolean
 auth.twofa.disable(userId)

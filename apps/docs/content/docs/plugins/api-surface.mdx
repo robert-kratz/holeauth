@@ -326,7 +326,7 @@ Avoid `any` or `unknown`. Return specific types so consumers get IntelliSense:
 // ✅ Good
 api(ctx) {
   return {
-    async setup(userId: string): Promise<{ secret: string; qrCodeDataUrl: string }> {
+    async setup(userId: string): Promise<{ secret: string; qrUrl: string }> {
       // ...
     },
   };

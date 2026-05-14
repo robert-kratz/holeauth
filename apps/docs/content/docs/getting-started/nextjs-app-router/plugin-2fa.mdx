@@ -290,7 +290,7 @@ export const auth = createAuthHandler({
 The plugin exposes a type-safe API at `auth.twofa`:
 
 ```ts
-auth.twofa.setup(userId: string): Promise<{ secret, otpauthUrl, qrCodeDataUrl }>
+auth.twofa.setup(userId: string): Promise<{ secret, otpauthUrl, qrUrl }>
 auth.twofa.activate(userId: string, code: string): Promise<{ recoveryCodes: string[] }>
 auth.twofa.verify({ pendingToken, code, ip?, userAgent? }): Promise<{ user, tokens }>
 auth.twofa.disable(userId: string, code: string): Promise<void>
@@ -311,8 +311,8 @@ export async function setup2FA() {
   const session = await auth.getSession();
   if (!session) throw new Error('Unauthorized');
 
-  const { secret, otpauthUrl, qrCodeDataUrl } = await auth.twofa.setup(session.userId);
-  return { secret, otpauthUrl, qrCodeDataUrl };
+  const { secret, otpauthUrl, qrUrl } = await auth.twofa.setup(session.userId);
+  return { secret, otpauthUrl, qrUrl };
 }
 
 export async function activate2FA(code: string) {
@@ -337,8 +337,8 @@ export function EnrollTwoFactor() {
   const [code, setCode] = useState('');
 
   async function handleSetup() {
-    const { qrCodeDataUrl } = await setup2FA();
-    setQrCode(qrCodeDataUrl);
+    const { qrUrl } = await setup2FA();
+    setQrCode(qrUrl);
   }
 
   async function handleActivate() {
