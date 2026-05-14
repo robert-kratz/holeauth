@@ -1,5 +1,12 @@
 # @holeauth/plugin-2fa
 
+## 1.0.0-alpha.2
+
+### Patch Changes
+
+- f6817db: fixed #5
+  - @holeauth/core@1.0.0-alpha.2
+
 ## 1.0.0-alpha.1
 
 ### Patch Changes

@@ -30,6 +30,7 @@
     "@holeauth/plugin-magic-link": "0.0.0"
   },
   "changesets": [
-    "add-magic-link-packages"
+    "add-magic-link-packages",
+    "fix-setup-qr-url"
   ]
 }

@@ -1,5 +1,11 @@
 # @holeauth/nextjs-app-router
 
+## 1.0.0-alpha.2
+
+### Patch Changes
+
+- @holeauth/core@1.0.0-alpha.2
+
 ## 0.0.3-alpha.0
 
 ### Patch Changes

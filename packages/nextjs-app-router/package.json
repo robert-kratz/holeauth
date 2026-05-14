@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/nextjs-app-router",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "description": "Next.js App Router bindings for holeauth.",
   "license": "MIT",
   "author": "Robert Kratz",

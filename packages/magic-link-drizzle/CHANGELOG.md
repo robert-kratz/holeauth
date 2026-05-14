@@ -1,5 +1,11 @@
 # @holeauth/magic-link-drizzle
 
+## 0.0.1-alpha.1
+
+### Patch Changes
+
+- @holeauth/plugin-magic-link@0.0.1-alpha.1
+
 ## 0.0.1-alpha.0
 
 ### Patch Changes
