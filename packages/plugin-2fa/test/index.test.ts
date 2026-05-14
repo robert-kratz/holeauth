@@ -383,21 +383,21 @@ describe('twofa.api — renderQr helpers', () => {
 describe('twofa hooks', () => {
   it('signIn.challenge returns null when user has not enrolled', async () => {
     const h = makeHarness();
-    const chal = await h.plugin.hooks!.signIn!.challenge!(h.user, {} as unknown as Parameters<NonNullable<NonNullable<typeof h.plugin.hooks>['signIn']>['challenge']>[1], h.ctx);
+    const chal = await h.plugin.hooks!.signIn!.challenge!(h.user, {} as unknown as Parameters<NonNullable<NonNullable<NonNullable<typeof h.plugin.hooks>['signIn']>['challenge']>>[1], h.ctx);
     expect(chal).toBeNull();
   });
 
   it('signIn.challenge returns null when 2FA is disabled', async () => {
     const h = makeHarness();
     await h.adapter.upsert({ userId: 'user-1', secret: 'S', enabled: false, recoveryCodes: [] });
-    const chal = await h.plugin.hooks!.signIn!.challenge!(h.user, {} as unknown as Parameters<NonNullable<NonNullable<typeof h.plugin.hooks>['signIn']>['challenge']>[1], h.ctx);
+    const chal = await h.plugin.hooks!.signIn!.challenge!(h.user, {} as unknown as Parameters<NonNullable<NonNullable<NonNullable<typeof h.plugin.hooks>['signIn']>['challenge']>>[1], h.ctx);
     expect(chal).toBeNull();
   });
 
   it('signIn.challenge issues a pending JWT when enabled', async () => {
     const h = makeHarness();
     await h.adapter.upsert({ userId: 'user-1', secret: 'S', enabled: true, recoveryCodes: [] });
-    const chal = await h.plugin.hooks!.signIn!.challenge!(h.user, {} as unknown as Parameters<NonNullable<NonNullable<typeof h.plugin.hooks>['signIn']>['challenge']>[1], h.ctx);
+    const chal = await h.plugin.hooks!.signIn!.challenge!(h.user, {} as unknown as Parameters<NonNullable<NonNullable<NonNullable<typeof h.plugin.hooks>['signIn']>['challenge']>>[1], h.ctx);
     expect(chal).not.toBeNull();
     expect(chal!.pluginId).toBe('twofa');
     expect(typeof chal!.pendingToken).toBe('string');
@@ -553,6 +553,109 @@ describe('twofa routes', () => {
     const res = await routeByPath(h.plugin, '/2fa/disable').handler!(rctx);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it('POST /2fa/regenerate-recovery-codes — 401 without session', async () => {
+    const h = makeHarness();
+    const rctx = makeRctx({ api: h.api, config: h.config, session: null, body: { code: '000000' } });
+    const res = await routeByPath(h.plugin, '/2fa/regenerate-recovery-codes').handler!(rctx);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ error: { code: 'UNAUTHENTICATED' } });
+  });
+
+  it('POST /2fa/regenerate-recovery-codes — 400 when code is not a string', async () => {
+    const h = makeHarness();
+    const rctx = makeRctx({ api: h.api, config: h.config, body: { code: 99999 } });
+    await expect(
+      routeByPath(h.plugin, '/2fa/regenerate-recovery-codes').handler!(rctx),
+    ).rejects.toMatchObject({ code: 'TWOFA_INVALID_INPUT' });
+  });
+
+  it('POST /2fa/regenerate-recovery-codes — 200 with fresh codes on success', async () => {
+    const h = makeHarness();
+    const { secret } = await h.api.setup('user-1');
+    await h.api.activate('user-1', liveCode(secret));
+    const originalCodes = [...h.adapter.store.get('user-1')!.recoveryCodes];
+    const rctx = makeRctx({ api: h.api, config: h.config, body: { code: liveCode(secret) } });
+    const res = await routeByPath(h.plugin, '/2fa/regenerate-recovery-codes').handler!(rctx);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.recoveryCodes).toHaveLength(10);
+    // codes must be fresh
+    expect(body.recoveryCodes).not.toEqual(originalCodes);
+    // DB must reflect the new codes
+    expect(h.adapter.store.get('user-1')!.recoveryCodes).toEqual(body.recoveryCodes);
+  });
+});
+
+/* ─────────────────────────── tests: api — regenerateRecoveryCodes() ─────────────────────────── */
+
+describe('twofa.api — regenerateRecoveryCodes()', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = makeHarness();
+  });
+
+  it('returns a fresh set of recovery codes and persists them', async () => {
+    const { secret } = await h.api.setup('user-1');
+    await h.api.activate('user-1', liveCode(secret));
+    const original = [...h.adapter.store.get('user-1')!.recoveryCodes];
+    const { recoveryCodes } = await h.api.regenerateRecoveryCodes('user-1', liveCode(secret));
+    expect(recoveryCodes).toHaveLength(10);
+    expect(recoveryCodes).not.toEqual(original);
+    expect(h.adapter.store.get('user-1')!.recoveryCodes).toEqual(recoveryCodes);
+  });
+
+  it('throws TWOFA_NOT_ENROLLED when no record exists', async () => {
+    await expect(h.api.regenerateRecoveryCodes('nobody', '000000')).rejects.toMatchObject({
+      code: 'TWOFA_NOT_ENROLLED',
+    });
+  });
+
+  it('throws INVALID_CREDENTIALS when 2FA is not yet activated (enabled=false)', async () => {
+    await h.api.setup('user-1');
+    await expect(h.api.regenerateRecoveryCodes('user-1', '000000')).rejects.toMatchObject({
+      code: 'INVALID_CREDENTIALS',
+    });
+  });
+
+  it('throws INVALID_CREDENTIALS for a wrong TOTP code', async () => {
+    const { secret } = await h.api.setup('user-1');
+    await h.api.activate('user-1', liveCode(secret));
+    await expect(h.api.regenerateRecoveryCodes('user-1', '000000')).rejects.toMatchObject({
+      code: 'INVALID_CREDENTIALS',
+    });
+    // original codes must still be intact
+    expect(h.adapter.store.get('user-1')!.recoveryCodes).toHaveLength(10);
+  });
+
+  it('throws TWOFA_RATE_LIMITED when the limiter rejects', async () => {
+    const limiter: TwoFactorRateLimiter = {
+      check: vi.fn(async () => ({ ok: true })),
+      reset: vi.fn(async () => {}),
+    };
+    const h2 = makeHarness({ rateLimiter: limiter });
+    const { secret } = await h2.api.setup('user-1');
+    await h2.api.activate('user-1', liveCode(secret));
+    // Now make the limiter reject all further requests
+    (limiter.check as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, retryAfterSeconds: 60 });
+    await expect(h2.api.regenerateRecoveryCodes('user-1', liveCode(secret))).rejects.toMatchObject({
+      code: 'TWOFA_RATE_LIMITED',
+      status: 429,
+    });
+  });
+
+  it('respects recoveryCodeCount option', async () => {
+    const adapter2 = makeMemoryAdapter();
+    const plugin2 = twofa({ adapter: adapter2, recoveryCodeCount: 6 });
+    const h2 = makeHarness();
+    const api2 = plugin2.api(h2.ctx);
+    const secret2 = 'JBSWY3DPEHPK3PXP';
+    await adapter2.upsert({ userId: 'user-1', secret: secret2, enabled: true, recoveryCodes: [] });
+    const code2 = new TOTP({ algorithm: 'SHA1', digits: 6, period: 30, secret: Secret.fromBase32(secret2) }).generate();
+    const { recoveryCodes } = await api2.regenerateRecoveryCodes('user-1', code2);
+    expect(recoveryCodes).toHaveLength(6);
   });
 });
 

@@ -200,7 +200,7 @@ auth.twofa.activate(userId: string, code: string): Promise<{
 ```
 
 <Callout type="warn">
-  Recovery codes are single-use and stored hashed. Display them to the user immediately and prompt them to save them securely.
+  Recovery codes are single-use and stored hashed. Display them to the user immediately and prompt them to save them securely. They are **not** retrievable afterwards — use `regenerateRecoveryCodes()` to issue a fresh set.
 </Callout>
 
 **Example**
@@ -246,6 +246,42 @@ Disables 2FA for the user. Requires a valid current code for verification.
 auth.twofa.disable(userId: string, code: string): Promise<void>
 ```
 
+### regenerateRecoveryCodes()
+
+Replaces the user's existing recovery codes with a fresh set. Requires a valid live TOTP code to confirm intent and prevent silent account takeover if a session is stolen.
+
+```ts
+auth.twofa.regenerateRecoveryCodes(userId: string, code: string): Promise<{
+  recoveryCodes: string[];
+}>
+```
+
+**Throws**
+
+- `TWOFA_NOT_ENROLLED` — User has no 2FA record.
+- `INVALID_CREDENTIALS` — 2FA is not yet activated, or the TOTP code is wrong.
+- `TWOFA_RATE_LIMITED` — Too many attempts.
+
+**Example**
+
+```ts title="app/settings/2fa/regenerate/route.ts"
+import { auth } from '@/lib/auth';
+
+export async function POST(req: Request) {
+  const session = await auth.validateCurrentRequest(req);
+  if (!session) return new Response('Unauthorized', { status: 401 });
+
+  const { code } = await req.json();
+  const { recoveryCodes } = await auth.twofa.regenerateRecoveryCodes(session.userId, code);
+
+  return Response.json({ recoveryCodes });
+}
+```
+
+<Callout type="warn">
+  Old codes are invalidated immediately when this method succeeds. Show the new codes to the user exactly once and prompt them to save the file.
+</Callout>
+
 ### isEnabled()
 
 Checks if 2FA is currently active for the user.
@@ -274,6 +310,10 @@ The plugin registers the following routes on your auth handler:
     },
     "POST /2fa/disable": {
       description: 'Disable 2FA after verifying a current code. Requires authentication and CSRF.',
+      type: 'requireAuth: true, requireCsrf: true',
+    },
+    "POST /2fa/regenerate-recovery-codes": {
+      description: 'Replace all existing recovery codes with a fresh set. Requires a valid TOTP code, authentication, and CSRF.',
       type: 'requireAuth: true, requireCsrf: true',
     },
   }}
@@ -489,8 +529,90 @@ export function RecoveryCodes({ codes, email }: { codes: string[]; email: string
 ```
 
 <Callout type="warn">
-  Recovery codes are shown exactly once. The server stores only their hashes — if the user loses the file they must rotate 2FA via `disable` + `setup`.
+  Recovery codes are shown exactly once. The server stores only their hashes — if the user loses the file they must rotate 2FA via `disable` + `setup`, or use `regenerateRecoveryCodes()`.
 </Callout>
+
+## React Hooks (`@holeauth/react`)
+
+### use2faSetup()
+
+Manages the full enrolment flow. The `activate()` function now surfaces `recoveryCodes` directly so you can display or download them in one step.
+
+```tsx title="app/settings/2fa/EnrollPage.tsx"
+'use client';
+import { use2faSetup } from '@holeauth/react';
+import { downloadRecoveryCodesAsTxt } from '@holeauth/plugin-2fa';
+
+export function EnrollPage() {
+  const { start, activate, data, loading, error } = use2faSetup();
+
+  async function handleActivate(code: string) {
+    const result = await activate(code);
+    if (result.ok) {
+      // recoveryCodes are included in the response
+      downloadRecoveryCodesAsTxt(result.recoveryCodes, { issuer: 'My App' });
+    }
+  }
+
+  return (/* … */);
+}
+```
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `start` | `() => Promise<TwoFaSetupResult \| null>` | Calls `POST /2fa/setup`, stores QR + secret. |
+| `activate` | `(code: string) => Promise<{ ok: true; recoveryCodes: string[] } \| { ok: false }>` | Calls `POST /2fa/activate`, enables 2FA, returns recovery codes. |
+| `data` | `TwoFaSetupResult \| null` | The latest setup payload (`qrUrl`, `secret`). |
+| `loading` | `boolean` | True while a request is in flight. |
+| `error` | `HoleauthErrorShape \| null` | Last error, if any. |
+
+### use2faVerify()
+
+Completes sign-in after a 2FA challenge. Pass the `pendingToken` from the sign-in challenge result.
+
+```tsx title="app/2fa/verify/VerifyPage.tsx"
+'use client';
+import { use2faVerify } from '@holeauth/react';
+
+export function VerifyPage({ pendingToken }: { pendingToken: string }) {
+  const { verify, loading, error } = use2faVerify();
+  return (/* … */);
+}
+```
+
+### use2faRegenerateCodes()
+
+Replaces the user's existing recovery codes with a fresh set. Requires the user to confirm with a live TOTP code.
+
+```tsx title="app/settings/2fa/RegeneratePage.tsx"
+'use client';
+import { use2faRegenerateCodes } from '@holeauth/react';
+import { downloadRecoveryCodesAsTxt } from '@holeauth/plugin-2fa';
+
+export function RegeneratePage() {
+  const { regenerate, loading, error, recoveryCodes } = use2faRegenerateCodes();
+
+  async function handleSubmit(code: string) {
+    const result = await regenerate(code);
+    if (result.ok) {
+      downloadRecoveryCodesAsTxt(result.recoveryCodes, { issuer: 'My App' });
+    }
+  }
+
+  return (/* … */);
+}
+```
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `regenerate` | `(code: string) => Promise<{ ok: true; recoveryCodes: string[] } \| { ok: false }>` | Calls `POST /2fa/regenerate-recovery-codes`. |
+| `recoveryCodes` | `string[] \| null` | The newly generated codes after a successful call. |
+| `loading` | `boolean` | True while the request is in flight. |
+| `error` | `HoleauthErrorShape \| null` | Last error, if any. |
 
 ## See Also
 

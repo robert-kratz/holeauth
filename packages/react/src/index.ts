@@ -617,8 +617,9 @@ export function use2faSetup() {
           setError(await parseErr(res));
           return { ok: false as const };
         }
+        const body = (await res.json()) as { ok: true; recoveryCodes: string[] };
         await refresh();
-        return { ok: true as const };
+        return { ok: true as const, recoveryCodes: body.recoveryCodes };
       } finally {
         setLoading(false);
       }
@@ -655,6 +656,39 @@ export function use2faVerify() {
     [basePath, cookiePrefix, refresh, setLoading, setError],
   );
   return { verify, loading, error };
+}
+
+export function use2faRegenerateCodes() {
+  const { basePath, cookiePrefix, refresh } = useInternal();
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const { loading, setLoading, error, setError } = useMutationState();
+
+  const regenerate = useCallback(
+    async (code: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await holeauthFetch(`${basePath}/2fa/regenerate-recovery-codes`, {
+          method: 'POST',
+          body: JSON.stringify({ code }),
+          cookiePrefix,
+        });
+        if (!res.ok) {
+          setError(await parseErr(res));
+          return { ok: false as const };
+        }
+        const body = (await res.json()) as { ok: true; recoveryCodes: string[] };
+        setRecoveryCodes(body.recoveryCodes);
+        await refresh();
+        return { ok: true as const, recoveryCodes: body.recoveryCodes };
+      } finally {
+        setLoading(false);
+      }
+    },
+    [basePath, cookiePrefix, refresh, setLoading, setError],
+  );
+
+  return { regenerate, loading, error, recoveryCodes };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

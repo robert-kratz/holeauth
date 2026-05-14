@@ -101,6 +101,9 @@ export interface TwoFactorApi {
   }): Promise<{ user: AdapterUser; tokens: IssuedTokens }>;
   /** Remove 2FA for the user. Requires a valid current code. */
   disable(userId: string, code: string): Promise<void>;
+  /** Replace all existing recovery codes with a fresh set. Requires a
+   *  valid live TOTP code to prevent silent account takeover. */
+  regenerateRecoveryCodes(userId: string, code: string): Promise<{ recoveryCodes: string[] }>;
   /** Convenience check. */
   isEnabled(userId: string): Promise<boolean>;
 }
@@ -265,6 +268,21 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
           });
         },
       },
+      {
+        method: 'POST',
+        path: '/2fa/regenerate-recovery-codes',
+        requireAuth: true,
+        requireCsrf: true,
+        async handler(rctx) {
+          const session = await rctx.getSession();
+          if (!session) return jsonError('UNAUTHENTICATED', 401);
+          const api = rctx.plugin.getPlugin<TwoFactorApi>(PLUGIN_ID);
+          const out = await api.regenerateRecoveryCodes(session.userId, sanitizeCode(rctx.body.code));
+          return new Response(JSON.stringify({ ok: true, ...out }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+          });
+        },
+      },
     ],
 
     api(ctx: PluginContext): TwoFactorApi {
@@ -353,6 +371,17 @@ export function twofa(options: TwoFactorOptions): TwoFactorPlugin {
           if (!verifyTotp(r.secret, code)) throw new CredentialsError('invalid 2FA code');
           await rateLimiter.reset(`disable:${userId}`);
           await adapter.delete(userId);
+        },
+
+        async regenerateRecoveryCodes(userId, code) {
+          const r = await requireRecord(adapter, userId);
+          if (!r.enabled) throw new CredentialsError('2FA not enabled');
+          await guardRate(rateLimiter, `regenerate:${userId}`);
+          if (!verifyTotp(r.secret, code)) throw new CredentialsError('invalid 2FA code');
+          await rateLimiter.reset(`regenerate:${userId}`);
+          const recoveryCodes = generateRecoveryCodes(recoveryCount);
+          await adapter.update(userId, { recoveryCodes, updatedAt: new Date() });
+          return { recoveryCodes };
         },
       };
     },
