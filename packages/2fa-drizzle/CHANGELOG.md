@@ -1,5 +1,12 @@
 # @holeauth/2fa-drizzle
 
+## 1.0.0-alpha.3
+
+### Patch Changes
+
+- Updated dependencies [53603cb]
+  - @holeauth/plugin-2fa@1.0.0-alpha.3
+
 ## 1.0.0-alpha.2
 
 ### Patch Changes

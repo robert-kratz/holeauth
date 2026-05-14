@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/plugin-magic-link",
-  "version": "0.0.1-alpha.1",
+  "version": "1.0.0-alpha.2",
   "description": "holeauth plugin: Magic-link & email-OTP passwordless authentication.",
   "license": "MIT",
   "author": "Robert Kratz",

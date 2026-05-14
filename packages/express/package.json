@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/express",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Express bindings for holeauth.",
   "license": "MIT",
   "author": "Robert Kratz",
