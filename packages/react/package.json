@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/react",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "description": "React client provider + hooks for holeauth.",
   "license": "MIT",
   "author": "Robert Kratz",

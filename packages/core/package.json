@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/core",
-  "version": "0.0.3-alpha.0",
+  "version": "1.0.0-alpha.2",
   "description": "Edge-native auth primitives: JWT, sessions, password hashing, OTP, OIDC, plugin system, adapter interfaces.",
   "license": "MIT",
   "author": "Robert Kratz",
