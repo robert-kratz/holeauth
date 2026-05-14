@@ -1,5 +1,11 @@
 # @holeauth/idp-drizzle
 
+## 1.0.0-alpha.3
+
+### Patch Changes
+
+- @holeauth/plugin-idp@1.0.0-alpha.3
+
 ## 1.0.0-alpha.2
 
 ### Patch Changes

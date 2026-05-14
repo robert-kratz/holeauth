@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/react-ui",
-  "version": "1.0.0-alpha.2",
+  "version": "1.0.0-alpha.3",
   "description": "Optional headless, fully type-safe React UI components for holeauth (sign-in form, sign-up form, passkey, SSO, 2FA, password flows).",
   "license": "MIT",
   "author": "Robert Kratz",

@@ -1,6 +1,6 @@
 {
   "name": "@holeauth/plugin-passkey",
-  "version": "1.0.0-alpha.2",
+  "version": "1.0.0-alpha.3",
   "description": "holeauth plugin: WebAuthn / Passkey authentication.",
   "license": "MIT",
   "author": "Robert Kratz",
